@@ -1,0 +1,150 @@
+import React, { createContext, useState, useCallback, useEffect } from 'react'
+
+// Create the context
+export const CompanyContext = createContext()
+
+// Provider component
+export const CompanyProvider = ({ children }) => {
+  const [company, setCompany] = useState({
+    countryCode: 'AE',
+    countryName: 'UAE',
+    currency: 'AED',
+    taxSystem: 'VAT',
+    taxNumberLabel: 'TRN',
+    taxStructure: 'SINGLE',
+    taxRate: 5.0,
+    companyName: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    taxId: '',
+  })
+
+  const [taxMaster, setTaxMaster] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  // Fetch company data on mount
+  useEffect(() => {
+    fetchCompanyData()
+  }, [])
+
+  // Fetch company settings
+  const fetchCompanyData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/v1/settings/company')
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch company: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      if (data.data) {
+        setCompany(data.data)
+        // Fetch tax master for this country
+        if (data.data.countryCode) {
+          fetchTaxMaster(data.data.countryCode)
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching company data:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Fetch tax master for country
+  const fetchTaxMaster = useCallback(async (countryCode) => {
+    try {
+      const response = await fetch(`/api/v1/tax-masters`)
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch tax masters: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      if (data.success && data.data) {
+        // Filter by country code
+        const countryTaxes = data.data.filter(
+          (tax) => tax.countryCode === countryCode
+        )
+        // Store all tax entries for this country
+        setTaxMaster(countryTaxes)
+      }
+    } catch (err) {
+      console.error('Error fetching tax master:', err)
+      setError(err.message)
+    }
+  }, [])
+
+  // Update company details
+  const updateCompany = useCallback(async (updates) => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/v1/settings/company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to update company: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      if (data.data) {
+        setCompany(data.data)
+        // Fetch updated tax master if country changed
+        if (updates.countryCode && updates.countryCode !== company.countryCode) {
+          fetchTaxMaster(updates.countryCode)
+        }
+      }
+      return data
+    } catch (err) {
+      console.error('Error updating company:', err)
+      setError(err.message)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [company.countryCode, fetchTaxMaster])
+
+  // Switch country - useful for multi-country operations
+  const switchCountry = useCallback(async (countryCode) => {
+    try {
+      setLoading(true)
+      const updatedCompany = { ...company, countryCode }
+      await updateCompany(updatedCompany)
+    } catch (err) {
+      console.error('Error switching country:', err)
+      throw err
+    } finally {
+      setLoading(false)
+    }
+  }, [company, updateCompany])
+
+  const value = {
+    company,
+    setCompany,
+    taxMaster,
+    loading,
+    error,
+    fetchCompanyData,
+    fetchTaxMaster,
+    updateCompany,
+    switchCountry,
+  }
+
+  return (
+    <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>
+  )
+}
+
+export default CompanyContext
+
+

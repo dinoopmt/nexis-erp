@@ -1,0 +1,40 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "nodemon --env-file .env server.js",
+    "db:reset": "node resetDatabase.js",
+    "seed:users": "node seeders/userSeed.js",
+    "seed:countries": "node seeders/countryConfigSeeder.js",
+    "seed:accounts": "node seeders/chartOfAccountsSeeder.js",
+    "seed:sequences": "node seeders/sequenceSeeder.js",
+    "seed:taxes": "node seeders/taxMasterSeeder.js",
+    "seed:hsn": "node seeders/hsnMasterSeeder.js",
+    "seed:all": "node resetDatabase.js && node seeders/userSeed.js && node seeders/countryConfigSeeder.js && node seeders/chartOfAccountsSeeder.js && node seeders/sequenceSeeder.js && node seeders/taxMasterSeeder.js && node seeders/hsnMasterSeeder.js",
+    "verify:accounts": "node scripts/verifyChartOfAccounts.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "meilisearch": "^0.55.0",
+    "mongoose": "^9.2.0",
+    "multer": "^2.0.2",
+    "node-cache": "^5.1.2",
+    "nodemon": "^3.1.11",
+    "path": "^0.12.7",
+    "pdfkit": "^0.17.2"
+  }
+}

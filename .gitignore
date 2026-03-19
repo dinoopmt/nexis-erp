@@ -1,0 +1,32 @@
+# Overwrite or create .gitignore with recommended entries
+@"
+# Node / frontend / build files
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+.cache/
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE / system files
+.DS_Store
+.vscode/
+.idea/
+*.log
+*.swp
+*.swo
+*~
+
+# TypeScript
+*.tsbuildinfo
+
+# Meilisearch / large binaries
+meilisearch/data.ms/
+meilisearch/meilisearch-enterprise-windows-amd64.exe
+"@ | Out-File -Encoding UTF8 .gitignore

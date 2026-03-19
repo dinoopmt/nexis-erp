@@ -1,0 +1,299 @@
+.branch-selector {
+  padding: 15px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  margin-bottom: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.branch-selector .loading {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-style: italic;
+}
+
+.branch-selector .error-message {
+  background-color: #fee;
+  color: #c33;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  border-left: 4px solid #c33;
+  font-size: 14px;
+}
+
+.branch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 10px;
+}
+
+.branch-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 5px;
+}
+
+.view-toggle .toggle-btn {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.3s ease;
+  color: #666;
+}
+
+.view-toggle .toggle-btn.active {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+.view-toggle .toggle-btn:hover:not(.active) {
+  background: #f0f0f0;
+}
+
+/* Tree View Styles */
+.branch-tree {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  padding: 10px 0;
+}
+
+.branch-tree-node {
+  user-select: none;
+}
+
+.branch-node-content {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  gap: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.branch-node-content:hover {
+  background-color: #f5f5f5;
+}
+
+.expand-button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+.expand-button:hover {
+  background-color: #e0e0e0;
+}
+
+.expand-placeholder {
+  width: 24px;
+  height: 24px;
+  display: inline-block;
+}
+
+.branch-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: left;
+  transition: all 0.2s ease;
+  color: #333;
+  font-size: 14px;
+}
+
+.branch-name:hover {
+  background-color: #e8f0ff;
+  color: #2563eb;
+}
+
+.branch-name.selected {
+  background-color: #dbeafe;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.branch-icon {
+  font-size: 18px;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.branch-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.branch-info .name {
+  font-weight: 500;
+  color: #333;
+  display: block;
+}
+
+.branch-info .code {
+  font-size: 12px;
+  color: #999;
+  display: block;
+}
+
+.check-mark {
+  font-size: 18px;
+  color: #16a34a;
+  font-weight: bold;
+  margin-left: 10px;
+}
+
+.branch-children {
+  padding-left: 24px;
+  border-left: 2px solid #ddd;
+  margin-left: 12px;
+}
+
+/* Flat List View Styles */
+.branch-flat-list {
+  padding: 10px 0;
+}
+
+.branch-dropdown {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.branch-dropdown:hover {
+  border-color: #bbb;
+}
+
+.branch-dropdown:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* No branches message */
+.no-branches {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* Actions */
+.branch-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.refresh-btn {
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.refresh-btn:hover {
+  background: #2563eb;
+}
+
+.refresh-btn:active {
+  transform: scale(0.98);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .branch-selector {
+    padding: 12px;
+  }
+
+  .branch-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .branch-header h3 {
+    font-size: 15px;
+  }
+
+  .view-toggle {
+    align-self: flex-end;
+  }
+
+  .branch-tree {
+    max-height: 300px;
+  }
+
+  .branch-name {
+    font-size: 13px;
+  }
+}
+
+/* Scrollbar styling */
+.branch-tree::-webkit-scrollbar {
+  width: 8px;
+}
+
+.branch-tree::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.branch-tree::-webkit-scrollbar-thumb {
+  background: #bbb;
+  border-radius: 4px;
+}
+
+.branch-tree::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
