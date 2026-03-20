@@ -79,12 +79,14 @@ export const useProductCreateUpdate = ({
         };
 
         // Open modal in edit mode
-        const editIdx = filteredProducts.findIndex((p) => p._id === productToEdit._id);
+        const editIdx = Array.isArray(filteredProducts) 
+          ? filteredProducts.findIndex((p) => p._id === productToEdit._id)
+          : -1;
         openProductForm({
           mode: "edit",
           product: productToEdit,
           products: products,
-          filteredProducts: filteredProducts,
+          filteredProducts: Array.isArray(filteredProducts) ? filteredProducts : [],
           editIndex: editIdx >= 0 ? editIdx : 0,
           onSave: handleProductSaved,
         });

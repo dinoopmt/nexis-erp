@@ -1290,6 +1290,10 @@ export const bulkImportProducts = async (req, res) => {
     // ✅ Create tax lookup map: match tax name (case-insensitive) to tax ID
     const taxNameMap = new Map(taxMasters.map(t => [t.taxName?.toLowerCase(), t._id]));
 
+    // ✅ NEW: Batch insert optimization - collect products to insert together
+    const productsToInsert = [];
+    const productsToUpdate = [];
+
     // Process each product
     for (let index = 0; index < products.length; index++) {
       const productData = products[index];
@@ -1501,8 +1505,8 @@ export const bulkImportProducts = async (req, res) => {
           }
         }
 
-        // Create product
-        const newProduct = new Product({
+        // Create product object (don't save yet - batch later)
+        const newProduct = {
           itemcode: itemCode,
           name: productName,
           hsn: hsn || '',
@@ -1515,7 +1519,7 @@ export const bulkImportProducts = async (req, res) => {
           cost,
           price,
           stock,
-          taxType: taxId ? taxId : (taxType || ''), // ✅ Use tax ID if found, otherwise use string
+          taxType: taxId ? taxId : (taxType || ''),
           taxPercent,
           taxInPrice,
           minStock,
@@ -1525,15 +1529,24 @@ export const bulkImportProducts = async (req, res) => {
           shortName,
           localName,
           factor: 1
-        });
+        };
 
-        await newProduct.save();
-        results.successful++;
-        results.createdProducts.push({
-          _id: newProduct._id,
-          itemcode: newProduct.itemcode,
-          name: newProduct.name
-        });
+        if (existingByItemCode) {
+          // Queue for update instead of immediate save
+          if (duplicateHandling === 'update') {
+            productsToUpdate.push({
+              _id: existingByItemCode._id,
+              updates: newProduct,
+              itemcode: existingByItemCode.itemcode,
+              name: existingByItemCode.name
+            });
+          } else {
+            results.skipped++;
+          }
+        } else {
+          // Queue for insert instead of immediate save
+          productsToInsert.push(newProduct);
+        }
 
       } catch (itemError) {
         results.errors.push({
@@ -1541,6 +1554,54 @@ export const bulkImportProducts = async (req, res) => {
           message: itemError.message || 'Error processing product'
         });
         results.failed++;
+      }
+    }
+
+    // ✅ PERFORMANCE: Use batch insert instead of individual saves
+    if (productsToInsert.length > 0) {
+      try {
+        console.log(`📦 Batch inserting ${productsToInsert.length} products...`);
+        const insertedProducts = await Product.insertMany(productsToInsert, { ordered: false });
+        results.successful += insertedProducts.length;
+        results.createdProducts.push(
+          ...insertedProducts.map(p => ({
+            _id: p._id,
+            itemcode: p.itemcode,
+            name: p.name
+          }))
+        );
+        console.log(`✅ Batch insert complete: ${insertedProducts.length} products inserted`);
+      } catch (batchError) {
+        console.error('Batch insert error:', batchError.message);
+        // Some products might have been inserted despite the error
+        results.errors.push({
+          row: 'batch-insert',
+          message: `Batch insert partial error: ${batchError.message}`
+        });
+      }
+    }
+
+    // ✅ PERFORMANCE: Batch update existing products
+    if (productsToUpdate.length > 0) {
+      try {
+        console.log(`📦 Batch updating ${productsToUpdate.length} products...`);
+        for (const updateItem of productsToUpdate) {
+          await Product.findByIdAndUpdate(updateItem._id, updateItem.updates);
+          results.updated++;
+          results.updatedProducts.push({
+            _id: updateItem._id,
+            itemcode: updateItem.itemcode,
+            name: updateItem.name,
+            status: 'updated'
+          });
+        }
+        console.log(`✅ Batch update complete: ${productsToUpdate.length} products updated`);
+      } catch (updateError) {
+        console.error('Batch update error:', updateError.message);
+        results.errors.push({
+          row: 'batch-update',
+          message: `Batch update error: ${updateError.message}`
+        });
       }
     }
 
@@ -1614,6 +1675,10 @@ export const bulkImportSimpleProducts = async (req, res) => {
     const unitTypeByNameMap = new Map(unitTypes.map(u => [u.unitName?.toLowerCase(), u])); // Map by unitName for simple imports
     // ✅ Create tax lookup map: match tax name (case-insensitive) to tax ID
     const taxNameMap = new Map(taxMasters.map(t => [t.taxName?.toLowerCase(), t._id]));
+
+    // ✅ NEW: Batch insert optimization - collect products to insert together
+    const productsToInsert = [];
+    const productsToUpdate = [];
 
     // Process each product
     for (let index = 0; index < products.length; index++) {
@@ -1717,41 +1782,42 @@ export const bulkImportSimpleProducts = async (req, res) => {
         if (existingByItemCode) {
           // ✅ Handle duplicate based on user preference
           if (duplicateHandling === 'update') {
-            // Update existing product with new data
+            // Queue for batch update instead of immediate save
             try {
-              const taxId = null;
+              let taxId = null;
               if (taxType && taxPercent > 0) {
                 const fullTaxName = `${taxType} ${taxPercent}%`.toLowerCase();
                 taxId = taxNameMap.get(fullTaxName);
               }
 
-              existingByItemCode.name = productName;
-              existingByItemCode.cost = cost;
-              existingByItemCode.price = price;
-              existingByItemCode.stock = existingByItemCode.stock || 0; // Preserve existing stock if not provided
-              existingByItemCode.taxType = taxId ? taxId : (taxType || '');
-              existingByItemCode.taxPercent = taxPercent;
-              existingByItemCode.taxInPrice = taxInPrice;
-              existingByItemCode.minStock = 0;
-              existingByItemCode.maxStock = 1000;
-              existingByItemCode.reorderQuantity = 100;
-              existingByItemCode.costIncludeVat = Math.round(costIncludeVat * 100) / 100;
-              existingByItemCode.marginPercent = Math.round(marginPercent * 100) / 100;
-              existingByItemCode.marginAmount = Math.round(marginAmount * 100) / 100;
-              existingByItemCode.taxAmount = Math.round(taxAmount * 100) / 100;
-              
-              await existingByItemCode.save();
-              results.updated++;
-              results.updatedProducts.push({
+              const updateData = {
+                name: productName,
+                cost: cost,
+                price: price,
+                taxType: taxId ? taxId : (taxType || ''),
+                taxPercent: taxPercent,
+                taxInPrice: taxInPrice,
+                minStock: 0,
+                maxStock: 1000,
+                reorderQuantity: 100,
+                costIncludeVat: Math.round(costIncludeVat * 100) / 100,
+                marginPercent: Math.round(marginPercent * 100) / 100,
+                marginAmount: Math.round(marginAmount * 100) / 100,
+                taxAmount: Math.round(taxAmount * 100) / 100
+              };
+
+              productsToUpdate.push({
                 _id: existingByItemCode._id,
+                updates: updateData,
                 itemcode: existingByItemCode.itemcode,
                 name: existingByItemCode.name,
                 barcode: existingByItemCode.barcode
               });
+              results.updated++;
             } catch (updateError) {
               results.errors.push({
                 row: rowNumber,
-                message: `Failed to update existing product "${itemCode}": ${updateError.message}`
+                message: `Failed to queue update for existing product "${itemCode}": ${updateError.message}`
               });
               results.failed++;
             }
@@ -1837,8 +1903,8 @@ export const bulkImportSimpleProducts = async (req, res) => {
           }
         }
 
-        // Create product with simple import data + auto-calculated fields
-        const newProduct = new Product({
+        // Create product with simple import data + auto-calculated fields (don't save yet - batch later)
+        const newProduct = {
           itemcode: itemCode,
           name: productName,
           barcode,
@@ -1849,31 +1915,24 @@ export const bulkImportSimpleProducts = async (req, res) => {
           unitDecimal: unitTypeObj.unitDecimal,
           cost,
           price,
-          costIncludeVat: Math.round(costIncludeVat * 100) / 100, // ✅ Auto-calculated
-          marginPercent: Math.round(marginPercent * 100) / 100, // ✅ Auto-calculated
-          marginAmount: Math.round(marginAmount * 100) / 100, // ✅ Auto-calculated
-          taxAmount: Math.round(taxAmount * 100) / 100, // ✅ Auto-calculated
-          stock: 0, // Default stock for external imports
-          taxType: taxId ? taxId : (taxType || ''), // ✅ Use tax ID if found, otherwise use string
-          taxPercent: taxPercent, // ✅ FROM IMPORT
-          taxInPrice: taxInPrice, // ✅ FROM IMPORT
+          costIncludeVat: Math.round(costIncludeVat * 100) / 100,
+          marginPercent: Math.round(marginPercent * 100) / 100,
+          marginAmount: Math.round(marginAmount * 100) / 100,
+          taxAmount: Math.round(taxAmount * 100) / 100,
+          stock: 0,
+          taxType: taxId ? taxId : (taxType || ''),
+          taxPercent: taxPercent,
+          taxInPrice: taxInPrice,
           minStock: 0,
           maxStock: 1000,
           reorderQuantity: 100,
           trackExpiry: false,
-          shortName: productName.substring(0, 20), // First 20 chars as short name
+          shortName: productName.substring(0, 20),
           localName: '',
           factor: 1
-        });
+        };
 
-        await newProduct.save();
-        results.successful++;
-        results.createdProducts.push({
-          _id: newProduct._id,
-          itemcode: newProduct.itemcode,
-          name: newProduct.name,
-          barcode: newProduct.barcode
-        });
+        productsToInsert.push(newProduct);
 
       } catch (itemError) {
         results.errors.push({
@@ -1881,6 +1940,54 @@ export const bulkImportSimpleProducts = async (req, res) => {
           message: itemError.message || 'Error processing product'
         });
         results.failed++;
+      }
+    }
+
+    // ✅ PERFORMANCE: Use batch insert instead of individual saves (Simple Import)
+    if (productsToInsert.length > 0) {
+      try {
+        console.log(`📦 Batch inserting ${productsToInsert.length} products (Simple Import)...`);
+        const insertedProducts = await Product.insertMany(productsToInsert, { ordered: false });
+        results.successful += insertedProducts.length;
+        results.createdProducts.push(
+          ...insertedProducts.map(p => ({
+            _id: p._id,
+            itemcode: p.itemcode,
+            name: p.name,
+            barcode: p.barcode
+          }))
+        );
+        console.log(`✅ Batch insert complete: ${insertedProducts.length} products inserted (Simple Import)`);
+      } catch (batchError) {
+        console.error('Batch insert error (Simple Import):', batchError.message);
+        results.errors.push({
+          row: 'batch-insert',
+          message: `Batch insert partial error: ${batchError.message}`
+        });
+      }
+    }
+
+    // ✅ PERFORMANCE: Batch update existing products (Simple Import)
+    if (productsToUpdate.length > 0) {
+      try {
+        console.log(`📦 Batch updating ${productsToUpdate.length} products (Simple Import)...`);
+        for (const updateItem of productsToUpdate) {
+          await Product.findByIdAndUpdate(updateItem._id, updateItem.updates);
+          results.updated++;
+          results.updatedProducts.push({
+            _id: updateItem._id,
+            itemcode: updateItem.itemcode,
+            name: updateItem.name,
+            barcode: updateItem.barcode
+          });
+        }
+        console.log(`✅ Batch update complete: ${productsToUpdate.length} products updated (Simple Import)`);
+      } catch (updateError) {
+        console.error('Batch update error (Simple Import):', updateError.message);
+        results.errors.push({
+          row: 'batch-update',
+          message: `Batch update error: ${updateError.message}`
+        });
       }
     }
 

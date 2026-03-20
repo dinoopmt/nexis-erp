@@ -46,7 +46,7 @@ const Promotion = () => {
   const fetchPromotions = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/v1/promotions?page=${currentPage}&limit=${itemsPerPage}`);
+      const response = await axios.get(`${API_URL}/promotions?page=${currentPage}&limit=${itemsPerPage}`);
       setPromotions(response.data.promotions || []);
       setError('');
     } catch (err) {
@@ -59,7 +59,7 @@ const Promotion = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/v1/products/getproducts?limit=1000`);
+      const response = await axios.get(`${API_URL}/products/getproducts?limit=1000`);
       setProducts(response.data.products || []);
     } catch (err) {
       console.error('Failed to fetch products:', err);
@@ -125,8 +125,8 @@ const Promotion = () => {
     try {
       setLoading(true);
       const url = isEdit
-        ? `${API_URL}/api/v1/promotions/updatepromotion/${editId}`
-        : `${API_URL}/api/v1/promotions/addpromotion`;
+        ? `${API_URL}/promotions/updatepromotion/${editId}`
+        : `${API_URL}/promotions/addpromotion`;
 
       const method = isEdit ? 'put' : 'post';
       const response = await axios[method](url, formData);
@@ -159,7 +159,7 @@ const Promotion = () => {
 
     try {
       setLoading(true);
-      await axios.delete(`${API_URL}/api/v1/promotions/deletepromotion/${id}`);
+      await axios.delete(`${API_URL}/promotions/deletepromotion/${id}`);
       setPromotions(promotions.filter(p => p._id !== id));
       setError('');
     } catch (err) {

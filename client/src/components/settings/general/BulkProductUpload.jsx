@@ -16,6 +16,14 @@ const BulkProductUpload = () => {
   // ✅ NEW: Duplicate handling option - choose what to do with duplicates
   const [duplicateHandling, setDuplicateHandling] = useState('skip'); // 'skip', 'update'
 
+  // ✅ NEW: File preparation progress tracking (reading/parsing stage)
+  const [filePreparation, setFilePreparation] = useState({
+    isProcessing: false,
+    stage: null, // 'reading' | 'parsing' | 'filtering' | 'complete'
+    progress: 0, // 0-100%
+    message: ''
+  });
+
   // ✅ NEW: Stage-wise progress tracking
   const [stageProgress, setStageProgress] = useState({
     checking: 0,        // 0-100%
@@ -153,26 +161,133 @@ const BulkProductUpload = () => {
     }
 
     try {
+      // ✅ Show file preparation progress
+      setFilePreparation({
+        isProcessing: true,
+        stage: 'reading',
+        progress: 20,
+        message: `Reading file: ${file.name}...`
+      });
+
+      console.log('📖 Stage 1: Reading file buffer...');
+
+      // Yield to browser to ensure UI updates are rendered
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       const arrayBuffer = await file.arrayBuffer();
+      
+      console.log('✓ File buffer read, starting XLSX parsing...');
+
+      setFilePreparation(prev => ({
+        ...prev,
+        stage: 'parsing',
+        progress: 35,
+        message: 'Parsing Excel workbook structure...'
+      }));
+
+      // Yield to browser to ensure parsing stage is visible
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log('🔍 Parsing XLSX workbook...');
       const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
+      console.log('✓ Workbook parsed, converting to JSON...');
+
+      setFilePreparation(prev => ({
+        ...prev,
+        progress: 50,
+        message: 'Converting Excel data to JSON (this may take a moment for large files)...'
+      }));
+
+      // Yield to browser before expensive sheet_to_json
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // ✅ sheet_to_json automatically skips the header row
+      console.time('sheet_to_json conversion');
       const data = XLSX.utils.sheet_to_json(worksheet);
+      console.timeEnd('sheet_to_json conversion');
       
       console.log('📊 Loaded from Excel:', data.length, 'rows (header already skipped by XLSX)');
 
-      // ✅ Filter out empty rows (rows with no meaningful data)
-      const filteredData = data.filter(row => {
-        // Check if row has at least one non-empty cell
-        return Object.values(row).some(cell => cell !== null && cell !== undefined && cell !== '');
-      });
+      // Yield to browser after expensive parsing (longer delay for big files)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      setFilePreparation(prev => ({
+        ...prev,
+        stage: 'filtering',
+        progress: 60,
+        message: `Filtering empty rows... (0/${data.length})`
+      }));
+
+      // Extra yield to ensure filtering stage shows up
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      console.log('🔄 Starting filtering of', data.length, 'rows...');
+
+      // ✅ CRITICAL FIX: Filter in chunks to prevent UI hanging on large files (206K+)
+      const CHUNK_SIZE = 5000; // Process 5000 rows at a time
+      const filteredData = [];
+      let processedCount = 0;
+      let chunkCounter = 0;
+
+      for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+        const chunkStartTime = Date.now();
+        
+        // Process chunk
+        const chunk = data.slice(i, i + CHUNK_SIZE);
+        for (const row of chunk) {
+          // ✅ OPTIMIZED: Check for non-empty row without creating array (faster than Object.values().some())
+          let hasContent = false;
+          for (const key in row) {
+            const cell = row[key];
+            if (cell !== null && cell !== undefined && cell !== '') {
+              hasContent = true;
+              break;
+            }
+          }
+          if (hasContent) {
+            filteredData.push(row);
+          }
+        }
+        processedCount = Math.min(i + CHUNK_SIZE, data.length);
+        chunkCounter++;
+
+        // ✅ Update UI progress EVERY chunk (not batched) for real-time feedback
+        const filterProgress = Math.round((processedCount / data.length) * 20) + 60; // 60-80% range
+        setFilePreparation(prev => ({
+          ...prev,
+          progress: filterProgress,
+          message: `Filtering empty rows... (${processedCount}/${data.length})`
+        }));
+        
+        const chunkTime = Date.now() - chunkStartTime;
+        console.log(`  Chunk ${chunkCounter}: Processed ${processedCount}/${data.length} rows in ${chunkTime}ms`);
+
+        // ✅ Yield to browser every chunk for responsiveness (10ms to allow UI to render)
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
 
       if (filteredData.length === 0) {
         toast.error('No data found in the uploaded file');
+        setFilePreparation({
+          isProcessing: false,
+          stage: null,
+          progress: 0,
+          message: ''
+        });
         return;
       }
+
+      setFilePreparation(prev => ({
+        ...prev,
+        stage: 'complete',
+        progress: 100,
+        message: `✅ Successfully loaded ${filteredData.length} products!`
+      }));
+
+      await new Promise(resolve => setTimeout(resolve, 800)); // Show completion briefly
 
       setPreview({
         fileName: file.name,
@@ -182,219 +297,229 @@ const BulkProductUpload = () => {
       });
 
       setResults(null);
+      
+      // Hide file preparation indicator after successful load
+      setFilePreparation({
+        isProcessing: false,
+        stage: null,
+        progress: 0,
+        message: ''
+      });
+
       toast.success(`Loaded ${filteredData.length} products for preview`);
     } catch (error) {
       toast.error(`Error reading file: ${error.message}`);
+      setFilePreparation({
+        isProcessing: false,
+        stage: null,
+        progress: 0,
+        message: ''
+      });
     }
   };
 
   // ==================== VALIDATE SIMPLE PRODUCTS ====================
-  const validateSimpleProducts = (products) => {
+  // ==================== VALIDATE & FILTER SIMPLE PRODUCTS (ASYNC, NON-BLOCKING) ====================
+  const validateSimpleProducts = async (products) => {
     const requiredFields = ['Item Code', 'Product Name', 'Department', 'Vendor', 'Unit Name', 'Cost', 'Price', 'Barcode'];
-    const errors = [];
-    const warnings = [];
+    const cleanedProducts = [];
+    const skippedRows = [];
+    const CHUNK_SIZE = 10000; // Process 10K products at a time
 
-    products.forEach((product, index) => {
-      const rowNumber = index + 2;
+    for (let i = 0; i < products.length; i += CHUNK_SIZE) {
+      const chunk = products.slice(i, i + CHUNK_SIZE);
+      
+      for (const product of chunk) {
+        const rowNumber = (i + chunk.indexOf(product)) + 2;
 
-      // Check required fields
-      requiredFields.forEach(field => {
-        if (!product[field] || String(product[field]).trim() === '') {
-          errors.push({
-            row: rowNumber,
-            field,
-            message: `Missing required field: ${field}`
-          });
-        }
-      });
-
-      // Validate numeric fields
-      const numericFields = {
-        'Cost': true,
-        'Price': true,
-        'Tax %': false // Optional
-      };
-
-      Object.entries(numericFields).forEach(([field, isRequired]) => {
-        const value = product[field];
-        if (value || isRequired) {
-          if (value && isNaN(parseFloat(value))) {
-            errors.push({
+        // Check required fields - CRITICAL (skip row)
+        let hasCriticalError = false;
+        for (const field of requiredFields) {
+          if (!product[field] || String(product[field]).trim() === '') {
+            skippedRows.push({
               row: rowNumber,
-              field,
-              message: `${field} must be a valid number`
+              reason: `Missing required field: ${field}`
             });
+            hasCriticalError = true;
+            break;
           }
         }
-      });
+        
+        if (hasCriticalError) continue;
 
-      // Validate Tax % range
-      const taxPercent = product['Tax %'];
-      if (taxPercent !== undefined && taxPercent !== null && taxPercent !== '') {
-        const taxVal = parseFloat(taxPercent);
-        if (!isNaN(taxVal) && (taxVal < 0 || taxVal > 100)) {
-          errors.push({
-            row: rowNumber,
-            field: 'Tax %',
-            message: 'Tax % must be between 0 and 100'
-          });
-        }
-      }
-
-      // Validate Tax In Price value
-      const taxInPrice = product['Tax In Price'];
-      if (taxInPrice && !['Yes', 'No', 'yes', 'no', 'YES', 'NO'].includes(String(taxInPrice).trim())) {
-        warnings.push({
-          row: rowNumber,
-          field: 'Tax In Price',
-          message: `Tax In Price should be "Yes" or "No" (will default to "No")`
-        });
-      }
-
-      // Validate Price > Cost
-      if (product['Price'] && product['Cost']) {
-        const price = parseFloat(product['Price']);
+        // Validate numeric values - SKIP ROW if invalid
         const cost = parseFloat(product['Cost']);
-        if (price < cost) {
-          warnings.push({
-            row: rowNumber,
-            field: 'Price vs Cost',
-            message: `Selling price (${price}) is less than cost (${cost})`
-          });
-        }
-      }
+        const price = parseFloat(product['Price']);
 
-      // Barcode validation
-      if (product['Barcode']) {
+        if (isNaN(cost) || cost <= 0) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Invalid Cost: "${product['Cost']}" (must be a positive number)`
+          });
+          continue;
+        }
+
+        if (isNaN(price) || price <= 0) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Invalid Price: "${product['Price']}" (must be a positive number)`
+          });
+          continue;
+        }
+
+        // Barcode validation - SKIP ROW if too short
         const barcode = String(product['Barcode']).trim();
         if (barcode.length < 3) {
-          errors.push({
+          skippedRows.push({
             row: rowNumber,
-            field: 'Barcode',
-            message: 'Barcode must be at least 3 characters'
+            reason: `Invalid Barcode: "${barcode}" (must be at least 3 characters)`
           });
+          continue;
         }
-      }
-    });
 
-    return { errors, warnings };
+        if (price < cost) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Price (${price}) is less than Cost (${cost})`
+          });
+          continue;
+        }
+
+        // ✅ ROW IS VALID - Add to cleaned products
+        cleanedProducts.push(product);
+      }
+
+      // Yield to browser after each chunk
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    return { cleanedProducts, skippedRows };
   };
 
-  // ==================== VALIDATE PRODUCTS ====================
-  const validateProducts = (products) => {
+  // ==================== VALIDATE & FILTER PRODUCTS (ASYNC, NON-BLOCKING) ====================
+  const validateProducts = async (products) => {
     const requiredFields = ['Item Code', 'Product Name', 'Vendor', 'Category', 'Unit Type', 'Cost', 'Price', 'Stock Quantity', 'Country'];
-    const errors = [];
-    const warnings = [];
+    const cleanedProducts = [];
+    const skippedRows = [];
+    const CHUNK_SIZE = 10000; // Process 10K products at a time
 
-    products.forEach((product, index) => {
-      const rowNumber = index + 2; // +2 because row 1 is header, rows are 0-indexed in array
+    for (let i = 0; i < products.length; i += CHUNK_SIZE) {
+      const chunk = products.slice(i, i + CHUNK_SIZE);
+      
+      for (const product of chunk) {
+        const rowNumber = (i + chunk.indexOf(product)) + 2;
 
-      // Check required fields
-      requiredFields.forEach(field => {
-        if (!product[field] || String(product[field]).trim() === '') {
-          errors.push({
-            row: rowNumber,
-            field,
-            message: `Missing required field: ${field}`
-          });
-        }
-      });
-
-      // Country-based validation for HSN
-      const country = product['Country']?.toString().trim().toUpperCase();
-      if (country === 'IN' && (!product['HSN Code'] || String(product['HSN Code']).trim() === '')) {
-        errors.push({
-          row: rowNumber,
-          field: 'HSN Code',
-          message: 'HSN Code is required for India (IN)'
-        });
-      }
-
-      // Validate numeric fields
-      const numericFields = {
-        'Cost': true,
-        'Price': true,
-        'Tax %': false,
-        'Stock Quantity': true,
-        'Min Stock': false,
-        'Max Stock': false,
-        'Reorder Qty': false
-      };
-
-      Object.entries(numericFields).forEach(([field, isRequired]) => {
-        const value = product[field];
-        if (value || isRequired) {
-          if (value && isNaN(parseFloat(value))) {
-            errors.push({
+        // Check required fields - CRITICAL (skip row)
+        let hasCriticalError = false;
+        for (const field of requiredFields) {
+          if (!product[field] || String(product[field]).trim() === '') {
+            skippedRows.push({
               row: rowNumber,
-              field,
-              message: `${field} must be a valid number`
+              reason: `Missing required field: ${field}`
             });
+            hasCriticalError = true;
+            break;
           }
         }
-      });
 
-      // Validate Price > Cost
-      if (product['Price'] && product['Cost']) {
-        const price = parseFloat(product['Price']);
-        const cost = parseFloat(product['Cost']);
-        if (price < cost) {
-          warnings.push({
+        if (hasCriticalError) continue;
+
+        // Country-based validation
+        const country = product['Country']?.toString().trim().toUpperCase();
+        if (country === 'IN' && (!product['HSN Code'] || String(product['HSN Code']).trim() === '')) {
+          skippedRows.push({
             row: rowNumber,
-            field: 'Price vs Cost',
-            message: `Selling price (${price}) is less than cost (${cost})`
+            reason: 'HSN Code is required for India (IN)'
           });
+          continue;
         }
+
+        // Validate numeric values - SKIP ROW if invalid
+        const cost = parseFloat(product['Cost']);
+        const price = parseFloat(product['Price']);
+        const stock = parseInt(product['Stock Quantity']);
+
+        if (isNaN(cost) || cost <= 0) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Invalid Cost: "${product['Cost']}" (must be a positive number)`
+          });
+          continue;
+        }
+
+        if (isNaN(price) || price <= 0) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Invalid Price: "${product['Price']}" (must be a positive number)`
+          });
+          continue;
+        }
+
+        if (isNaN(stock)) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Invalid Stock Quantity: "${product['Stock Quantity']}" (must be a number)`
+          });
+          continue;
+        }
+
+        // Price vs Cost check
+        if (price < cost) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Price (${price}) is less than Cost (${cost})`
+          });
+          continue;
+        }
+
+        // Validate country code
+        if (country && !['IN', 'AE', 'OM'].includes(country)) {
+          skippedRows.push({
+            row: rowNumber,
+            reason: `Invalid country code: ${country} (Use: IN, AE, OM)`
+          });
+          continue;
+        }
+
+        // ✅ ROW IS VALID - Add to cleaned products
+        cleanedProducts.push(product);
       }
 
-      // Validate country code
-      if (country && !['IN', 'AE', 'OM'].includes(country)) {
-        errors.push({
-          row: rowNumber,
-          field: 'Country',
-          message: `Invalid country code: ${country}. Use: IN (India), AE (UAE), OM (Oman)`
-        });
-      }
+      // Yield to browser after each chunk
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
 
-      // Item Code uniqueness will be checked on backend
-    });
-
-    return { errors, warnings };
+    return { cleanedProducts, skippedRows };
   };
 
-  // ==================== UPLOAD PRODUCTS ====================
+  // ==================== UPLOAD PRODUCTS (WITH BATCH PROCESSING) ====================
   const handleUpload = async () => {
     if (!preview?.fullData) {
       toast.error('No data to upload. Please select a file first.');
       return;
     }
 
-    // Use appropriate validation based on import mode
+    // Use appropriate validation based on import mode - AWAIT async validation functions
     const validation = importMode === 'simple' 
-      ? validateSimpleProducts(preview.fullData)
-      : validateProducts(preview.fullData);
+      ? await validateSimpleProducts(preview.fullData)
+      : await validateProducts(preview.fullData);
 
-    if (validation.errors.length > 0) {
-      setResults({
-        status: 'validation_error',
-        errors: validation.errors.slice(0, 10), // Show first 10 errors
-        totalErrors: validation.errors.length,
-        warnings: validation.warnings
-      });
-      toast.error(`Validation errors found (${validation.errors.length}). Review below.`);
-      return;
+    // ✅ NEW: Show skipped rows summary
+    if (validation.skippedRows.length > 0) {
+      const confirmSkip = window.confirm(
+        `⚠️ ${validation.skippedRows.length} row(s) will be skipped due to invalid data:\n\n${validation.skippedRows.slice(0, 5).map(s => `Row ${s.row}: ${s.reason}`).join('\n')}${validation.skippedRows.length > 5 ? `\n... and ${validation.skippedRows.length - 5} more\n` : '\n'}\nContinue uploading ${validation.cleanedProducts.length} valid products?`
+      );
+      if (!confirmSkip) return;
     }
 
-    if (validation.warnings.length > 0) {
-      const confirmed = window.confirm(
-        `${validation.warnings.length} warning(s) found. Continue with upload?`
-      );
-      if (!confirmed) return;
+    // If no cleaned products, stop
+    if (validation.cleanedProducts.length === 0) {
+      toast.error('No valid products to upload. All rows contain errors.');
+      return;
     }
 
     setLoading(true);
     setUploadProgress(0);
-    // ✅ Reset stage progress
     setStageProgress({
       checking: 0,
       validating: 0,
@@ -402,7 +527,6 @@ const BulkProductUpload = () => {
       saving: 0,
       currentStage: 'checking'
     });
-    // ✅ Initialize item progress
     setItemProgress({
       total: preview.fullData.length,
       processed: 0,
@@ -414,205 +538,162 @@ const BulkProductUpload = () => {
 
     try {
       const endpoint = importMode === 'simple' 
-        ? `${API_URL}/api/v1/products/bulk-import-simple`
-        : `${API_URL}/api/v1/products/bulk-import`;
+        ? `${API_URL}/products/bulk-import-simple`
+        : `${API_URL}/products/bulk-import`;
 
-      // ✅ STEP 1: Send import request and get session ID for progress tracking
       const startTime = Date.now();
-      let overallProgress = 0;
+      // ✅ Use cleaned products (errors already filtered out)
+      const allProducts = validation.cleanedProducts;
+      const skippedValidationRows = validation.skippedRows.length;
+      
+      // ✅ Adaptive batch size based on total products
+      // For large imports (10k+), use bigger batches to reduce overhead
+      const BATCH_SIZE = allProducts.length > 10000 ? 2000 : 500;
+      const totalBatches = Math.ceil(allProducts.length / BATCH_SIZE);
+      
+      // ✅ Accumulate results from all batches
+      let totalSuccessful = 0;
+      let totalUpdated = 0;
+      let totalFailed = 0;
+      let totalSkipped = 0;
+      let allErrors = [];
+      let allCreatedProducts = [];
+      let allUpdatedProducts = [];
 
-      // ✅ KEY CHANGE: Start polling IMMEDIATELY without waiting for backend response
-      // Backend will process in background, we show progress from database polling
-      let response = null;
-      
-      // Fire the import request WITHOUT waiting (set a long timeout but don't await yet)
-      const importPromise = axios.post(
-        endpoint,
-        {
-          products: preview.fullData,
-          importMode: importMode,
-          duplicateHandling: duplicateHandling  // ✅ NEW: Pass duplicate handling option
-        },
-        {
-          onUploadProgress: (progressEvent) => {
-            // Upload is 20% of total progress (file transmission)
-            const uploadPercent = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            overallProgress = Math.min(uploadPercent * 0.2, 20); // Cap at 20%
-            
-            // Show "Checking" stage during upload
-            setStageProgress(prev => ({
-              ...prev,
-              checking: uploadPercent,
-              currentStage: 'checking'
-            }));
-            setUploadProgress(Math.round(overallProgress));
-          },
-          timeout: 1800000 // 30 minutes timeout for very large imports (32K+ items)
-        }
-      );
-      
-      // Don't wait for response yet - start polling database immediately
-      // This gives real-time feedback while backend processes in background
-      console.log('📤 Import request sent to backend (not waiting for response)');
-      console.log('🔄 Starting database polling immediately...');
-      console.log('Timestamp:', new Date().toLocaleTimeString());
+      console.log(`📦 Processing ${allProducts.length} products in ${totalBatches} batches (${BATCH_SIZE} per batch)`);
 
-      // ✅ Poll database to show LIVE count of items being saved
-      let actualProcessedCount = 0;
-      let pollCount = 0;
-      let previousCount = -1;
-      let unchangedCount = 0;
-      const maxPolls = 1800; // Poll for max 30 minutes (1800 * 1000ms) for very large imports
-      const expectedItemCount = preview.fullData.length;
-      const maxUnchangedPolls = expectedItemCount > 10000 ? 10 : 3; // More tolerance for large imports
-      
-      console.log(`📋 Expected items: ${expectedItemCount}. Adjusted unchanged threshold: ${maxUnchangedPolls} polls`);
-      
-      while (pollCount < maxPolls) {
+      // ✅ Process each batch sequentially
+      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        const batchStart = batchIndex * BATCH_SIZE;
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, allProducts.length);
+        const batchProducts = allProducts.slice(batchStart, batchEnd);
+        const batchNum = batchIndex + 1;
+
+        console.log(`\n🔄 Sending batch ${batchNum}/${totalBatches} (items ${batchStart + 1}-${batchEnd})`);
+
+        // Update UI - show which batch is being processed
+        setStageProgress(prev => ({
+          ...prev,
+          checking: Math.round((batchNum / totalBatches) * 100),
+          currentStage: 'checking'
+        }));
+        
+        setItemProgress(prev => ({
+          ...prev,
+          processed: batchEnd,
+          successful: totalSuccessful,
+          updated: totalUpdated,
+          failed: totalFailed,
+          skipped: totalSkipped
+        }));
+
+        const batchProgress = Math.round((batchEnd / allProducts.length) * 100);
+        setUploadProgress(batchProgress);
+
         try {
-          const dbCountResponse = await axios.get(`${API_URL}/api/v1/products/count`);
-          actualProcessedCount = dbCountResponse.data.totalCount || 0;
-          
-          // ✅ FIX: Update BOTH total AND processed with actual database count
-          // This ensures pending = total - processed = 0 when we're done
-          setItemProgress(prev => ({
-            ...prev,
-            total: actualProcessedCount,  // ✅ Update total to match actual DB count
-            processed: actualProcessedCount
-          }));
-          
-          console.log(`📊 Poll #${pollCount + 1} - Products in DB: ${actualProcessedCount}/${expectedItemCount}`);
-          
-          // ✅ IMPROVED: Stop polling if count hasn't changed AND we've waited long enough
-          if (actualProcessedCount === previousCount) {
-            unchangedCount++;
-            console.log(`⏸️ No change in count. Unchanged for ${unchangedCount}/${maxUnchangedPolls} polls. (${(unchangedCount * 1000 / 1000).toFixed(0)}s stable)`);
-            
-            // Only stop if we've been stable for long enough AND not at 0
-            if (unchangedCount >= maxUnchangedPolls && actualProcessedCount > 0) {
-              console.log(`✅ Backend finished! Count stable for ${maxUnchangedPolls} polls (${(maxUnchangedPolls * 1000 / 1000).toFixed(0)}s). Stopping poll loop.`);
-              break;
+          const response = await axios.post(
+            endpoint,
+            {
+              products: batchProducts,
+              importMode: importMode,
+              duplicateHandling: duplicateHandling
+            },
+            {
+              timeout: 300000 // 5 minutes per batch (for large batches of 2000 items)
             }
-          } else {
-            // Reset counter when count changes (still processing)
-            unchangedCount = 0;
-            previousCount = actualProcessedCount;
-            console.log(`🔄 Count changed! Reset unchanged counter. Progress: ${Math.round(actualProcessedCount / expectedItemCount * 100)}%`);
-          }
+          );
+
+          // ✅ Accumulate results
+          totalSuccessful += response.data.successful || 0;
+          totalUpdated += response.data.updated || 0;
+          totalFailed += response.data.failed || 0;
+          totalSkipped += response.data.skipped || 0;
+          allErrors.push(...(response.data.errors || []));
+          allCreatedProducts.push(...(response.data.createdProducts || []));
+          allUpdatedProducts.push(...(response.data.updatedProducts || []));
+
+          console.log(`✅ Batch ${batchNum} complete: ${response.data.successful} created, ${response.data.updated} updated, ${response.data.failed} failed`);
           
-          // Poll every 1 second
-          await sleep(1000);
-          pollCount++;
-        } catch (countError) {
-          console.warn('Could not fetch database count:', countError.message);
-          await sleep(1000);
-          pollCount++;
+          // Small delay between batches to avoid overwhelming the server
+          if (batchIndex < totalBatches - 1) {
+            await sleep(300);
+          }
+
+        } catch (batchError) {
+          const errorMsg = batchError.response?.data?.message || batchError.message;
+          console.error(`❌ Batch ${batchNum} failed: ${errorMsg}`);
+          
+          allErrors.push({
+            row: `Batch ${batchNum}`,
+            message: `Batch upload failed: ${errorMsg}`
+          });
+          
+          totalFailed += batchProducts.length;
+
+          // Continue with next batch instead of stopping
+          toast.error(`⚠️ Batch ${batchNum} failed, continuing with next batch...`);
         }
       }
-      
-      console.log('✅ Final products in database:', actualProcessedCount);
 
-      // ✅ STEP 2: File uploaded, now simulate backend processing stages
-      let totalItems = preview.fullData.length;
-      
-      // ✅ Use actual processed count as the authoritative total (overrides file count)
-      if (actualProcessedCount > 0) {
-        totalItems = actualProcessedCount; // Use database count exactly, not Math.max
-        console.log('✅ Updated totalItems to database count:', totalItems);
-      }
-      
-      console.log('totalItems from preview:', totalItems);
-      
-      // Show "Validating" stage (20% of progress)
+      // ✅ All batches complete
+      console.log(`\n✅ All batches processed!`);
+      console.log(`📊 Total: ${totalSuccessful} created, ${totalUpdated} updated, ${totalSkipped} skipped, ${totalFailed} failed`);
+
+      // Show final progress
       setStageProgress(prev => ({
         ...prev,
         checking: 100,
-        currentStage: 'validating'
-      }));
-      setUploadProgress(30);
-      await sleep(300);
-
-      
-      // ✅ Now wait for backend response (should be done by now)
-      console.log('⏳ Waiting for backend response with final counts...');
-      try {
-        response = await importPromise; // Now actually wait for the response
-        console.log('✅ Backend response received!', response.data);
-      } catch (importError) {
-        console.error('❌ Import request failed:', importError.message);
-        // We still have database polling data as fallback
-        response = { data: {} };
-      }
-
-      // Show "Processing" stage (40% of progress)
-      setStageProgress(prev => ({
-        ...prev,
-        validating: 100,
-        currentStage: 'processing'
-      }));
-      
-      // Use actual database count as the source of truth
-      const processingPercent = totalItems > 0 ? Math.round((actualProcessedCount / totalItems) * 100) : 100;
-      setStageProgress(prev => ({
-        ...prev,
-        processing: Math.min(processingPercent, 100),
-        currentStage: 'processing'
-      }));
-      setItemProgress({
-        total: actualProcessedCount || totalItems,
-        processed: actualProcessedCount,
-        successful: response.data.successful || 0,
-        updated: response.data.updated || 0,
-        failed: response.data.failed || 0,
-        skipped: response.data.skipped || 0
-      });
-      
-      setUploadProgress(30 + Math.round(processingPercent * 0.4)); // 30-70% range
-      await sleep(500);
-
-      // Show "Saving" stage (10% of progress)
-      setStageProgress(prev => ({
-        ...prev,
-        processing: 100,
-        currentStage: 'saving'
-      }));
-      setUploadProgress(80);
-      await sleep(200);
-
-      // Complete
-      setStageProgress(prev => ({
-        ...prev,
         validating: 100,
         processing: 100,
         saving: 100,
         currentStage: 'complete'
       }));
       setUploadProgress(100);
-      
-      // ✅ Get total product count from database
+
+      // Get total product count from database
       let totalProductCount = 0;
       try {
-        const countResponse = await axios.get(`${API_URL}/api/v1/products/count`);
+        const countResponse = await axios.get(`${API_URL}/products/count`);
         totalProductCount = countResponse.data.totalCount || 0;
       } catch (countError) {
         console.error("Error fetching product count:", countError);
       }
-      
-      setResults({
-        status: 'success',
-        ...response.data,
-        totalProductCount: totalProductCount
+
+      setItemProgress({
+        total: allProducts.length,
+        processed: allProducts.length,
+        successful: totalSuccessful,
+        updated: totalUpdated,
+        failed: totalFailed,
+        skipped: totalSkipped
       });
 
-      toast.success(
-        `✅ Import Complete! ${totalProductCount || response.data.successful || preview.fullData.length} products saved to database`
-      );
+      setResults({
+        status: 'success',
+        successful: totalSuccessful,
+        updated: totalUpdated,
+        failed: totalFailed,
+        skipped: totalSkipped,
+        skippedValidation: validation.skippedRows.length, // ✅ NEW: Rows filtered out during validation
+        skippedValidationRows: validation.skippedRows, // ✅ NEW: Detailed skipped rows info
+        errors: allErrors,
+        createdProducts: allCreatedProducts,
+        updatedProducts: allUpdatedProducts,
+        totalProductCount: totalProductCount,
+        totalProductsInFile: preview.fullData.length, // ✅ NEW: Original file count
+        totalProcessed: totalSuccessful + totalUpdated + totalFailed + totalSkipped,
+        totalRequested: allProducts.length,
+        duration: Date.now() - startTime
+      });
 
+      const successMsg = totalFailed === 0 
+        ? `✅ Success! ${totalSuccessful + totalUpdated} products imported (${skippedValidationRows} skipped)` 
+        : `⚠️ Partial Success: ${totalSuccessful + totalUpdated} imported, ${totalFailed} failed`;
+      
+      toast.success(successMsg);
       await sleep(1500);
       setLoading(false);
-      
+
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message;
       console.error('❌ IMPORT ERROR:', {
@@ -743,6 +824,64 @@ const BulkProductUpload = () => {
             </button>
           )}
         </div>
+
+        {/* ✅ FILE PREPARATION PROGRESS INDICATOR */}
+        {filePreparation.isProcessing && (
+          <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-300 rounded-lg p-4 mb-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Loader size={18} className="animate-spin text-blue-600" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Preparing File...</p>
+                  <p className="text-xs text-blue-700 mt-0.5">{filePreparation.message}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-blue-600">{filePreparation.progress}%</p>
+              </div>
+            </div>
+
+            {/* Stage Indicator */}
+            <div className="flex gap-2 items-center">
+              <div className="flex-1 space-y-1">
+                {/* Reading Stage */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold ${filePreparation.progress >= 20 ? 'text-green-600' : 'text-gray-400'}`}>
+                    {filePreparation.progress >= 20 ? '✓' : '○'}
+                  </span>
+                  <span className={`text-xs font-medium ${filePreparation.progress >= 20 ? 'text-green-700' : 'text-gray-500'}`}>Reading</span>
+                  {filePreparation.stage === 'reading' && <Loader size={12} className="animate-spin text-blue-600" />}
+                </div>
+
+                {/* Parsing Stage */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold ${filePreparation.progress >= 50 ? 'text-green-600' : 'text-gray-400'}`}>
+                    {filePreparation.progress >= 50 ? '✓' : '○'}
+                  </span>
+                  <span className={`text-xs font-medium ${filePreparation.progress >= 50 ? 'text-green-700' : 'text-gray-500'}`}>Parsing</span>
+                  {filePreparation.stage === 'parsing' && <Loader size={12} className="animate-spin text-blue-600" />}
+                </div>
+
+                {/* Filtering Stage */}
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold ${filePreparation.progress >= 75 ? 'text-green-600' : 'text-gray-400'}`}>
+                    {filePreparation.progress >= 75 ? '✓' : '○'}
+                  </span>
+                  <span className={`text-xs font-medium ${filePreparation.progress >= 75 ? 'text-green-700' : 'text-gray-500'}`}>Filtering</span>
+                  {filePreparation.stage === 'filtering' && <Loader size={12} className="animate-spin text-blue-600" />}
+                </div>
+              </div>
+            </div>
+
+            {/* Overall Progress Bar */}
+            <div className="w-full h-3 bg-gray-300 rounded-full overflow-hidden border border-gray-400">
+              <div
+                className="h-3 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-500"
+                style={{ width: `${filePreparation.progress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {preview && (
           <div className="space-y-2">
@@ -1098,13 +1237,22 @@ const BulkProductUpload = () => {
               </div>
 
               {/* CLEAR METRICS: Before & After */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {/* Items Received */}
                 <div className="bg-blue-100 border-2 border-blue-400 rounded-lg p-4">
                   <p className="text-xs text-blue-600 font-semibold mb-2">📥 ITEMS RECEIVED</p>
-                  <p className="text-3xl font-bold text-blue-700">{preview.fullData.length}</p>
+                  <p className="text-3xl font-bold text-blue-700">{results.totalProductsInFile || preview.fullData.length}</p>
                   <p className="text-xs text-blue-600 mt-1">from your Excel file</p>
                 </div>
+
+                {/* Items Skipped (Validation) */}
+                {results.skippedValidation > 0 && (
+                  <div className="bg-yellow-100 border-2 border-yellow-400 rounded-lg p-4">
+                    <p className="text-xs text-yellow-700 font-semibold mb-2">⏭️ SKIPPED (Invalid)</p>
+                    <p className="text-3xl font-bold text-yellow-700">{results.skippedValidation}</p>
+                    <p className="text-xs text-yellow-700 mt-1">rows with bad data</p>
+                  </div>
+                )}
 
                 {/* Items Saved */}
                 <div className="bg-green-100 border-2 border-green-500 rounded-lg p-4">
@@ -1181,6 +1329,27 @@ const BulkProductUpload = () => {
                   <p className="text-xs text-blue-700 mt-2">
                     All {results.successful} product(s) are ready for use with complete pricing information.
                   </p>
+                </div>
+              )}
+
+              {/* ✅ NEW: Show Skipped Validation Rows If Any */}
+              {results.skippedValidationRows && results.skippedValidationRows.length > 0 && (
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 mt-3">
+                  <p className="text-sm font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                    <AlertCircle size={16} /> {results.skippedValidationRows.length} Rows Skipped (Invalid Data)
+                  </p>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {results.skippedValidationRows.slice(0, 10).map((row, idx) => (
+                      <div key={idx} className="bg-white rounded p-2 border-l-2 border-yellow-500 text-xs">
+                        <p className="text-yellow-900"><strong>Row {row.row}:</strong> {row.reason}</p>
+                      </div>
+                    ))}
+                    {results.skippedValidationRows.length > 10 && (
+                      <p className="text-xs text-yellow-700 italic mt-2">
+                        ... and {results.skippedValidationRows.length - 10} more rows skipped
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 

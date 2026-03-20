@@ -33,7 +33,7 @@ const Grouping = () => {
   const fetchGroupings = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/v1/groupings/getgroupings`);
+      const response = await axios.get(`${API_URL}/groupings/getgroupings`);
       setGroupings(response.data.groupings || []);
       setDepartments(response.data.hierarchy?.departments || []);
       setError("");
@@ -115,7 +115,7 @@ const Grouping = () => {
       
       if (isEdit) {
         const response = await axios.put(
-          `${API_URL}/api/v1/groupings/updategrouping/${editId}`,
+          `${API_URL}/groupings/updategrouping/${editId}`,
           newGrouping
         );
         console.log("✅ Update response:", response.data);
@@ -125,7 +125,7 @@ const Grouping = () => {
         alert("Grouping updated successfully!");
       } else {
         const response = await axios.post(
-          `${API_URL}/api/v1/groupings/addgrouping`,
+          `${API_URL}/groupings/addgrouping`,
           newGrouping
         );
         console.log("✅ Create response:", response.data);
@@ -156,7 +156,7 @@ const Grouping = () => {
     setLoading(true);
 
     try {
-      await axios.delete(`${API_URL}/api/v1/groupings/deletegrouping/${id}`);
+      await axios.delete(`${API_URL}/groupings/deletegrouping/${id}`);
       setGroupings(groupings.filter((g) => g._id !== id));
       alert("Grouping deleted successfully!");
       setError("");

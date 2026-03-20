@@ -12,6 +12,8 @@ import {
   X,
   Edit,
 } from "lucide-react";
+import VirtualizedProductTable from "../shared/ui/VirtualizedProductTable";
+import { useInfiniteScroll } from "../../hooks/useInfiniteScroll";
 import { ProductFormContext } from "../../context/ProductFormContext";
 import axios from "axios";
 import { API_URL } from "../../config/config";
@@ -99,6 +101,9 @@ const Product = () => {
   // All calculations must use round() to respect country-specific decimal places
   const { round, formatNumber } = useDecimalFormat(activeCountryCode);
 
+  // ✅ Items per page for pagination - 50 items for infinite scroll
+  const itemsPerPage = 50;
+
   // UI State: Modal dialogs, loading, form modes (edit vs create)
   const [products, setProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -111,9 +116,6 @@ const Product = () => {
   const [hsnCodes, setHsnCodes] = useState([]);
   const [loadingHsn, setLoadingHsn] = useState(false);
 
-  // ✅ Items per page - Fixed to 100
-  const itemsPerPage = 100;
-
   // Grouping/Category hierarchy: Tracks selected category levels for department/subdept/brand
   const [groupings, setGroupings] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -121,6 +123,42 @@ const Product = () => {
   const [brands, setBrands] = useState([]);
   const [selectedGroupingFilter, setSelectedGroupingFilter] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
+
+  // ✅ Track previous filter to detect changes (for reset logic)
+  const prevFilterRef = useRef(selectedGroupingFilter);
+
+  // ✅ Memoize fetchFunction so it doesn't get recreated on every render
+  // This prevents the useInfiniteScroll hook from resetting state
+  const fetchProductsCallback = useCallback(
+    (page, limit) => productAPI.fetchProducts(page, limit, selectedGroupingFilter),
+    [selectedGroupingFilter]
+  );
+
+  // ✅ INFINITE SCROLL HOOK - Manages fetching + accumulating products
+  // Fetches 50 items at a time, accumulates into sparse map
+  // VirtualizedProductTable renders only visible items
+  const {
+    productsMap: infiniteProductsMap,
+    currentPage: infiniteCurrentPage,
+    isLoading: isLoadingInfinite,
+    totalProducts: totalInfiniteProducts,
+    hasMore: hasMoreInfinite,
+    fetchNextPage: fetchNextPageInfinite,
+    reset: resetInfiniteScroll,
+  } = useInfiniteScroll(
+    fetchProductsCallback,
+    itemsPerPage
+  );
+
+  // ✅ Reset infinite scroll ONLY when filter actually changes
+  // Use ref to track previous value - prevents infinite loop from dependency changes
+  useEffect(() => {
+    if (prevFilterRef.current !== selectedGroupingFilter) {
+      console.log(`🔄 Filter changed: "${prevFilterRef.current}" → "${selectedGroupingFilter}", resetting infinite scroll`);
+      prevFilterRef.current = selectedGroupingFilter;
+      resetInfiniteScroll();
+    }
+  }, [selectedGroupingFilter]); // Only depend on the actual filter, not the reset function
 
   // Modal controls for adding/managing hierarchical data (departments, brands, etc.)
   const [isGroupingModalOpen, setIsGroupingModalOpen] = useState(false);
@@ -1027,7 +1065,7 @@ const Product = () => {
       // - Groupings: Department/SubDept/Brand hierarchy (3 levels)
       // - Vendors: Supplier list for vendor selection
       // - Units: Measurement units (PCS, KG, BOX, etc.)
-      // - Products: Existing products for item code uniqueness check
+      // - Products: Loaded on-demand via infinite scroll hook (NOT here)
       // - HSN Codes: India-specific tax classification (if India company)
       // - Taxes: Available tax rates for non-India countries (filtered by country on client)
       setLoading(true);
@@ -1036,14 +1074,12 @@ const Product = () => {
           fetchedGroupings,
           fetchedVendors,
           fetchedUnits,
-          fetchedProducts,
           fetchedHSNCodes,
           fetchedTaxes,
         ] = await Promise.all([
           productAPI.fetchGroupings(),
           productAPI.fetchVendors(),
           productAPI.fetchUnits(),
-          productAPI.fetchProducts(selectedGroupingFilter),
           isIndiaCompany ? productAPI.fetchHSNCodes() : Promise.resolve([]),
           // Fetch all taxes - client-side filtering by country will handle it
           isIndiaCompany ? Promise.resolve([]) : productAPI.fetchTaxes(),
@@ -1059,7 +1095,10 @@ const Product = () => {
 
         setVendors(fetchedVendors);
         setUnits(fetchedUnits);
-        setProducts(fetchedProducts);
+        
+        // ✅ Products are now loaded by useInfiniteScroll hook automatically
+        // No need to set them here anymore
+        
         setHsnCodes(fetchedHSNCodes);
         setAvailableTaxes(fetchedTaxes);
 
@@ -1241,7 +1280,7 @@ const Product = () => {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      let url = `${API_URL}/api/v1/products/getproducts?limit=50000`;  // ✅ Fetch up to 50k products at once
+      let url = `${API_URL}/products/getproducts?limit=1000`;  // ✅ Fetch up to 1000 products at once
       if (selectedGroupingFilter) {
         url += `&groupingId=${selectedGroupingFilter}`;
       }
@@ -1265,7 +1304,7 @@ const Product = () => {
   const fetchProductById = async (productId) => {
     try {
       const response = await axios.get(
-        `${API_URL}/api/v1/products/getproduct/${productId}`,
+        `${API_URL}/products/getproduct/${productId}`,
       );
 
       // The endpoint returns the product directly in response.data, not wrapped in .product
@@ -1833,7 +1872,7 @@ const Product = () => {
 
   // ✅ Enrich search results with category names (populates categoryId.name from departments array)
   // NOTE: Meilisearch stores categoryId as DEPARTMENT NAME (string), not ObjectId
-  const enrichedApiSearchResults = apiSearchResults.map((prod) => {
+  const enrichedApiSearchResults = (Array.isArray(apiSearchResults) ? apiSearchResults : []).map((prod) => {
     let enrichedCategoryId = prod.categoryId;
     
     if (prod.categoryId) {
@@ -1862,24 +1901,81 @@ const Product = () => {
     };
   });
 
-  // ✅ Use API search results if search is active, otherwise use all products
-  let filteredProducts = search.trim() ? enrichedApiSearchResults : products;
+  // ✅ Advanced Search Filter - Define BEFORE using it
+  const applyAdvancedFilters = (products = []) => {
+    // Ensure products is an array
+    const productArray = Array.isArray(products) ? products : [];
+    
+    return productArray.filter((prod) => {
+      if (
+        advancedFilters.vendor &&
+        !prod.vendor
+          .toLowerCase()
+          .includes(advancedFilters.vendor.toLowerCase())
+      )
+        return false;
+      if (
+        advancedFilters.minCost &&
+        parseFloat(prod.cost) < parseFloat(advancedFilters.minCost)
+      )
+        return false;
+      if (
+        advancedFilters.maxCost &&
+        parseFloat(prod.cost) > parseFloat(advancedFilters.maxCost)
+      )
+        return false;
+      if (
+        advancedFilters.minPrice &&
+        parseFloat(prod.price) < parseFloat(advancedFilters.minPrice)
+      )
+        return false;
+      if (
+        advancedFilters.maxPrice &&
+        parseFloat(prod.price) > parseFloat(advancedFilters.maxPrice)
+      )
+        return false;
+      if (
+        advancedFilters.minStock &&
+        parseInt(prod.stock) < parseInt(advancedFilters.minStock)
+      )
+        return false;
+      if (
+        advancedFilters.maxStock &&
+        parseInt(prod.stock) > parseInt(advancedFilters.maxStock)
+      )
+        return false;
+      if (
+        advancedFilters.category &&
+        prod.categoryId?._id !== advancedFilters.category
+      )
+        return false;
+      if (
+        advancedFilters.subCategory &&
+        prod.groupingId?._id !== advancedFilters.subCategory
+      )
+        return false;
+      return true;
+    });
+  };
+
+  // ✅ Use API search results if search is active, otherwise use infinite scroll products
+  // Convert infinite products sparse map to array for filtering
+  const infiniteProductsArray = Object.values(infiniteProductsMap).filter(p => p);
+  let filteredProducts = search.trim() ? enrichedApiSearchResults : infiniteProductsArray;
+  
+  // Ensure filteredProducts is always an array
+  if (!Array.isArray(filteredProducts)) {
+    filteredProducts = [];
+  }
 
   // Apply advanced filters if any are set
   if (Object.keys(advancedFilters).some((key) => advancedFilters[key])) {
-    filteredProducts = applyAdvancedFilters();
+    filteredProducts = applyAdvancedFilters(filteredProducts);
   }
 
-  // Pagination calculations
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-
-  const currentProducts = filteredProducts.slice(
-    indexOfFirstItem,
-    indexOfLastItem,
-  );
-
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  // ✅ NOTE: Pagination is now handled by VirtualizedProductTable + useInfiniteScroll hook
+  // When using infinite scroll: VirtualizedProductTable renders only visible items
+  // When using search/filters: Show filtered results (no pagination needed)
 
   // ✅ Open Add Modal - Now uses the master hook (extracted from Product.jsx)
   const openAddModal = () => {
@@ -2205,69 +2301,18 @@ const Product = () => {
     }
   };
 
-  // ✅ Advanced Search Filter
-  const applyAdvancedFilters = () => {
-    return filteredProducts.filter((prod) => {
-      if (
-        advancedFilters.vendor &&
-        !prod.vendor
-          .toLowerCase()
-          .includes(advancedFilters.vendor.toLowerCase())
-      )
-        return false;
-      if (
-        advancedFilters.minCost &&
-        parseFloat(prod.cost) < parseFloat(advancedFilters.minCost)
-      )
-        return false;
-      if (
-        advancedFilters.maxCost &&
-        parseFloat(prod.cost) > parseFloat(advancedFilters.maxCost)
-      )
-        return false;
-      if (
-        advancedFilters.minPrice &&
-        parseFloat(prod.price) < parseFloat(advancedFilters.minPrice)
-      )
-        return false;
-      if (
-        advancedFilters.maxPrice &&
-        parseFloat(prod.price) > parseFloat(advancedFilters.maxPrice)
-      )
-        return false;
-      if (
-        advancedFilters.minStock &&
-        parseInt(prod.stock) < parseInt(advancedFilters.minStock)
-      )
-        return false;
-      if (
-        advancedFilters.maxStock &&
-        parseInt(prod.stock) > parseInt(advancedFilters.maxStock)
-      )
-        return false;
-      if (
-        advancedFilters.category &&
-        prod.categoryId?._id !== advancedFilters.category
-      )
-        return false;
-      if (
-        advancedFilters.subCategory &&
-        prod.groupingId?._id !== advancedFilters.subCategory
-      )
-        return false;
-      return true;
-    });
-  };
+
 
 
 
   // ✅ Export Products to CSV
   const exportToCSV = () => {
+    const baseData = search.trim() ? enrichedApiSearchResults : infiniteProductsArray;
     const dataToExport = Object.keys(advancedFilters).some(
       (key) => advancedFilters[key],
     )
-      ? applyAdvancedFilters()
-      : filteredProducts;
+      ? applyAdvancedFilters(baseData)
+      : baseData;
 
     if (dataToExport.length === 0) {
       toast.error("No products to export", {
@@ -2320,7 +2365,7 @@ const Product = () => {
   const printBarcodeLabels = () => {
     const productsToPrint =
       selectedForPrint.length > 0
-        ? products.filter((p) => selectedForPrint.includes(p._id))
+        ? infiniteProductsArray.filter((p) => selectedForPrint.includes(p._id))
         : filteredProducts;
 
     if (productsToPrint.length === 0) {
@@ -2703,232 +2748,46 @@ const Product = () => {
           </select>
         </div>
 
-        {/* Loading State */}
-        {loading && products.length === 0 && (
-          <div className="flex items-center justify-center py-4">
-            <p className="text-gray-500 text-sm">Loading products...</p>
-          </div>
-        )}
-
-        {/* Table - Scrollable */}
-        {!loading && (
-          <div className="flex-1 bg-white rounded-lg shadow-sm border flex flex-col min-h-0 overflow-hidden">
-            {/* Table with Sticky Header */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-              <table className="w-full text-xs border-collapse">
-                <thead className="bg-gray-100 text-left sticky top-0 z-10">
-                  <tr>
-                    <th className="p-1 lg:p-2 border text-center w-10 font-semibold text-xs">
-                      #
-                    </th>
-                    <th className="p-1 lg:p-2 border text-left font-semibold text-xs w-16">
-                      Item Code
-                    </th>
-                    
-                    <th className="p-1 lg:p-2 border text-left font-semibold text-xs">
-                      Name
-                    </th>
-                    <th className="p-1 lg:p-2 border text-left font-semibold text-xs">
-                      Department
-                    </th>
-                    
-                    <th className="p-1 lg:p-2 border text-left font-semibold text-xs">
-                      Vendor
-                    </th>
-                    <th className="p-1 lg:p-2 border text-left font-semibold text-xs">
-                      Barcode
-                    </th>
-                    <th className="p-1 lg:p-2 border text-right font-semibold text-xs">
-                      Cost
-                    </th>
-                    <th className="p-1 lg:p-2 border text-right font-semibold text-xs">
-                      Price
-                    </th>
-                    <th className="p-1 lg:p-2 border text-center font-semibold text-xs">
-                      Stock
-                    </th>
-                    {/* Status column removed */}
-                    <th className="p-1 lg:p-2 border text-center font-semibold text-xs">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentProducts.map((prod, index) => (
-                    <tr key={prod._id} className="hover:bg-gray-50">
-                      <td className="p-1 lg:p-2 border text-center w-10 text-xs">
-                        {indexOfFirstItem + index + 1}
-                      </td>
-                      <td className="p-1 lg:p-2 border text-left font-mono text-xs w-16 overflow-auto max-h-12">
-                        {prod.itemcode}
-                      </td>
-                     
-                      <td className="p-1 lg:p-2 border text-left text-xs overflow-auto max-h-12 break-words">
-                        {prod.name}
-                      </td>
-                      <td className="p-1 lg:p-2 border text-left text-xs">
-                        {getCategoryName(prod.categoryId)}
-                      </td>
-                      
-                      <td className="p-1 lg:p-2 border text-left font-mono text-xs overflow-auto max-h-12 break-words">
-                        {prod.vendor?.name || prod.vendor || "-"}
-                      </td>
-                      <td className="p-1 lg:p-2 border text-left font-mono text-xs overflow-auto max-h-12 break-words">
-                        {prod.barcode}
-                      </td>
-                      <td className="p-1 lg:p-2 border text-right text-xs">
-                        {round(parseFloat(prod.cost))}
-                      </td>
-                      <td className="p-1 lg:p-2 border text-right text-xs">
-                        {round(parseFloat(prod.price))}
-                      </td>
-                      <td className="p-1 lg:p-2 border text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span className="px-1.5 py-0.5 rounded font-semibold bg-gray-200 text-gray-800 text-xs">
-                            {prod.stock}
-                          </span>
-                          {(prod.minStock || prod.maxStock) && (
-                            <span className="text-xs text-gray-500">
-                              {prod.minStock && prod.maxStock
-                                ? `${prod.minStock}–${prod.maxStock}`
-                                : prod.minStock
-                                  ? `Min: ${prod.minStock}`
-                                  : `Max: ${prod.maxStock}`}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      {/* Status cell removed */}
-                      <td className="p-1 lg:p-2 border text-center">
-                        <div className="flex gap-1 flex-wrap justify-center">
-                          <button
-                            onClick={() => handleEdit(prod)}
-                            disabled={loading}
-                            className="text-blue-600 hover:underline text-xs disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <Edit size={14} />
-                            Edit
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {filteredProducts.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan="13"
-                        className="text-center p-6 text-gray-500"
-                      >
-                        No products found
-                      </td>
-                    </tr>
-                  )}
-                  {currentProducts.length === 0 &&
-                    filteredProducts.length > 0 && (
-                      <tr>
-                        <td
-                          colSpan="13"
-                          className="text-center p-6 text-gray-500"
-                        >
-                          No products on this page
-                        </td>
-                      </tr>
-                    )}
-                </tbody>
-              </table>
+        {/* ✅ VIRTUALIZED INFINITE SCROLL TABLE */}
+        {loading && Object.keys(infiniteProductsMap).length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="flex flex-col items-center gap-2">
+              <div className="animate-spin w-6 h-6 border-3 border-blue-500 border-t-transparent rounded-full"></div>
+              <p className="text-gray-500 text-sm">Loading products...</p>
             </div>
           </div>
-        )}
-
-        {/* FOOTER - Pagination & Info - Fixed at bottom */}
-        {!loading && filteredProducts.length > 0 && (
-          <div className="flex-shrink-0 bg-white border-t shadow-sm">
-            <div className="px-4 py-2">
-              <div className="flex items-center justify-between">
-                {/* Page Info */}
-                <div className="text-xs text-gray-600 font-medium whitespace-nowrap">
-                  Page{" "}
-                  <span className="font-bold text-purple-700">
-                    {currentPage}/{totalPages || 1}
-                  </span>{" "}
-                  |{" "}
-                  <span className="font-bold text-purple-700">
-                    {filteredProducts.length}
-                  </span>{" "}
-                  items
-                </div>
-
-                {/* Controls */}
-                <div className="flex gap-0.5 flex-wrap justify-center items-center">
-                  <button
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
-                    className="px-1.5 py-0.5 border rounded hover:bg-gray-100 text-xs disabled:opacity-40 font-medium"
-                  >
-                    ⏮️
-                  </button>
-                  <button
-                    onClick={() =>
-                      setCurrentPage((prev) => Math.max(prev - 1, 1))
-                    }
-                    className="px-1.5 py-0.5 border rounded hover:bg-gray-100 text-xs disabled:opacity-40 font-medium disabled:cursor-not-allowed"
-                    disabled={currentPage === 1}
-                  >
-                    ◀️
-                  </button>
-
-                  {/* Page Numbers */}
-                  <div className="flex gap-0.5">
-                    {[...Array(Math.min(totalPages, 7))].map((_, i) => {
-                      let pageNum;
-                      if (totalPages <= 7) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 4) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 3) {
-                        pageNum = totalPages - 6 + i;
-                      } else {
-                        pageNum = currentPage - 3 + i;
-                      }
-
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setCurrentPage(pageNum)}
-                          className={`px-1 py-0.5 border rounded text-xs font-medium ${
-                            currentPage === pageNum
-                              ? "bg-purple-600 text-white border-purple-600"
-                              : "hover:bg-gray-100"
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                    }
-                    className="px-1.5 py-0.5 border rounded hover:bg-gray-100 text-xs disabled:opacity-40 font-medium disabled:cursor-not-allowed"
-                    disabled={currentPage === totalPages}
-                  >
-                    ▶️
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
-                    className="px-1.5 py-0.5 border rounded hover:bg-gray-100 text-xs disabled:opacity-40 font-medium"
-                  >
-                    ⏭️
-                  </button>
-                </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="flex items-center justify-center py-8">
+            <p className="text-gray-500 text-sm">No products found</p>
+          </div>
+        ) : (
+          <div className="flex-1 bg-white rounded-lg shadow-sm border flex flex-col min-h-0 overflow-hidden">
+            <VirtualizedProductTable
+              productsMap={infiniteProductsMap}
+              totalProducts={totalInfiniteProducts}
+              isLoading={isLoadingInfinite}
+              onPageChange={fetchNextPageInfinite}
+              onEdit={(product) => handleEdit(product)}
+              onDelete={(productId) => handleDelete(productId)}
+              onDownload={(product) => console.log('Download:', product)}
+              itemsPerPage={itemsPerPage}
+              rowHeight={56}
+              containerHeight={600}
+            />
+            {/* Footer - Total Product Count */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-blue-50 to-blue-100 border-t-2 border-blue-300 px-4 py-2 flex items-center justify-end shadow-md gap-4">
+              <div className="text-xs">
+                <span className="font-semibold text-blue-900">Total Products:</span> <span className="font-bold text-blue-600">{totalInfiniteProducts.toLocaleString()}</span>
+              </div>
+              <div className="text-xs text-blue-500">
+                {isLoadingInfinite && <span className="font-semibold">Loading...</span>}
               </div>
             </div>
           </div>
         )}
+
+        {/* ✅ FOOTER - Total Product Count Info */}
+        {/* Displays at the bottom of the product table */}
       </div>
 
       {/* Modal */}

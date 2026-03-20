@@ -1,0 +1,148 @@
+import { useState, useCallback, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
+
+/**
+ * useInfiniteScroll - Manages pagination state for infinite scroll + virtual scrolling
+ * 
+ * Handles:
+ * ✅ Accumulating products from multiple pages
+ * ✅ Preventing duplicate fetches
+ * ✅ Tracking loading state
+ * ✅ Sparse map storage (object, not array)
+ * 
+ * @param {Function} fetchFunction - API function: (page, limit) => Promise<{products, total, hasMore}>
+ * @param {number} itemsPerPage - Items to fetch per page (default: 50)
+ * @returns {Object} { productsMap, currentPage, isLoading, totalProducts, hasMore, fetchNextPage }
+ */
+export const useInfiniteScroll = (fetchFunction, itemsPerPage = 50) => {
+  // State - use sparse map object instead of array
+  const [productsMap, setProductsMap] = useState({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+
+  // Refs for preventing duplicate fetches
+  const loadedPagesRef = useRef(new Set());
+  const fetchingPagesRef = useRef(new Set());
+  const initialFetchDoneRef = useRef(false); // Prevent double-init in Strict Mode
+
+  /**
+   * Fetch a specific page and store in sparse map
+   */
+  const fetchPage = useCallback(async (pageNum) => {
+    // Prevent duplicate fetches of same page
+    if (loadedPagesRef.current.has(pageNum)) {
+      console.log(`📦 Page ${pageNum} already cached, skipping fetch`);
+      return;
+    }
+
+    if (fetchingPagesRef.current.has(pageNum)) {
+      console.warn(`⚠️  Page ${pageNum} already fetching, skipping duplicate`);
+      return;
+    }
+
+    // Mark page as being fetched
+    fetchingPagesRef.current.add(pageNum);
+    setIsLoading(true);
+
+    try {
+      console.log(`🔄 Fetching page ${pageNum} (${itemsPerPage} items)...`);
+      
+      const result = await fetchFunction(pageNum, itemsPerPage);
+      
+      if (!result || !Array.isArray(result.products)) {
+        console.error('Invalid response format:', result);
+        toast.error('Failed to fetch products');
+        return;
+      }
+
+      // ✅ SPARSE MAP: Store items at correct indices as object keys
+      if (result.products.length > 0) {
+        const skip = (pageNum - 1) * itemsPerPage;
+        
+        setProductsMap((prev) => {
+          const updated = { ...prev };
+          result.products.forEach((item, index) => {
+            updated[skip + index] = item;
+          });
+          return updated;
+        });
+        loadedPagesRef.current.add(pageNum);
+        
+        console.log(`✅ Page ${pageNum}: +${result.products.length} items at [${skip}-${skip + result.products.length - 1}]`);
+      }
+
+      // Update totals
+      setTotalProducts(result.total || 0);
+      setHasMore(result.hasMore !== false);
+    } catch (err) {
+      console.error(`❌ Error fetching page ${pageNum}:`, err.message);
+      if (err.response?.status !== 304) {
+        toast.error(`Failed to load products: ${err.message}`);
+      }
+    } finally {
+      // Remove from fetching set and update loading state
+      fetchingPagesRef.current.delete(pageNum);
+      
+      // Only set isLoading to false if NO pages are fetching
+      if (fetchingPagesRef.current.size === 0) {
+        setIsLoading(false);
+      }
+    }
+  }, [fetchFunction, itemsPerPage]);
+
+  /**
+   * Load initial pages on mount
+   */
+  useEffect(() => {
+    // Ensure we only do initial fetch once, even in React Strict Mode (which double-invokes effects)
+    if (initialFetchDoneRef.current) return;
+    initialFetchDoneRef.current = true;
+
+    // Fetch first 5 pages on mount to give users a usable starting point
+    if (Object.keys(productsMap).length === 0) {
+      console.log(`🚀 Initial load: Fetching pages 1-5 (250 items)...`);
+      for (let page = 1; page <= 5; page++) {
+        fetchPage(page);
+      }
+    }
+  }, []); // Run only once on mount
+
+  /**
+   * User called onPageChange from VirtualizedProductTable
+   */
+  const fetchNextPage = useCallback((newPage) => {
+    if (newPage !== currentPage) {
+      setCurrentPage(newPage);
+      fetchPage(newPage);
+    }
+  }, [currentPage, fetchPage]);
+
+  return {
+    productsMap,
+    currentPage,
+    isLoading,
+    totalProducts,
+    hasMore,
+    fetchNextPage,
+    // Advanced: allow manual page fetch
+    fetchPage: (page) => {
+      setCurrentPage(page);
+      fetchPage(page);
+    },
+    // Advanced: reset all state
+    reset: () => {
+      setProductsMap({});
+      setCurrentPage(1);
+      setIsLoading(false);
+      setTotalProducts(0);
+      setHasMore(true);
+      loadedPagesRef.current = new Set();
+      fetchingPagesRef.current = new Set();
+      initialFetchDoneRef.current = false; // Reset so next mount will fetch again
+    },
+  };
+};
+
+export default useInfiniteScroll;

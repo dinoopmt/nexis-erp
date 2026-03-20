@@ -29,53 +29,70 @@ export const useProductAPI = () => {
   // ========================================
 
   /**
-   * Fetch all products with optional grouping filter (with request deduplication)
+   * Fetch products with pagination (server-side) for better performance with large datasets
+   * @param {number} page - Page number (1-indexed, default: 1)
+   * @param {number} limit - Items per page (default: 100)
    * @param {string} selectedGroupingFilter - Optional grouping ID to filter by
-   * @returns {Promise<Array>} Array of products
+   * @returns {Promise<Object>} { products, total, page, limit, hasMore }
    */
-  const fetchProducts = useCallback(async (selectedGroupingFilter = "") => {
+  const fetchProducts = useCallback(async (page = 1, limit = 100, selectedGroupingFilter = "") => {
     try {
-      const cacheKey = selectedGroupingFilter
-        ? `${REQUEST_CACHE_KEY.PRODUCTS}:${selectedGroupingFilter}`
-        : REQUEST_CACHE_KEY.PRODUCTS;
+      const skip = (page - 1) * limit;
+      const cacheKey = `${REQUEST_CACHE_KEY.PRODUCTS}:p${page}:l${limit}:${selectedGroupingFilter}`;
 
-      // Check cache first
+      // Check cache first (cache individual pages)
       const cached = requestCache.get(cacheKey);
       if (cached) {
-        // ...removed debug log...
         return cached;
       }
 
       // Check if request is already pending
       const pending = requestCache.getPending(cacheKey);
       if (pending) {
-        // ...removed debug log...
         return pending;
       }
 
-      // ...removed debug log...
-      let url = `${API_URL}/products/getproducts?limit=50000`;  // ✅ Fetch up to 50k products at once
+      let url = `${API_URL}/products/getproducts?limit=${limit}&skip=${skip}`;
       if (selectedGroupingFilter) {
         url += `&groupingId=${selectedGroupingFilter}`;
       }
 
       const promise = axios.get(url).then((response) => {
-        const fetchedProducts = response.data.products || response.data;
+        const data = response.data;
+        const fetchedProducts = data.products || data;
+        const total = data.total || (Array.isArray(fetchedProducts) ? fetchedProducts.length : 0);
+        
+        // hasMore: Check if we got a full page (means there's likely more)
+        // If we got less than limit items, we've reached the end
+        const hasMore = fetchedProducts.length === limit;
+        
+        const result = {
+          products: Array.isArray(fetchedProducts) ? fetchedProducts : [],
+          total,
+          page,
+          limit,
+          hasMore,
+        };
 
-        // ...removed debug log...
-        // ...existing code...
-        return fetchedProducts;
+        console.log(`✅ fetchProducts API Response:
+          - page: ${page}, limit: ${limit}
+          - returned: ${fetchedProducts.length} items
+          - total: ${total}
+          - hasMore: ${hasMore}
+          - URL: ${url}`);
+        
+        requestCache.set(cacheKey, result);
+        return result;
       });
 
       return requestCache.setPending(cacheKey, promise);
     } catch (err) {
-      // ...removed error log...
+      console.error("❌ Error fetching products:", err.message);
       toast.error("Failed to fetch products. Please try again.", {
         duration: 5000,
         position: "top-center",
       });
-      // ...removed error log...
-      return [];
+      return { products: [], total: 0, page: 1, limit: 100, hasMore: false };
     }
   }, []);
 

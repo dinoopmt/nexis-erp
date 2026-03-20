@@ -5,6 +5,42 @@ import { getCachedResults, setCachedResults, onCacheUpdate, clearQueryCache, cle
 import { checkSearchRateLimit } from '../utils/rateLimiter';
 
 /**
+ * Helper: Attempt to re-index Meilisearch if empty results detected
+ * Uses localStorage to avoid re-indexing too frequently
+ * Only triggers if last attempt was > 5 minutes ago
+ */
+const attemptMeilisearchReindex = async () => {
+  const now = Date.now();
+  const lastReindexTime = localStorage.getItem('meilisearch_last_reindex_attempt');
+  const REINDEX_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+
+  // Check cooldown
+  if (lastReindexTime && now - parseInt(lastReindexTime) < REINDEX_COOLDOWN) {
+    const timeLeft = Math.ceil((REINDEX_COOLDOWN - (now - parseInt(lastReindexTime))) / 1000);
+    console.log(`⏳ Re-index already attempted recently. Try again in ${timeLeft}s`);
+    return false;
+  }
+
+  try {
+    // Record this attempt
+    localStorage.setItem('meilisearch_last_reindex_attempt', now.toString());
+
+    console.log('🔄 Triggering Meilisearch re-indexing...');
+    const reindexUrl = `${API_URL}/products/bulk-sync-meilisearch`;
+
+    const response = await axios.post(reindexUrl, {}, {
+      timeout: 30000, // 30 second timeout for re-indexing
+    });
+
+    console.log('✅ Re-indexing triggered successfully:', response.data);
+    return true;
+  } catch (err) {
+    console.error('❌ Failed to trigger re-indexing:', err.message);
+    return false;
+  }
+};
+
+/**
  * Helper: Parse stringified packingUnits from Meilisearch results
  * Meilisearch stores packingUnits as JSON string, so we need to parse it back
  */
@@ -120,7 +156,7 @@ export const useProductSearch = (
 
       // Try Meilisearch first
       try {
-        const searchUrl = `${API_URL}/api/v1/products/search`;
+        const searchUrl = `${API_URL}/products/search`;
         const searchParams = {
           q: query.trim(),
           page: page,
@@ -164,8 +200,8 @@ export const useProductSearch = (
           throw new Error('Empty search results - using fallback');
         }
       } catch (meilisearchErr) {
-        // ✅ FIX: Don't show errors for AbortError - it's expected when user types quickly
-        if (meilisearchErr.name === 'AbortError') {
+        // ✅ FIX: Don't show errors for AbortError/canceled - it's expected when user types quickly
+        if (meilisearchErr.name === 'AbortError' || meilisearchErr.message === 'canceled') {
           console.debug('⚠️ Meilisearch search cancelled (new search initiated)');
           setLoading(false);
           return;
@@ -182,7 +218,7 @@ export const useProductSearch = (
         usedFallback = true;
 
         // Fallback to getproducts endpoint
-        const fallbackUrl = `${API_URL}/api/v1/products/getproducts`;
+        const fallbackUrl = `${API_URL}/products/getproducts`;
         const fallbackParams = {
           search: query.trim(),
           page: page,
@@ -250,8 +286,8 @@ export const useProductSearch = (
         setLoading(false);
       }
     } catch (err) {
-      // ✅ FIX: Don't show errors for AbortError - it's expected when user types quickly
-      if (err.name === 'AbortError') {
+      // ✅ FIX: Don't show errors for AbortError/canceled - it's expected when user types quickly
+      if (err.name === 'AbortError' || err.message === 'canceled') {
         console.debug('⚠️ Previous search cancelled (new search initiated)');
         setLoading(false);
         return;
@@ -334,6 +370,52 @@ export const useProductSearch = (
 
     return unsubscribe;
   }, [searchQuery]);
+
+  /**
+   * ✅ NEW: On app startup, check if Meilisearch is indexed
+   * If empty, automatically trigger re-indexing
+   */
+  useEffect(() => {
+    const checkAndReindexOnStartup = async () => {
+      try {
+        // Only check once per app session
+        const hasCheckedReindex = sessionStorage.getItem('meilisearch_startup_check_done');
+        if (hasCheckedReindex) {
+          return;
+        }
+
+        console.log('🚀 App startup: Checking Meilisearch index status...');
+        
+        // Mark that we've checked
+        sessionStorage.setItem('meilisearch_startup_check_done', 'true');
+
+        // Do a simple test search to see if Meilisearch has any data
+        try {
+          const testUrl = `${API_URL}/products/search`;
+          const testResponse = await axios.get(testUrl, {
+            params: { q: 'test', page: 1, limit: 1 },
+            timeout: 5000,
+          });
+
+          // Check if Meilisearch returned ANY results or has an index
+          const hasMeilisearchData = testResponse.data.totalCount > 0 || testResponse.data.totalCount !== undefined;
+          
+          if (!hasMeilisearchData) {
+            console.log('⚠️ Meilisearch appears empty. Attempting auto-reindex...');
+            await attemptMeilisearchReindex();
+          } else {
+            console.log('✅ Meilisearch is properly indexed');
+          }
+        } catch (testErr) {
+          console.log('📡 Meilisearch test failed, will attempt re-index on first search');
+        }
+      } catch (err) {
+        console.error('Error checking Meilisearch status:', err.message);
+      }
+    };
+
+    checkAndReindexOnStartup();
+  }, []); // Runs once on mount
 
   /**
    * Clear search results and error
