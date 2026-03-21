@@ -236,11 +236,15 @@ const seedProductPackings = async () => {
     console.log('\n✓ Product packing seeding completed successfully!');
   } catch (error) {
     console.error('✗ Error seeding product packings:', error.message);
-    process.exit(1);
+    throw error;
   } finally {
     await mongoose.connection.close();
-    process.exit(0);
   }
 };
 
-seedProductPackings();
+export { seedProductPackings };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedProductPackings().then(() => process.exit(0)).catch(() => process.exit(1));
+}

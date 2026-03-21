@@ -51,9 +51,14 @@ const seedSequences = async () => {
     
     process.exit(0);
   } catch (error) {
-    console.error("❌ Error seeding sequences:", error.message);
-    process.exit(1);
+    console.error('Error seeding sequences', error);
+    throw error;
   }
 };
 
-seedSequences();
+export { seedSequences };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedSequences().then(() => process.exit(0)).catch(() => process.exit(1));
+}

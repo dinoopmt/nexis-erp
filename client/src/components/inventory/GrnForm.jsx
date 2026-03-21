@@ -17,7 +17,7 @@ import useDecimalFormat from "../../hooks/useDecimalFormat";
 import { ProductFormContext } from "../../context/ProductFormContext";
 
 // Utilities
-import { calculateGrnTotals, calculateItemCost } from "../../utils/grnCalculations";
+import { calculateGrnTotals, calculateItemCost, calculateFocOnPost } from "../../utils/grnCalculations";
 
 // Sub-Components
 import GrnListTable from "./grn/GrnListTable";
@@ -52,6 +52,7 @@ const GrnForm = () => {
   const [showBatchExpiryModal, setShowBatchExpiryModal] = useState(false);
   const [selectedBatchItem, setSelectedBatchItem] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0); // ✅ Force grid refresh when products update
+  const [highlightedItemId, setHighlightedItemId] = useState(null); // ✅ Track newly added item for highlight
 
   // Search State
   const [grnSearch, setGrnSearch] = useState("");
@@ -149,16 +150,77 @@ const GrnForm = () => {
   }, [itemSearch, clearCache]);
 
   // Item Management
-  const { addItemToGrn, updateItem, removeItemFromGrn } =
+  const { addItemToGrn: addItemToGrnBase, updateItem, removeItemFromGrn } =
     useGrnItemManagement(formData, setFormData, unitTypesMap);
 
+  // ✅ Track timeout ID for clearing highlight
+  const highlightTimeoutRef = useRef(null);
+  const prevItemsRef = useRef([]);
+
+  // ✅ Wrapper to highlight newly added items
+  const addItemToGrn = useCallback((product, selectedUnit = null) => {
+    // Just add the item - highlighting will be handled by useEffect below
+    addItemToGrnBase(product, selectedUnit);
+  }, [addItemToGrnBase]);
+
+  // ✅ Detect which item was added/updated and highlight it
+  // Works for both new items AND duplicate items (qty increase anywhere in list)
+  useEffect(() => {
+    const currentItems = formData.items || [];
+    const prevItems = prevItemsRef.current || [];
+    
+    let highlightId = null;
+    
+    // Case 1: New item added - find item that doesn't exist in previous list
+    if (currentItems.length > prevItems.length) {
+      // New item is at the end
+      const newItem = currentItems[currentItems.length - 1];
+      highlightId = newItem?.id;
+    }
+    
+    // Case 2: Same count but qty changed - find which item's qty increased
+    else if (currentItems.length === prevItems.length && currentItems.length > 0) {
+      for (let i = 0; i < currentItems.length; i++) {
+        const currentItem = currentItems[i];
+        const prevItem = prevItems[i];
+        
+        // Check if this item's qty increased
+        if (prevItem && currentItem?.id === prevItem.id && currentItem?.qty > prevItem.qty) {
+          highlightId = currentItem.id;
+          break;
+        }
+      }
+    }
+    
+    if (highlightId) {
+      setHighlightedItemId(highlightId);
+    }
+    
+    // Update previous items reference for next comparison
+    prevItemsRef.current = currentItems.map(item => ({
+      id: item.id,
+      qty: item.qty
+    }));
+  }, [formData.items]);
+
+  // ✅ Debug: Track when highlight changes
+  useEffect(() => {
+    if (highlightedItemId) {
+      console.log("� Highlight is ACTIVE:", highlightedItemId);
+    } else {
+      console.log("📍 Highlight is INACTIVE (no item highlighted)");
+    }
+  }, [highlightedItemId]);
+
   // ✅ When header tax type changes, recalculate all items with new tax type
+  // Skip FOC calculation during entry (will be recalculated at posting)
   useEffect(() => {
     if (formData.items && formData.items.length > 0) {
       setFormData((prev) => {
         const updatedItems = prev.items.map((item) => {
           const updatedItem = { ...item, taxType: prev.taxType };
-          calculateItemCost(updatedItem);
+          // ✅ Skip FOC calculation during entry
+          calculateItemCost(updatedItem, true);
           return updatedItem;
         });
 
@@ -296,7 +358,7 @@ const GrnForm = () => {
   const handleEditProduct = useCallback(async (productId) => {
     try {
       // Fetch product details
-      const response = await axios.get(`${API_URL}/api/v1/products/getproduct/${productId}`);
+      const response = await axios.get(`${API_URL}/products/getproduct/${productId}`);
       const product = response.data;
       
       if (!openProductForm) {
@@ -388,8 +450,20 @@ const GrnForm = () => {
         return;
       }
 
+      // ✅ NEW: Apply FOC calculations before posting
+      const itemsWithFocCalculated = formData.items.map(item => {
+        const processedItem = { ...item };
+        calculateFocOnPost(processedItem);
+        return processedItem;
+      });
+
+      console.log("🎯 FOC calculations applied during posting:", {
+        itemCount: itemsWithFocCalculated.length,
+        focItems: itemsWithFocCalculated.filter(i => i.foc || i.focQty > 0).length,
+      });
+
       // ✅ Transform items to match backend schema with validation
-      const transformedItems = formData.items.map((item, index) => {
+      const transformedItems = itemsWithFocCalculated.map((item, index) => {
         try {
           // ✅ Handle both frontend and backend field names (for edit mode)
           const productId = item.productId;
@@ -501,7 +575,14 @@ const GrnForm = () => {
           unitCost: unitCost,
           itemDiscount: discount,
           itemDiscountPercent: discountPercent,
+          
+          // ✅ Include calculated amounts for backend
           netCost: Math.max(0, parseFloat((quantity * unitCost - discount) || 0)),
+          focCost: item.focCost || (Math.max(0, parseFloat(item.focQty || 0)) * unitCost),  // ✅ NEW: Include FOC cost
+          paidAmount: item.focCost 
+            ? Math.max(0, parseFloat((quantity * unitCost - discount) || 0) - (item.focCost || 0))
+            : Math.max(0, parseFloat((quantity * unitCost - discount) || 0)),  // ✅ NEW: Amount actually paid after FOC
+          
           taxType: item.taxType || formData.taxType || "exclusive",
           taxPercent: taxPercent,
           taxAmount: taxAmount,
@@ -652,7 +733,7 @@ const GrnForm = () => {
 
       const response = await axios({
         method: editingId ? "PUT" : "POST",
-        url: `${API_URL}/api/v1/grn${editingId ? `/${editingId}` : ""}`,
+        url: `${API_URL}/grn${editingId ? `/${editingId}` : ""}`,
         data: submitData,
         headers: { "Content-Type": "application/json" },
       });
@@ -786,6 +867,47 @@ const GrnForm = () => {
             )}
           onEdit={(grn) => {
             // ✅ Map backend GRN data to frontend form format
+            const mappedItems = (grn.items || []).map(item => ({
+              id: item._id || Math.random().toString(36),  // ✅ NEW: Ensure item has ID for tracking
+              productId: item.productId,
+              productName: item.itemName,  // Backend: itemName → Frontend: productName
+              itemCode: item.itemCode,
+              qty: item.quantity,  // Backend: quantity → Frontend: qty
+              cost: item.unitCost,  // Backend: unitCost → Frontend: cost
+              
+              // ✅ NEW: Map all calculated fields from backend
+              netCost: item.netCost || (item.quantity * item.unitCost - (item.itemDiscount || 0)),
+              netCostWithoutTax: item.netCostWithoutTax || 0,
+              finalCost: item.totalCost || 0,
+              
+              // ✅ FOC Fields
+              unitType: item.unitType || "PC",
+              foc: item.foc || false,
+              focQty: item.focQty || 0,
+              discount: item.itemDiscount || 0,
+              discountPercent: item.itemDiscountPercent || 0,
+              
+              // Tax Fields
+              taxType: item.taxType || grn.taxType || "exclusive",
+              taxPercent: item.taxPercent || 0,
+              taxAmount: item.taxAmount || 0,
+              
+              // Batch/Expiry Fields
+              trackExpiry: item.trackExpiry || false,
+              batchNumber: item.batchNumber || "",
+              expiryDate: item.expiryDate || null,
+              notes: item.notes || "",
+            }));
+
+            // ✅ NEW: Recalculate all items using entry-phase flag
+            // This ensures UI values are correct (without FOC deduction in display)
+            const recalculatedItems = mappedItems.map(item => {
+              const itemToCalculate = { ...item };
+              // Use skipFocCalculation=true so UI displays entry-state values
+              calculateItemCost(itemToCalculate, true);
+              return itemToCalculate;
+            });
+            
             const mappedGrn = {
               grnNo: grn.grnNumber,  // Backend: grnNumber → Frontend: grnNo
               invoiceNo: grn.invoiceNo || "",
@@ -800,27 +922,7 @@ const GrnForm = () => {
               shippingCost: grn.shippingCost || 0,
               shipperId: grn.shipperId || "",
               shipperName: grn.shipperName || "",
-              // ✅ Map items from backend format to frontend format
-              items: (grn.items || []).map(item => ({
-                productId: item.productId,
-                productName: item.itemName,  // Backend: itemName → Frontend: productName
-                itemCode: item.itemCode,
-                qty: item.quantity,  // Backend: quantity → Frontend: qty
-                cost: item.unitCost,  // Backend: unitCost → Frontend: cost
-                finalCost: item.totalCost,
-                unitType: item.unitType || "PC",
-                foc: item.foc || false,
-                focQty: item.focQty || 0,
-                discount: item.itemDiscount || 0,
-                discountPercent: item.itemDiscountPercent || 0,
-                taxType: item.taxType || grn.taxType || "exclusive",
-                taxPercent: item.taxPercent || 0,
-                taxAmount: item.taxAmount || 0,
-                trackExpiry: item.trackExpiry || false,  // ✅ FIXED: Include trackExpiry flag
-                batchNumber: item.batchNumber || "",
-                expiryDate: item.expiryDate || null,
-                notes: item.notes || "",
-              })),
+              items: recalculatedItems,  // ✅ Use recalculated items
             };
             
             console.log("📝 Loading GRN for edit:", {
@@ -829,6 +931,7 @@ const GrnForm = () => {
               vendorName: mappedGrn.vendorName,
               itemCount: mappedGrn.items.length,
               firstItem: mappedGrn.items[0],
+              focItems: mappedGrn.items.filter(i => i.foc || i.focQty > 0).length,
             });
             
             setFormData(mappedGrn);
@@ -961,6 +1064,7 @@ const GrnForm = () => {
                 gridHeight={gridHeight}
                 gridContainerRef={gridContainerRef}
                 gridContext={{ onBatchExpiryClick: handleBatchExpiryClick }}
+                highlightedItemId={highlightedItemId}
                 onCellValueChanged={(event) => {
                   const { data, colDef } = event;
                   if (data && colDef.field) {

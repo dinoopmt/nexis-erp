@@ -88,11 +88,15 @@ async function seedPOS() {
     console.log('  POS-002 (Express Lane)');
     console.log('  POS-003 (Service Counter)');
 
-    process.exit(0);
   } catch (error) {
     console.error('❌ Seeding failed:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
-seedPOS();
+export { seedPOS };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedPOS().then(() => process.exit(0)).catch(() => process.exit(1));
+}

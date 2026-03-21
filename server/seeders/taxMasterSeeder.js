@@ -83,11 +83,15 @@ const seedTaxMaster = async () => {
       console.log(`  ✓ ${tax.countryCode}: ${tax.taxName} = ${componentsStr}`)
     })
 
-    process.exit(0)
   } catch (error) {
     console.error('Error seeding tax master:', error.message)
-    process.exit(1)
+    throw error;
   }
 }
 
-seedTaxMaster()
+export { seedTaxMaster };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedTaxMaster().then(() => process.exit(0)).catch(() => process.exit(1));
+}

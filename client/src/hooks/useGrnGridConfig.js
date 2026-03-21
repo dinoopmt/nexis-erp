@@ -27,11 +27,12 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
     };
     return [
       {
-        headerName: "#",
+        headerName: "S.No",
         flex: 0.8,
         minWidth: 70,
         cellStyle: { textAlign: "center" },
-        headerClass: "ag-center-aligned-header",
+        headerClass: "ag-center-aligned-header ",
+        headerStyle: { fontSize: '12px' }, // ✅ correct
         cellRenderer: function (params) {
           // ✅ Display index number with Edit button
           return React.createElement(
@@ -51,7 +52,7 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
               'span',
               {
                 style: {
-                  fontSize: '13px',
+                  fontSize: '12px',
                   color: '#374151',
                   minWidth: '16px',
                   textAlign: 'center',
@@ -78,6 +79,7 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
                   justifyContent: 'center',
                   opacity: 0.6,
                   transition: 'opacity 0.2s',
+                 
                 },
                 onMouseEnter: (e) => { e.target.style.opacity = '1'; },
                 onMouseLeave: (e) => { e.target.style.opacity = '0.6'; },
@@ -93,44 +95,46 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         field: "productName",
         flex: 2,
         minWidth: 300,
-      },
-      {
-        headerName: "Item Code",
-        field: "itemCode",
-        flex: 0.8,
-        minWidth: 80,
+        cellStyle: { fontSize: '12px' },
+        headerStyle: { fontSize: '12px' }, // ✅ correct
       },
       {
         headerName: "Unit",
         field: "unitType",
         flex: 0.6,
-        minWidth: 50,
+        minWidth: 55,
+        cellStyle: { fontSize: '12px' },
+        headerStyle: { fontSize: '12px' }, // ✅ correct
       },
       {
         headerName: "Qty",
         field: "qty",
         flex: 0.7,
-        minWidth: 55,
-        cellStyle: { textAlign: "right" },
-        headerClass: "ag-right-aligned-header",
+        minWidth: 40,
+        cellStyle: { textAlign: "right", fontSize: '13px',fontWeight: 'bold' },
+        headerClass: "ag-right-aligned-header" ,
+        headerStyle: { fontSize: '13px' }, // ✅ correct
         editable: true,
       },
       {
         headerName: "FOC",
         field: "foc",
         flex: 0.4,
-        minWidth: 50,
+        minWidth: 55,
         editable: true,
-        cellStyle: { textAlign: "center" },
+        cellStyle: { textAlign: "center", fontSize: '12px' },
         headerClass: "ag-center-aligned-header",
+        headerStyle: { fontSize: '11px' }, // ✅ correct
+
       },
       {
         headerName: "F-Qty",
         field: "focQty",
         flex: 0.5,
-        minWidth: 50,
-        cellStyle: { textAlign: "right" },
+        minWidth: 70,
+        cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '12px' },
         // ✅ Allow editing only when FOC checkbox is enabled
         editable: (params) => params.data?.foc === true,
       },
@@ -138,9 +142,10 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         headerName: taxType === 'exclusive' ? 'Cost (Ex.Tax)' : taxType === 'inclusive' ? 'Cost (Incl.Tax)' : 'Cost (No Tax)',
         field: "cost",
         flex: 0.8,
-        minWidth: 80,
-        cellStyle: { textAlign: "right" },
+        minWidth: 100,
+        cellStyle: { textAlign: "right", fontSize: '12px',fontWeight: 'bold' },
         headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px' },
         editable: true,
         valueFormatter: (params) => formatNumber(params.value || 0),  // ✅ Uses global formatter
       },
@@ -149,37 +154,41 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         field: "discount",
         flex: 0.8,
         minWidth: 65,
-        cellStyle: { textAlign: "right" },
+        cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
+          headerStyle: { fontSize: '12px' },
         editable: true,
         valueFormatter: (params) => formatNumber(params.value || 0),  // ✅ Uses global formatter
       },
       {
-        headerName: "Net",
+        headerName: "Net Amt",
         field: "netCost",
         flex: 0.8,
         minWidth: 65,
-        cellStyle: { textAlign: "right" },
+        cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '12px' },
         valueFormatter: (params) => formatNumber(params.value || 0),  // ✅ Uses global formatter
       },
       {
-        headerName: "Tax%",
+        headerName: "Tax %",
         field: "taxPercent",
         flex: 0.7,
         minWidth: 55,
-        cellStyle: { textAlign: "right" },
+        cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '12px' },
         editable: true,
         valueFormatter: (params) => formatPercentage(params.value || 0),  // ✅ Uses global formatter
       },
       {
-        headerName: "TaxAmt",
+        headerName: "Tax Amt",
         field: "taxAmount",
         flex: 0.8,
         minWidth: 65,
-        cellStyle: { textAlign: "right" },
+        cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '12px' },
         valueFormatter: (params) => formatNumber(params.value || 0),  // ✅ Uses global formatter
       },
       {
@@ -187,12 +196,14 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         field: "finalCost",
         flex: 0.8,
         minWidth: 65,
-        cellStyle: { textAlign: "right" },
+        cellStyle: { textAlign: "right", fontSize: '13px', fontWeight: 'bold' },
         headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '14px', fontWeight: 'bold' },
         valueFormatter: (params) => formatNumber(params.value || 0),  // ✅ Uses global formatter
       },
       {
         headerName: "Action",
+        headerStyle: { fontSize: '12px' },
         field: "id",
         flex: 0.6,
         minWidth: 80,
@@ -298,6 +309,12 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
       stopEditingWhenCellsLoseFocus: true,
     };
   }, []);
+
+  // ✅ Create rowClassRules getter function (called dynamically on every row)
+  const getRowClass = (params) => {
+    // This is now handled in GrnItemsTable component
+    return '';
+  };
 
   return {
     columns,

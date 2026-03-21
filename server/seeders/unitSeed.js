@@ -261,7 +261,7 @@ const seedUnits = async () => {
 
       if (response !== 'yes' && response !== 'y') {
         console.log('✗ Seeding cancelled');
-        process.exit(0);
+        return;
       }
 
       await UnitType.deleteMany({});
@@ -296,12 +296,16 @@ const seedUnits = async () => {
     console.log('\n✓ Unit seeding completed successfully!');
   } catch (error) {
     console.error('✗ Error seeding units:', error.message);
-    process.exit(1);
+    throw error;
   } finally {
     // Close database connection
     await mongoose.connection.close();
-    process.exit(0);
   }
 };
 
-seedUnits();
+export { seedUnits };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedUnits().then(() => process.exit(0)).catch(() => process.exit(1));
+}

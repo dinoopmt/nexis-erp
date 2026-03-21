@@ -21,7 +21,7 @@ const seedChartOfAccounts = async () => {
     if (existingGroups > 0 || existingAccounts > 0) {
       console.log("Chart of Accounts data already exists. Skipping seeding.");
       console.log("To reseed, delete existing data first.");
-      process.exit(0);
+      return;
     }
 
     console.log("🏢 Creating Corporate-Level 3-Tier Chart of Accounts...\n");
@@ -1488,13 +1488,16 @@ const seedChartOfAccounts = async () => {
     console.log("   📈 INCOME      - Sub Groups: 4  | Ledger Accounts: " + ledgerAccounts.filter(a => a.accountNumber.startsWith("4")).length);
     console.log("   📉 EXPENSES    - Sub Groups: 9  | Ledger Accounts: " + ledgerAccounts.filter(a => a.accountNumber.startsWith("5")).length);
     console.log("\n");
-    
-    process.exit(0);
 
   } catch (error) {
     console.error("❌ Error seeding chart of accounts:", error);
-    process.exit(1);
+    throw error;
   }
 };
 
-seedChartOfAccounts();
+export { seedChartOfAccounts };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedChartOfAccounts().then(() => process.exit(0)).catch(() => process.exit(1));
+}

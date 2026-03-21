@@ -13,7 +13,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
    */
   const fetchVendors = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/v1/vendors/getvendors`);
+      const response = await axios.get(`${API_URL}/vendors/getvendors`);
       console.log("🔍 Vendors API Response:", response.data);
       
       // Handle API response structure: { vendors: [...], total, page, pages }
@@ -34,7 +34,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
    */
   const fetchGrns = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/v1/grn`);
+      const response = await axios.get(`${API_URL}/grn`);
       setGrnList(
         Array.isArray(response.data) ? response.data : response.data?.data || [],
       );
@@ -51,7 +51,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
       try {
         const response = await axios({
           method: editingId ? "PUT" : "POST",
-          url: `${API_URL}/api/v1/grn`,
+          url: `${API_URL}/grn`,
           data: editingId ? { ...submitData, _id: editingId } : submitData,
           headers: { "Content-Type": "application/json" },
         });
@@ -78,7 +78,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
   const deleteGrn = useCallback(
     async (id) => {
       try {
-        const response = await axios.delete(`${API_URL}/api/v1/grn/${id}`);
+        const response = await axios.delete(`${API_URL}/grn/${id}`);
 
         if (response.status === 200) {
           setGrnList((prev) => prev.filter((g) => g._id !== id));

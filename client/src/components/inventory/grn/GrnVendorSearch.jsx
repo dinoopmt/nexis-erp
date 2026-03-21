@@ -64,13 +64,14 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, onVend
   };
 
   if (!vendors || vendors.length === 0) {
-    console.warn("⚠️ GrnVendorSearch: No vendors provided", { vendors });
+    // ✅ Loading state - vendors not yet fetched (normal during initial load)
+    console.debug("🔄 GrnVendorSearch: Vendors loading...");
     return (
       <div className="relative w-full" ref={containerRef}>
-        <div className="relative flex items-center px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50">
+        <div className="relative flex items-center px-3 py-2 border border-blue-200 rounded text-sm bg-blue-50">
           <input
             type="text"
-            placeholder="No vendors available"
+            placeholder="Loading vendors..."
             disabled
             className="flex-1 outline-none text-sm bg-transparent text-gray-400"
           />

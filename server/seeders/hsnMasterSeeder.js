@@ -479,13 +479,15 @@ async function seedHSNMaster() {
     const electrical = await HSNMaster.findByCategory('Electrical');
     console.log(`   Electrical category: ${electrical.length} codes`);
     
-    process.exit(0);
-    
   } catch (error) {
     console.error('❌ Error seeding HSN Master:', error.message);
-    process.exit(1);
+    throw error;
   }
 }
 
-// Run seeder
-seedHSNMaster();
+export { seedHSNMaster };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedHSNMaster().then(() => process.exit(0)).catch(() => process.exit(1));
+}

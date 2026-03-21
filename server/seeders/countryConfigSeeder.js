@@ -239,8 +239,13 @@ const seedCountries = async () => {
     process.exit(0)
   } catch (error) {
     console.error('Error seeding countries:', error.message)
-    process.exit(1)
+    throw error;
   }
 }
 
-seedCountries()
+export { seedCountries };
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  seedCountries().then(() => process.exit(0)).catch(() => process.exit(1));
+}

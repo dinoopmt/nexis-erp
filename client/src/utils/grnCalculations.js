@@ -25,12 +25,16 @@ export const calculateItemTotals = (item) => {
 /**
  * Calculate complete item cost with tax and discount
  * ✅ UPDATED: Now handles FOC (Free on Cost) items correctly
+ * 
+ * @param {Object} item - Item to calculate
+ * @param {boolean} skipFocCalculation - If true, skip FOC deduction during entry (default: false)
+ *                                       FOC will be calculated only during posting
  */
-export const calculateItemCost = (item) => {
+export const calculateItemCost = (item, skipFocCalculation = false) => {
   const qty = parseFloat(item.qty) || 0;
   const cost = parseFloat(item.cost) || 0;
   const discount = parseFloat(item.discount) || 0;
-  const focQty = parseFloat(item.focQty) || 0;  // ✅ NEW: FOC quantity
+  const focQty = parseFloat(item.focQty) || 0;  // FOC quantity
   const taxPercent = parseFloat(item.taxPercent) || 0;
 
   let netCost = qty * cost;
@@ -41,11 +45,23 @@ export const calculateItemCost = (item) => {
   }
   netCost = netCost - discount;
 
-  // ✅ NEW: Reduce by FOC items (free items don't cost anything)
-  const focCost = focQty * cost;  // Cost of free items
-  const paidCost = netCost - focCost;  // What actually has to be paid
+  // ✅ KEY CHANGE: During entry (skipFocCalculation=true), don't deduct FOC
+  // Only deduct FOC during posting (skipFocCalculation=false)
+  let focCost = 0;
+  let paidCost = netCost;
 
-  // Calculate tax on PAID amount (not FOC)
+  if (!skipFocCalculation && (item.foc || focQty > 0)) {
+    // Calculate FOC amounts (during posting)
+    focCost = focQty * cost;  // Cost of free items
+    paidCost = netCost - focCost;  // What actually has to be paid
+  } else if (skipFocCalculation) {
+    // During entry: Store raw netCost as is, don't apply FOC reduction
+    // This keeps UI values unchanged until posting
+    focCost = focQty * cost;  // Still calculate focCost for reference
+    paidCost = netCost;  // Don't deduct FOC during entry
+  }
+
+  // Calculate tax on PAID amount
   if (item.taxType === "exclusive") {
     item.taxAmount = (paidCost * taxPercent) / 100;
     item.finalCost = paidCost + item.taxAmount;
@@ -60,9 +76,26 @@ export const calculateItemCost = (item) => {
     item.netCostWithoutTax = paidCost;
   }
 
-  // ✅ CRITICAL: Store PAID cost (excluding FOC), not total
-  item.netCost = paidCost;  // Changed from netCost
+  // Store costs appropriately
+  item.netCost = paidCost;  // Amount that will be charged (after FOC deduction if applicable)
   item.focCost = focCost;   // Track FOC cost separately (for display)
+};
+
+/**
+ * ✅ NEW: Calculate FOC amounts during GRN posting
+ * This function applies FOC calculations to transform items from entry state to post state
+ * 
+ * @param {Object} item - Item to process
+ * @returns {Object} Item with FOC calculations applied
+ */
+export const calculateFocOnPost = (item) => {
+  // Create a copy to avoid mutating original
+  const processedItem = { ...item };
+  
+  // Call calculateItemCost with skipFocCalculation=false to apply FOC deduction
+  calculateItemCost(processedItem, false);
+  
+  return processedItem;
 };
 
 /**
@@ -226,7 +259,8 @@ export const mapProductToGrnItem = (product, formDataTaxType, selectedUnit = nul
     expiryDate: null,
   };
 
-  calculateItemCost(newItem);
+  // ✅ Skip FOC calculation during entry (will be calculated at posting)
+  calculateItemCost(newItem, true);
   return newItem;
 };
 

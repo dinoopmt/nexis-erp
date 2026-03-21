@@ -51,7 +51,8 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
                 ...item,
                 qty: item.qty + newItem.qty,
               };
-              calculateItemCost(updatedItem);
+              // ✅ Skip FOC calculation during entry (will be calculated at posting)
+              calculateItemCost(updatedItem, true);
               return updatedItem;
             }
             return item;
@@ -79,6 +80,8 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
 
   /**
    * Update item and recalculate totals
+   * ✅ UPDATED: Skip FOC calculation during entry (skipFocCalculation=true)
+   *             FOC will be calculated only during posting
    */
   const updateItem = useCallback(
     (itemId, field, value) => {
@@ -86,7 +89,8 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
         const updatedItems = prev.items.map((item) => {
           if (item.id === itemId) {
             const updatedItem = { ...item, [field]: value };
-            calculateItemCost(updatedItem);
+            // ✅ Skip FOC calculation during entry - only calculate final amounts at posting time
+            calculateItemCost(updatedItem, true);
             return updatedItem;
           }
           return item;
