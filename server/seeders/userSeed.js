@@ -80,15 +80,21 @@ const userRegister = async () => {
         
     } catch (error) {
         console.error("❌ Error seeding user:", error.message);
-        process.exit(1);
-    } finally {
-        try {
-            await mongoose.connection.close();
-        } catch (e) {
-            // Connection already closed
-        }
-        process.exit(0);
+        throw error;
     }
 }
 
 export default userRegister;
+
+// Run as standalone script
+if (import.meta.url === `file://${process.argv[1]}`) {
+  userRegister()
+    .then(() => {
+      console.log("✓ User seeding complete");
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error("✗ User seeding failed:", err);
+      process.exit(1);
+    });
+}

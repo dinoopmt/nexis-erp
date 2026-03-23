@@ -3,7 +3,10 @@ import InventoryBatch from "../../../Models/InventoryBatch.js";
 import StockBatch from "../../../Models/StockBatch.js";
 import StockMovement from "../../../Models/StockMovement.js";
 import ActivityLog from "../../../Models/ActivityLog.js";
+import CurrentStock from "../../../Models/CurrentStock.js";
 import CostingService from "../../../services/CostingService.js";
+import UniversalStockRecalculationService from "./UniversalStockRecalculationService.js";
+import StockRecalculationHelper from "./StockRecalculationHelper.js";
 
 /**
  * GRNStockUpdateService
@@ -29,9 +32,19 @@ class GRNStockUpdateService {
     try {
       console.log("📦 Processing GRN stock updates:", {
         grnNumber: grnData.grnNumber,
+        grnId: grnData._id?.toString(),
         totalItems: grnData.items?.length,
+        itemsIsArray: Array.isArray(grnData.items),
         createdBy: userId
       });
+
+      if (!grnData.items || grnData.items.length === 0) {
+        console.warn("⚠️ NO ITEMS FOUND in GRN:", {
+          grnNumber: grnData.grnNumber,
+          itemsValue: grnData.items,
+          itemsLength: grnData.items?.length
+        });
+      }
 
       const results = {
         grnNumber: grnData.grnNumber,
@@ -40,6 +53,7 @@ class GRNStockUpdateService {
         createdBatches: [],
         costUpdates: [],
         variantUpdates: [],
+        currentStockUpdates: [],  // ✅ Initialize here
         logs: [],
         errors: []
       };
@@ -47,9 +61,16 @@ class GRNStockUpdateService {
       // Process each item in GRN
       for (const item of grnData.items || []) {
         try {
+          console.log(`🔄 Processing item:`, {
+            itemCode: item.itemCode,
+            productId: item.productId?.toString ? item.productId.toString() : item.productId,
+            quantity: item.quantity
+          });
+          
           // Get product
           const product = await AddProduct.findById(item.productId);
           if (!product) {
+            console.error(`❌ Product not found for item ${item.itemCode} with productId:`, item.productId);
             results.errors.push({
               itemCode: item.itemCode,
               error: "Product not found"
@@ -65,6 +86,16 @@ class GRNStockUpdateService {
           );
           results.processedItems.push(stockUpdate);
           results.updatedProducts.push(product._id.toString());
+
+          // 1b. ✅ NEW: Update CurrentStock collection for real-time tracking
+          console.log(`📊 About to call updateCurrentStock for ${product.itemcode}`);
+          const currentStockUpdate = await this.updateCurrentStock(product, item, grnData);
+          if (currentStockUpdate) {
+            console.log(`✅ Adding to currentStockUpdates:`, currentStockUpdate);
+            results.currentStockUpdates.push(currentStockUpdate);
+          } else {
+            console.warn(`⚠️ currentStockUpdate was null for ${product.itemcode}`);
+          }
 
           // 2. Create/update batch record
           const batchRecord = await this.createOrUpdateBatch(
@@ -133,9 +164,35 @@ class GRNStockUpdateService {
         batchesCreated: results.createdBatches.length,
         costUpdates: results.costUpdates.length,
         variantUpdates: results.variantUpdates.length,
+        currentStockUpdates: results.currentStockUpdates?.length || 0,
         errors: results.errors.length
       });
 
+      // ✅ PHASE 1.5: RECALCULATE AVAILABLE QUANTITY FOR ALL UPDATED PRODUCTS
+      // Required because updateCurrentStock uses $inc which bypasses pre-save hooks
+      console.log(`\n🔧 [PHASE 1.5] Recalculating availableQuantity for ${results.updatedProducts.length} products...`);
+      try {
+        const recalcResult = await StockRecalculationHelper.batchRecalculate(
+          results.updatedProducts,
+          `GRN_POST:${grnData.grnNumber}`
+        );
+        
+        if (recalcResult.corrected > 0) {
+          console.log(`   ✅ Corrected ${recalcResult.corrected} products`);
+          if (recalcResult.corrections.length > 0 && grnData.items.length <= 5) {
+            recalcResult.corrections.forEach(corr => {
+              console.log(`      Product ${corr.productId}: ${corr.before} → ${corr.after}`);
+            });
+          }
+        }
+      } catch (recalcErr) {
+        console.warn(`⚠️ Recalculation warning (non-blocking): ${recalcErr.message}`);
+        results.errors.push({
+          type: "RECALCULATION",
+          error: recalcErr.message
+        });
+      }
+      
       return results;
 
     } catch (error) {
@@ -228,6 +285,7 @@ class GRNStockUpdateService {
       if (isExpiryTracked) {
         // Create StockBatch for expiry-tracked products
         const batch = new StockBatch({
+          grnId: grnData._id,  // ✅ ADD: Link to GRN
           productId: product._id,
           batchNumber,
           manufacturingDate: new Date(), // Default to today if not provided
@@ -258,6 +316,7 @@ class GRNStockUpdateService {
       } else {
         // Create InventoryBatch for non-expiry-tracked products
         const batch = new InventoryBatch({
+          grnId: grnData._id,  // ✅ ADD: Link to GRN
           productId: product._id,
           batchNumber,
           purchasePrice: item.unitCost,
@@ -361,6 +420,9 @@ class GRNStockUpdateService {
       // ✅ NEW: Calculate effective unit cost (with discounts applied, per BASE unit)
       const effectiveUnitCost = this.calculateEffectiveUnitCost(item, grnData);
 
+      // ✅ CRITICAL: Calculate itemNetCost for use in all branches (needed for response)
+      const itemNetCost = item.netCost || ((item.quantity * conversionFactor) * item.unitCost - (item.itemDiscount || 0));
+
       let newCost;
 
       if (costingMethod === "FIFO") {
@@ -375,8 +437,7 @@ class GRNStockUpdateService {
         const currentStock = product.quantityInStock - actualQuantity; // Before this GRN
         const currentTotalValue = currentStock * oldCost;
 
-        // ✅ Calculate net cost for new items (with discounts)
-        const itemNetCost = item.netCost || ((item.quantity * conversionFactor) * item.unitCost - (item.itemDiscount || 0));
+        // ✅ Use the itemNetCost calculated above
         let newItemsValue = itemNetCost;
 
         // Apply proportional GRN header discount if exists
@@ -523,11 +584,18 @@ class GRNStockUpdateService {
       // Only create if batch exists (from inventory batch)
       if (!batchRecord) return;
 
+      // Get current stock for tracking
+      const CurrentStock = (await import("../../../Models/CurrentStock.js")).default;
+      const currentStockRecord = await CurrentStock.findOne({ productId: product._id });
+
       const movement = new StockMovement({
         productId: product._id,
         batchId: batchRecord.batchId,
         movementType: "INBOUND",
         quantity: item.quantity,
+        stockBefore: 0,  // Initial creation, no before value
+        newStock: item.quantity,
+        currentStock: currentStockRecord?.totalQuantity || item.quantity,
         unitCost: item.unitCost,
         totalAmount: item.quantity * item.unitCost,
         reference: grnData.grnNumber,
@@ -586,6 +654,73 @@ class GRNStockUpdateService {
     } catch (error) {
       console.error("❌ Error creating audit log:", error);
       // Non-critical, don't throw
+    }
+  }
+
+  /**
+   * Update CurrentStock collection for real-time stock tracking
+   * ✅ NEW: Atomically updates current_stock with GRN received quantity
+   * 
+   * @param {Object} product - Product document
+   * @param {Object} item - GRN line item with quantity and conversionFactor
+   * @param {Object} grnData - GRN data
+   * @returns {Promise<Object>} - Updated current stock document
+   */
+  static async updateCurrentStock(product, item, grnData) {
+    try {
+      const conversionFactor = item.conversionFactor || 1;
+      const quantityReceived = (item.quantity || 0) * conversionFactor;
+
+      console.log(`\n🔄 updateCurrentStock START:`, { productCode: product.itemcode, qty: quantityReceived, grn: grnData.grnNumber });
+
+      const updatedStock = await CurrentStock.findOneAndUpdate(
+        { productId: product._id },
+        {
+          $inc: {
+            totalQuantity: quantityReceived,
+            // ✅ FIX: DO NOT increment availableQuantity directly
+            // availableQuantity is calculated: totalQuantity - allocatedQuantity - damageQuality
+            // It will be recalculated after all stock updates
+            grnReceivedQuantity: quantityReceived
+          },
+          $set: {
+            lastGrnDate: grnData.grnDate || new Date(),
+            lastUpdatedBy: grnData.createdBy || "SYSTEM",
+            // ✅ Update lastActivity snapshot (for UI/dashboard)
+            lastActivity: {
+              timestamp: new Date(),
+              type: 'GRN',
+              referenceId: grnData._id,
+              reference: grnData.grnNumber,
+              description: `GRN ${grnData.grnNumber} - ${quantityReceived} units added`
+            }
+          }
+          // ✅ REMOVED: $push to updateHistory (unbounded growth issue)
+          // Complete history is tracked in StockMovement collection
+        },
+        { upsert: true, returnDocument: 'after' }
+      );
+
+      if (!updatedStock) {
+        console.error(`❌ CurrentStock update returned null for ${product.itemcode}`);
+        return null;
+      }
+
+      console.log(`✅ updateCurrentStock SUCCESS:`, { productCode: product.itemcode, total: updatedStock.totalQuantity, available: updatedStock.availableQuantity });
+
+      return {
+        stockId: updatedStock._id.toString(),
+        productId: product._id.toString(),
+        itemCode: product.itemcode,
+        quantityAdded: quantityReceived,
+        totalQuantity: updatedStock.totalQuantity,
+        availableQuantity: updatedStock.availableQuantity,
+        reference: grnData.grnNumber
+      };
+
+    } catch (error) {
+      console.error(`❌ Error in updateCurrentStock:`, error.message);
+      return null;
     }
   }
 

@@ -13,7 +13,7 @@ dotenv.config();
 
 const API_URL = 'http://localhost:5000';
 const MEILISEARCH_URL = 'http://localhost:7700';
-const MONGODB_URL = process.env.MONGODB_URL || 'mongodb://localhost:27017/nexis-erp';
+const MONGODB_URL = process.env.MONGODB_URL || 'mongodb://localhost:27017/nexis_erp';
 
 async function debugSearch() {
   console.log('\n' + '='.repeat(60));

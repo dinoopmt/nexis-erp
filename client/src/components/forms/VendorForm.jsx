@@ -67,7 +67,7 @@ const VendorForm = ({ isOpen, onClose, onSuccess, initialData = null }) => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("basic");
   const [isDragging, setIsDragging] = useState(false);
-  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: -100 }); // ✅ Start slightly above center
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const isEditMode = !!initialData;
 
@@ -229,12 +229,12 @@ const VendorForm = ({ isOpen, onClose, onSuccess, initialData = null }) => {
 
       if (isEditMode && vendor._id) {
         await axios.put(
-          `${API_URL}/api/v1/vendors/updatevendor/${vendor._id}`,
+          `${API_URL}/vendors/updatevendor/${vendor._id}`,
           vendorData
         );
       } else {
         await axios.post(
-          `${API_URL}/api/v1/vendors/addvendor`,
+          `${API_URL}/vendors/addvendor`,
           vendorData
         );
       }
@@ -252,13 +252,13 @@ const VendorForm = ({ isOpen, onClose, onSuccess, initialData = null }) => {
     }
   };
 
-  // ✅ Drag Modal - Optimized
+  // ✅ Drag Modal - Optimized with Center Position
   const handleModalMouseDown = (e) => {
     if (e.currentTarget.classList.contains('modal-header')) {
       setIsDragging(true);
       dragOffsetRef.current = {
-        x: e.clientX - modalPosition.x,
-        y: e.clientY - modalPosition.y,
+        x: e.clientX - modalPosition.x - window.innerWidth / 2,
+        y: e.clientY - modalPosition.y - window.innerHeight / 2,
       };
     }
   };
@@ -272,8 +272,8 @@ const VendorForm = ({ isOpen, onClose, onSuccess, initialData = null }) => {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = requestAnimationFrame(() => {
         setModalPosition({
-          x: e.clientX - dragOffsetRef.current.x,
-          y: e.clientY - dragOffsetRef.current.y,
+          x: e.clientX - window.innerWidth / 2 - dragOffsetRef.current.x,
+          y: e.clientY - window.innerHeight / 2 - dragOffsetRef.current.y,
         });
       });
     };
@@ -313,9 +313,11 @@ const VendorForm = ({ isOpen, onClose, onSuccess, initialData = null }) => {
       <div
         className="fixed bg-white rounded-lg shadow-2xl z-50 flex flex-col max-h-[90vh] w-[600px] max-w-[90vw]"
         style={{
-          left: `${modalPosition.x}px`,
-          top: `${modalPosition.y}px`,
+          left: `calc(50% + ${modalPosition.x}px)`,
+          top: `calc(50% + ${modalPosition.y}px)`,
+          transform: 'translate(-50%, -50%)',
           cursor: isDragging ? 'grabbing' : 'default',
+          transition: isDragging ? 'none' : 'box-shadow 0.2s ease-out',
         }}
       >
         {/* Header */}

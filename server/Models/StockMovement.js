@@ -11,7 +11,7 @@ const StockMovementSchema = new mongoose.Schema(
     batchId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'InventoryBatch',
-      required: true,
+      required: false,  // Optional for non-batch products
       index: true,
     },
     movementType: {
@@ -24,6 +24,21 @@ const StockMovementSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
+    },
+    stockBefore: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    newStock: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    currentStock: {
+      type: Number,
+      min: 0,
+      default: null,
     },
     unitCost: {
       type: Number,
@@ -69,6 +84,11 @@ const StockMovementSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
     createdAt: {
       type: Date,

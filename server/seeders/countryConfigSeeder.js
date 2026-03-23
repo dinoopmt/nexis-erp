@@ -235,8 +235,6 @@ const seedCountries = async () => {
     result.forEach((country) => {
       console.log(`  - ${country.label} (${country.countryCode})`)
     })
-
-    process.exit(0)
   } catch (error) {
     console.error('Error seeding countries:', error.message)
     throw error;

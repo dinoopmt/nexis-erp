@@ -5,6 +5,7 @@ import Counter from "../../../Models/SequenceModel.js";
 import ProductService from "../services/ProductService.js";
 import Vendor from "../../../Models/CreateVendor.js";
 import TaxMaster from "../../../Models/TaxMaster.js";
+import CurrentStock from "../../../Models/CurrentStock.js";
 import { searchProducts as searchMeilisearch, indexProduct, deleteProductIndex } from "../../../config/meilisearch.js";
 import { syncProductToMeilisearch, deleteProductFromMeilisearch } from "../services/ProductMeilisearchSync.js";
 
@@ -418,60 +419,62 @@ export const addProduct = async (req, res) => {
 export const getProducts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;  // Changed default to 20 for better UX with 100k products
+    const limit = parseInt(req.query.limit) || 20;
     const search = req.query.search || "";
 
     const query = {
-      isDeleted: false,  // Only fetch non-deleted products
+      isDeleted: false,
       $or: [
-        {
-          name: {
-            $regex: search,
-            $options: "i",
-          },
-        },
-        {
-          barcode: {
-            $regex: search,
-            $options: "i",
-          },
-        },
-        {
-          itemcode: {
-            $regex: search,
-            $options: "i",
-          },
-        },
+        { name: { $regex: search, $options: "i" } },
+        { barcode: { $regex: search, $options: "i" } },
+        { itemcode: { $regex: search, $options: "i" } },
       ],
     };
 
     const total = await Product.countDocuments(query);
-
-    // Add groupingId filter if provided
     const groupingFilter = req.query.groupingId ? { groupingId: req.query.groupingId } : {};
 
-    // Optimized: Only fetch necessary fields for search results (lean for 100k+ records)
+    // ✅ SIMPLE: Use regular find() and populate()
     const products = await Product.find({ ...query, ...groupingFilter })
-      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry')  // ✅ Added trackExpiry for expiry tracking in GRN
+      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry')
       .populate('categoryId', 'name')
       .populate('groupingId', 'name')
       .populate('vendor', 'name')
       .populate('unitType', 'unitName unitSymbol unitDecimal category')
-      .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')  // ✅ Populate unit references inside packingUnits
+      .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
       .skip((page - 1) * limit)
       .limit(limit)
       .sort({ createdate: -1 })
-      .lean();  // Lean queries are faster for large datasets
+      .lean();
+
+    // ✅ MANUALLY ADD: Fetch and attach currentStock data for each product
+    if (products.length > 0) {
+      const productIds = products.map(p => p._id);
+      
+      // Fetch all currentStock docs for these products
+      const stockDocs = await CurrentStock.find({ productId: { $in: productIds } }).lean();
+      const stockMap = new Map(stockDocs.map(s => [s.productId.toString(), s]));
+      
+      // Attach currentStock to each product
+      products.forEach(product => {
+        const stock = stockMap.get(product._id.toString());
+        product.currentStock = stock || {
+          totalQuantity: 0,
+          availableQuantity: 0,
+          allocatedQuantity: 0,
+        };
+      });
+    }
 
     res.json({
       products,
       total,
       page,
       pages: Math.ceil(total / limit),
-      hasMore: (page * limit) < total,  // Added for infinite scroll
+      hasMore: (page * limit) < total,
     });
   } catch (err) {
-    console.error("Error fetching products:", err);
+    console.error("❌ Error fetching products:", err);
     res.status(500).json({
       message: "Error fetching products",
       error: err.message,
@@ -2194,7 +2197,7 @@ export const searchProducts = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
 
         const products = await Product.find(mongoQuery)
-          .select('_id name itemcode barcode price cost stock tax vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')  // ✅ Added trackExpiry for expiry tracking
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')  // ✅ Added tax fields (taxPercent, taxType, taxAmount, taxInPrice)
           .populate('vendor', 'name')
           .populate('categoryId', 'name')
           .populate('unitType', 'unitName unitSymbol unitDecimal category')

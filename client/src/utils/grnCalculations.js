@@ -174,13 +174,16 @@ export const parseTaxPercent = (product) => {
   // ✅ Priority 1: Direct taxPercent field (preferred)
   if (product.taxPercent) {
     taxPercent = product.taxPercent;
+    console.log("💰 Tax extracted from taxPercent:", taxPercent);
   } 
   // Priority 2: tax object with percent/rate properties
   else if (product.tax) {
     if (typeof product.tax === "object") {
       taxPercent = product.tax.percent || product.tax.rate || 0;
+      console.log("💰 Tax extracted from tax object:", taxPercent);
     } else {
       taxPercent = product.tax;
+      console.log("💰 Tax extracted from tax field:", taxPercent);
     }
   } 
   // Priority 3: rate field (as fallback, only if 0-100)
@@ -191,6 +194,9 @@ export const parseTaxPercent = (product) => {
     product.rate < 100
   ) {
     taxPercent = product.rate;
+    console.log("💰 Tax extracted from rate field:", taxPercent);
+  } else {
+    console.log("⚠️ No tax found - using 0");
   }
 
   return parseFloat(taxPercent) || 0;
@@ -204,6 +210,15 @@ export const parseTaxPercent = (product) => {
  * @param {Object} unitTypesMap - Optional map of unitId -> unitData for resolving unit type IDs
  */
 export const mapProductToGrnItem = (product, formDataTaxType, selectedUnit = null, unitTypesMap = null) => {
+  // 🔍 DEBUG: Log product tax fields
+  console.log("📝 mapProductToGrnItem - Product tax fields:", {
+    productName: product?.name,
+    taxPercent: product?.taxPercent,
+    taxType: product?.taxType,
+    tax: product?.tax,
+    productObj: product,
+  });
+
   let unitName, unitSymbol, unitDecimal, cost, price;
   let conversionFactor = 1;  // ✅ ADD: Default conversion factor (for stock quantity conversion)
 

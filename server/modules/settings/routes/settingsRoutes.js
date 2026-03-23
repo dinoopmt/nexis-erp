@@ -1,6 +1,7 @@
 import express from 'express';
 import * as settingsController from '../controllers/settingsController.js';
 import * as storeSettingsController from '../controllers/storeSettingsController.js';
+import printerConfigurationRoutes from './printerConfigurationRoutes.js';
 
 const router = express.Router();
 
@@ -39,6 +40,9 @@ router.get('/store/barcode', storeSettingsController.getBarcodeConfiguration);
 
 // Feature Check Routes
 router.get('/store/feature/:featureName', storeSettingsController.checkFeatureEnabled);
+
+// ✅ NEW: Printer Configuration Templates Routes
+router.use('/printer-configurations', printerConfigurationRoutes);
 
 // Get All Settings Combined
 router.get('/', settingsController.getAllSettings);

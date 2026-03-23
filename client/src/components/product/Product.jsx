@@ -29,8 +29,8 @@ import { useProductSearch } from "../../hooks/useProductSearch";
 import { useProductCreateUpdate } from "../../hooks/useProductCreateUpdate";
 
 // ✅ Extracted Modal Components (from shared folder - not local)
-import BarcodePrintModal from "../shared/model/BarcodePrintModal";
-import VendorModal from "../shared/model/VendorModal";
+import GlobalBarcodePrintModal from "../modals/GlobalBarcodePrintModal";
+import VendorForm from "../forms/VendorForm";
 import GroupingModal from "../shared/model/GroupingModal";
 
 // ✅ Extracted Tab Components (from shared folder - not local)
@@ -144,6 +144,7 @@ const Product = () => {
     totalProducts: totalInfiniteProducts,
     hasMore: hasMoreInfinite,
     fetchNextPage: fetchNextPageInfinite,
+    fetchPage: fetchPageDirect,
     reset: resetInfiniteScroll,
   } = useInfiniteScroll(
     fetchProductsCallback,
@@ -167,6 +168,7 @@ const Product = () => {
 
   // Vendor modal state
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [selectedVendor, setSelectedVendor] = useState(null);
 
   // Barcode print dialog state
   const [showBarcodePrintPopup, setShowBarcodePrintPopup] = useState(false);
@@ -183,9 +185,27 @@ const Product = () => {
   // Note: Hook will use openProductForm to open the modal
   const { handleEdit: _hookEdit, handleNewProduct: _hookNew } = useProductCreateUpdate({
     onProductSaved: async (savedProduct) => {
-      // Refresh product list after product is created/edited
-      const updatedProducts = await productAPI.fetchProducts();
-      setProducts(updatedProducts || []);
+      // ✅ AUTO-REFRESH: Reset infinite scroll after ANY product save (create or update)
+      // This refetches from page 1 and shows the updated/new product immediately
+      console.log(`✅ Product saved: ${savedProduct.name}, auto-refreshing table...`);
+      
+      try {
+        // Reset infinite scroll state (clears sparse map, sets currentPage=1)
+        console.log(`🔄 Clearing infinite scroll state...`);
+        resetInfiniteScroll();
+        
+        // ✅ CRITICAL FIX: Use fetchPage directly instead of fetchNextPageInfinite
+        // Reason: After reset, currentPage=1, so fetchNextPageInfinite(1) skips fetch
+        // since it checks: if (newPage !== currentPage) → if (1 !== 1) → false
+        // fetchPage bypasses this check and always fetches
+        setTimeout(() => {
+          console.log(`📥 Direct fetch of page 1 after reset...`);
+          fetchPageDirect(1);
+        }, 50);
+        
+      } catch (error) {
+        console.error(`❌ Error during table refresh:`, error);
+      }
     },
     products: products || [],
     filteredProducts: products || [], // Initially empty, will be computed later in render
@@ -1663,11 +1683,13 @@ const Product = () => {
 
   // ✅ Open/Close Vendor Modal
   const openVendorModal = () => {
+    setSelectedVendor(null); // Create new vendor
     setIsVendorModalOpen(true);
   };
 
   const closeVendorModal = () => {
     setIsVendorModalOpen(false);
+    setSelectedVendor(null);
   };
 
   // ✅ NEW: Sync checked rows from BasicInfoTab to selectedPricingLines in context
@@ -1684,37 +1706,18 @@ const Product = () => {
     setSelectedPricingLines(selected);
   }, []);
 
-  // ✅ Handle Vendor Save
-  const handleSaveVendor = async (vendorData) => {
-    setLoading(true);
-    try {
-      const newVendorData = await productAPI.createVendor(vendorData);
+  // ✅ Handle Vendor Form Success (create or update)
+  const handleVendorFormSuccess = async () => {
+    // Refresh vendors list
+    const updatedVendors = await productAPI.fetchVendors();
+    setVendors(updatedVendors);
 
-      if (newVendorData) {
-        // Refresh vendors list
-        const updatedVendors = await productAPI.fetchVendors();
-        setVendors(updatedVendors);
-
-        // ✅ NEW: Clear vendor search filter so newly created item appears
-        if (basicInfoTabRef.current) {
-          basicInfoTabRef.current.setVendorSearchValue(newVendorData.name);
-        }
-
-        // Auto-select the newly created vendor
-        setNewProduct({
-          ...newProduct,
-          vendor: newVendorData.name,
-        });
-
-        closeVendorModal();
-      }
-    } catch (err) {
-      const errorMsg = err.response?.data?.message || "Failed to create vendor";
-      console.error("Error saving vendor:", err);
-      throw err; // Let the modal handle the error display
-    } finally {
-      setLoading(false);
+    // Clear vendor search to refresh dropdown
+    if (basicInfoTabRef.current) {
+      basicInfoTabRef.current.clearVendorSearch();
     }
+
+    closeVendorModal();
   };
 
   // ✅ Open Pricing Level Modal for a specific unit
@@ -2361,7 +2364,7 @@ const Product = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // ✅ Print Barcode Labels
+  // ✅ Print Barcode Labels - Batch printing implementation
   const printBarcodeLabels = () => {
     const productsToPrint =
       selectedForPrint.length > 0
@@ -2438,6 +2441,38 @@ const Product = () => {
     printWindow.document.close();
   };
 
+  // ✅ Print Barcodes - Global Barcode Print Modal
+  // Opens the barcode print modal with enhanced formatting options
+  const printBarcodesGlobal = () => {
+    const productsToPrint =
+      selectedForPrint.length > 0
+        ? infiniteProductsArray.filter((p) => selectedForPrint.includes(p._id))
+        : filteredProducts;
+
+    if (productsToPrint.length === 0) {
+      toast.error("No products selected for printing", {
+        duration: 3000,
+        position: "top-center",
+      });
+      return;
+    }
+
+    // If single product, open modal with that product
+    if (productsToPrint.length === 1) {
+      const product = productsToPrint[0];
+      setNewProduct({
+        ...newProduct,
+        barcode: product.barcode || product.itemcode,
+        name: product.name,
+      });
+      setShowBarcodePrintPopup(true);
+    } else {
+      // Multiple products - use batch print
+      console.log(`🖨️ Opening barcode print for ${productsToPrint.length} product(s)`);
+      printBarcodeLabels();
+    }
+  };
+
   // ✅ Reset Advanced filters
   const resetAdvancedFilters = () => {
     setAdvancedFilters({
@@ -2484,7 +2519,7 @@ const Product = () => {
               )}
             </button>
             <button
-              onClick={printBarcodeLabels}
+              onClick={() => setShowBarcodePrintPopup(true)}
               className="flex items-center gap-1 bg-purple-600 text-white px-2 py-1 rounded-lg hover:bg-purple-700 transition text-xs"
             >
               <Printer size={14} /> Print Barcodes
@@ -2762,18 +2797,20 @@ const Product = () => {
           </div>
         ) : (
           <div className="flex-1 bg-white rounded-lg shadow-sm border flex flex-col min-h-0 overflow-hidden">
-            <VirtualizedProductTable
-              productsMap={infiniteProductsMap}
-              totalProducts={totalInfiniteProducts}
-              isLoading={isLoadingInfinite}
-              onPageChange={fetchNextPageInfinite}
-              onEdit={(product) => handleEdit(product)}
-              onDelete={(productId) => handleDelete(productId)}
-              onDownload={(product) => console.log('Download:', product)}
-              itemsPerPage={itemsPerPage}
-              rowHeight={56}
-              containerHeight={600}
-            />
+            <div className="flex-1 overflow-hidden">
+              <VirtualizedProductTable
+                productsMap={infiniteProductsMap}
+                totalProducts={totalInfiniteProducts}
+                isLoading={isLoadingInfinite}
+                onPageChange={fetchNextPageInfinite}
+                onEdit={(product) => handleEdit(product)}
+                onDelete={(productId) => handleDelete(productId)}
+                onDownload={(product) => console.log('Download:', product)}
+                itemsPerPage={itemsPerPage}
+                rowHeight={36}
+                containerHeight={window.innerHeight - 320}
+              />
+            </div>
             {/* Footer - Total Product Count */}
             <div className="flex-shrink-0 bg-gradient-to-r from-blue-50 to-blue-100 border-t-2 border-blue-300 px-4 py-2 flex items-center justify-end shadow-md gap-4">
               <div className="text-xs">
@@ -3480,20 +3517,17 @@ const Product = () => {
       </Modal>
 
       {/* ✅ EXTRACTED MODAL COMPONENTS */}
-      <BarcodePrintModal
+      <GlobalBarcodePrintModal
         isOpen={showBarcodePrintPopup}
         onClose={() => setShowBarcodePrintPopup(false)}
-        barcode={newProduct.barcode || ""}
-        productName={newProduct.name || ""}
-        pricingLines={pricingLines}
-        units={units}
+        products={newProduct.id ? [newProduct] : []}
       />
 
-      <VendorModal
+      <VendorForm
         isOpen={isVendorModalOpen}
         onClose={closeVendorModal}
-        isLoading={loading}
-        onSaveVendor={handleSaveVendor}
+        onSuccess={handleVendorFormSuccess}
+        initialData={selectedVendor}
       />
 
       <GroupingModal

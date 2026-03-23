@@ -48,8 +48,6 @@ const seedSequences = async () => {
 
     console.log(`✓ Sequences seeded successfully for FY ${financialYear}`);
     console.log(`  Total sequences created: ${sequences.length}`);
-    
-    process.exit(0);
   } catch (error) {
     console.error('Error seeding sequences', error);
     throw error;

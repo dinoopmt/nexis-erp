@@ -24,7 +24,7 @@ function Login() {
     e.preventDefault();
     try {
       // Send login request to the backend API
-      const response = await axios.post(`${API_URL}/api/v1/auth/login`, {
+      const response = await axios.post(`${API_URL}/auth/login`, {
         username,
         password,
       });

@@ -89,12 +89,12 @@ InventoryBatchSchema.virtual('totalCost').get(function() {
   return this.purchasePrice * this.quantity;
 });
 
-// Update quantityRemaining when quantity changes
-InventoryBatchSchema.pre('save', function(next) {
+// ✅ Update quantityRemaining when quantity changes
+InventoryBatchSchema.pre('save', async function() {
   if (this.isModified('quantity') && !this.isModified('quantityRemaining')) {
     this.quantityRemaining = this.quantity;
   }
-  next();
+  // Removed next() - return to continue, throw to reject
 });
 
 export default mongoose.model('InventoryBatch', InventoryBatchSchema);

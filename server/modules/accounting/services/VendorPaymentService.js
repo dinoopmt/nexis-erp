@@ -15,6 +15,7 @@ class VendorPaymentService {
   static async createPaymentEntriesFromGrn(grnData) {
     try {
       const {
+        grnId,  // ✅ MongoDB ObjectId for referential integrity
         grnNumber,
         grnDate,
         vendorId,
@@ -39,7 +40,8 @@ class VendorPaymentService {
       // ✅ ENTRY 1: Items (subtotal - discount + tax)
       const itemsAmount = netTotal; // Already includes tax calculation
       const itemsEntry = new VendorPayment({
-        grnId: grnNumber,
+        grnId,  // ✅ MongoDB ObjectId
+        grnNumber,  // ✅ Keep grnNumber for human-readable reference
         grnDate: new Date(grnDate),
         vendorId,
         vendorName,
@@ -66,7 +68,8 @@ class VendorPaymentService {
       // ✅ ENTRY 2: Shipping (if applicable)
       if (shippingCost && shippingCost > 0) {
         const shippingEntry = new VendorPayment({
-          grnId: grnNumber,
+          grnId,  // ✅ MongoDB ObjectId
+          grnNumber,  // ✅ Keep grnNumber for human-readable reference
           grnDate: new Date(grnDate),
           vendorId,
           vendorName,

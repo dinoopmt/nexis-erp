@@ -239,6 +239,10 @@ const GrnForm = () => {
       hasPackingUnits: !!product?.packingUnits,
       packingUnitsLength: product?.packingUnits?.length || 0,
       packingUnits: product?.packingUnits,
+      taxPercent: product?.taxPercent,
+      taxType: product?.taxType,
+      tax: product?.tax,
+      fullProduct: product,
     });
 
     // Check if product has packing units (unit variants)
@@ -425,18 +429,16 @@ const GrnForm = () => {
 
   // Submit GRN
   const handleSubmit = async (action) => {
-    // ✅ FIXED: Generate GRN number ONLY when saving (prevents gaps)
-    let grnNumber = formData.grnNo;
-    if (!grnNumber) {
-      try {
-        grnNumber = await fetchNextGrnNo();
-        setFormData(prev => ({ ...prev, grnNo: grnNumber }));
-        toast.success("GRN number assigned", { duration: 1000 });
-      } catch (error) {
-        console.error("Error generating GRN number:", error);
-        toast.error("Failed to generate GRN number");
-        return;
-      }
+    // ✅ FIXED: Always generate FRESH GRN number on submit (prevents duplicates on retry)
+    let grnNumber;
+    try {
+      grnNumber = await fetchNextGrnNo();
+      setFormData(prev => ({ ...prev, grnNo: grnNumber }));
+      console.log("✅ Fresh GRN number generated:", grnNumber);
+    } catch (error) {
+      console.error("Error generating GRN number:", error);
+      toast.error("Failed to generate GRN number");
+      return;
     }
 
     try {
@@ -743,8 +745,31 @@ const GrnForm = () => {
           editingId ? "GRN updated successfully" : "GRN created successfully",
         );
 
+        // ✅ NEW: If GRN was CREATED (not edited), automatically POST it to trigger stock updates
+        if (!editingId && response.data?._id) {
+          console.log(`📤 Auto-posting new GRN to trigger stock updates: ${response.data._id}`);
+          try {
+            const postResponse = await axios.post(
+              `${API_URL}/grn/${response.data._id}/post`,
+              { createdBy: submitData.createdBy || currentUserId }
+            );
+            
+            console.log(`✅ GRN Posted successfully:`, {
+              status: postResponse.status,
+              currentStockUpdates: postResponse.data?.inventory?.currentStockUpdates || 0,
+              batchesCreated: postResponse.data?.inventory?.batchesCreated || 0,
+              costUpdates: postResponse.data?.inventory?.costUpdates || 0
+            });
+            
+            toast.success("GRN posted successfully - Stock updated");
+          } catch (postError) {
+            console.error(`❌ Error posting GRN:`, postError.response?.data || postError.message);
+            toast.error("GRN created but post failed - stock not updated yet");
+          }
+        }
+
         // Refresh list
-        const listResponse = await axios.get(`${API_URL}/api/v1/grn`);
+        const listResponse = await axios.get(`${API_URL}/grn`);
         setGrnList(
           Array.isArray(listResponse.data)
             ? listResponse.data
@@ -793,7 +818,10 @@ const GrnForm = () => {
         errorMessage = error.response.data.errors.join(" | ");
       }
       
-      toast.error(errorMessage);
+      // ✅ Clear GRN number on error so next submit gets a fresh one
+      setFormData(prev => ({ ...prev, grnNo: "" }));
+      
+      toast.error(errorMessage + " (Try submitting again for a fresh GRN number)");
     }
   };
 

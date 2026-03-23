@@ -1,0 +1,21 @@
+{
+  "title": "Stock Reconciliation Report",
+  "timestamp": "2026-03-22T19:42:08.471Z",
+  "summary": {
+    "totalProducts": 1,
+    "reconciled": 1,
+    "discrepancies": 0,
+    "discrepancyRate": "0.00%",
+    "healed": 0,
+    "errors": 0
+  },
+  "financialImpact": {
+    "totalCurrentStock": 750,
+    "totalCalculatedBalance": 750,
+    "totalVariance": 0,
+    "variance_percent": "0.00%"
+  },
+  "discrepancies": [],
+  "okProducts": 1,
+  "errors": []
+}

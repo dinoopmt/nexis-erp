@@ -1,11 +1,13 @@
 import React, { useState } from 'react'
-import { Users, Shield, Clock, Store, Ruler, Upload } from 'lucide-react'
+import { Users, Shield, Clock, Store, Ruler, Upload, Printer, BarChart3 } from 'lucide-react'
 import UserManagement from './general/UserManagement'
 import RoleManagement from './general/RoleManagement'
 import ActivityLog from './general/ActivityLog'
 import StoreSettings from './general/StoreSettings'
 import UnitTypeManagement from './general/UnitTypeManagement'
 import BulkProductUpload from './general/BulkProductUpload'
+import PrinterConfigurationManagement from './general/PrinterConfigurationManagement'
+import StockReconciliation from './general/StockReconciliation'
 
 const GeneralSettings = () => {
   const [activeTab, setActiveTab] = useState('users')
@@ -14,8 +16,10 @@ const GeneralSettings = () => {
     { id: 'users', label: 'User Management', icon: Users },
     { id: 'roles', label: 'Role Management', icon: Shield },
     { id: 'store', label: 'Store Settings', icon: Store },
+    { id: 'printer', label: 'Printer Config', icon: Printer },
     { id: 'units', label: 'Unit Types', icon: Ruler },
     { id: 'bulk-products', label: 'Bulk Product Upload', icon: Upload },
+    { id: 'reconciliation', label: 'Stock Reconciliation', icon: BarChart3 },
     { id: 'activity', label: 'Activity Log', icon: Clock },
   ]
 
@@ -27,10 +31,14 @@ const GeneralSettings = () => {
         return <RoleManagement />
       case 'store':
         return <StoreSettings />
+      case 'printer':
+        return <PrinterConfigurationManagement />
       case 'units':
         return <UnitTypeManagement />
       case 'bulk-products':
         return <BulkProductUpload />
+      case 'reconciliation':
+        return <StockReconciliation />
       case 'activity':
         return <ActivityLog />
       default:
@@ -43,7 +51,7 @@ const GeneralSettings = () => {
       {/* Header */}
       <div className="mb-2">
         <h1 className="text-lg font-bold text-gray-900">General Settings</h1>
-        <p className="text-gray-600 text-xs mt-0">Manage users, roles, store settings, unit types, bulk product uploads and permissions</p>
+        <p className="text-gray-600 text-xs mt-0">Manage users, roles, store settings, printer configurations, unit types, bulk uploads, stock reconciliation and permissions</p>
       </div>
 
       {/* Tabs */}

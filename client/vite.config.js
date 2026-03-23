@@ -3,7 +3,15 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react({
+      babel: {
+        babelrc: true,
+        configFile: true,
+      },
+      jsxImportSource: 'react',
+    }),
+  ],
   server: {
     proxy: {
       '/api': {
@@ -12,5 +20,18 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, '/api'),
       },
     },
+    middlewareMode: false,
+    preTransformRequests: false,
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'axios',
+      'lucide-react',
+      'react-hot-toast',
+      'ag-grid-community',
+    ],
+    exclude: ['node_modules/.pnpm'],
   },
 })

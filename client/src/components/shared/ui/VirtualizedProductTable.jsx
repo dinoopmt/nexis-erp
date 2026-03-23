@@ -91,7 +91,7 @@ const VirtualizedProductTable = ({
         <div className="w-[10%] flex justify-end font-sm font-semibold text-xs text-gray-500">{product?.barcode?.slice(0, 8) || '-'}</div>
         <div className="w-[5%] flex justify-end text-sm">{parseFloat(product?.cost || 0).toFixed(2)}</div>
         <div className="w-[5%] flex justify-end text-sm font-semibold text-green-600">{parseFloat(product?.price || 0).toFixed(2)}</div>
-        <div className="w-[5%] flex justify-end text-sm">{parseInt(product?.stock || 0)}</div>
+        <div className="w-[5%] flex justify-end text-sm font-semibold" title={`Total: ${product?.currentStock?.totalQuantity || 0}, Available: ${product?.currentStock?.availableQuantity || 0}`}>{product?.currentStock?.availableQuantity || 0}</div>
         <div className="w-[5%] flex gap-1 justify-end">
           <button onClick={() => onEdit(product)} className="p-1 hover:bg-blue-100 rounded transition" title="Edit">
             <Edit2 size={16} className="text-blue-600" />
@@ -113,14 +113,14 @@ const VirtualizedProductTable = ({
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-1 bg-gray-100 border-b font-semibold sticky top-0 z-10 text-sm bg-gray-200">
         <div className="w-[5%] flex justify-end">Code</div>
-        <div className="w-[40%] flex justify-start">Product Name</div>
-        <div className="w-[15%] flex justify-start">Department</div>
-        <div className="w-[15%] flex justify-start">Vendor</div>
+        <div className="w-[37%] flex justify-start">Product Name</div>
+        <div className="w-[14%] flex justify-start">Department</div>
+        <div className="w-[14%] flex justify-start">Vendor</div>
         <div className="w-[10%] flex justify-end">Barcode</div>
-        <div className="w-[5%] flex justify-end">Cost</div>
-        <div className="w-[5%] flex justify-end">Price</div>
-        <div className="w-[5%] flex justify-end">Stock</div>
-        <div className="w-[5%] flex justify-end">Actions</div>
+        <div className="w-[5%] flex justify-center">Cost</div>
+        <div className="w-[5%] flex justify-center">Price</div>
+        <div className="w-[5%] flex justify-center">Stock</div>
+        <div className="w-[5%] flex justify-center">Actions</div>
       </div>
 
       {/* Virtualized Container */}
@@ -143,7 +143,7 @@ const VirtualizedProductTable = ({
         }}>
           {visibleProducts.map(({ index, product }) => (
             <div key={index} style={{ position: 'absolute', top: index * rowHeight, left: 0, right: 0, height: rowHeight, pointerEvents: 'auto' }}>
-              {product ? <ProductRow product={product} index={index} /> : <SkeletonRow />}
+              {product ? <ProductRow product={product} index={index} /> : (isLoading ? <SkeletonRow /> : null)}
             </div>
           ))}
         </div>
@@ -152,12 +152,25 @@ const VirtualizedProductTable = ({
       {/* Footer */}
       <div className="flex items-center px-4 py-1 bg-gray-50 border-t text-xs text-gray-600 justify-between">
         <div>
-          Showing {Object.keys(productsMap).length.toLocaleString()} of {totalProducts.toLocaleString()} products
+          {(() => {
+            const actualProducts = Object.values(productsMap).filter(p => p);
+            console.log('📊 FOOTER DEBUG:', {
+              mapKeys: Object.keys(productsMap).length,
+              mapValues: Object.values(productsMap),
+              actualCount: actualProducts.length,
+              totalProducts,
+            });
+            return `Showing ${actualProducts.length.toLocaleString()} of ${totalProducts.toLocaleString()} products`;
+          })()}
         </div>
         {isLoading && (
           <div className="flex items-center gap-2">
             <div className="animate-spin w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-            Loading...
+            <span>Loading...</span>
+            {(() => {
+              console.log(`🔴 FOOTER SPINNER VISIBLE: isLoading=${isLoading}, productsMap size=${Object.keys(productsMap).length}, totalProducts=${totalProducts}`);
+              return null;
+            })()}
           </div>
         )}
       </div>

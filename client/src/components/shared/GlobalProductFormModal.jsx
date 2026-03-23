@@ -30,7 +30,7 @@ import HistoryTab from "./tabs/HistoryTab";
 
 // Modal Dialogs
 import BarcodePrintModal from "./model/BarcodePrintModal";
-import VendorModal from "./model/VendorModal";
+import VendorForm from "../forms/VendorForm";
 import GroupingModal from "./model/GroupingModal";
 
 const GlobalProductFormModal = () => {
@@ -90,6 +90,7 @@ const GlobalProductFormModal = () => {
 
   // Modal Dialogs
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [selectedVendor, setSelectedVendor] = useState(null);
   const [isGroupingModalOpen, setIsGroupingModalOpen] = useState(false);
   const [groupingModalLevel, setGroupingModalLevel] = useState("1");
   const [groupingModalParentId, setGroupingModalParentId] = useState(null);
@@ -919,41 +920,28 @@ const GlobalProductFormModal = () => {
 
   // Open Vendor Modal
   const openVendorModal = () => {
+    setSelectedVendor(null); // Create new vendor
     setIsVendorModalOpen(true);
   };
 
   // Close Vendor Modal
   const closeVendorModal = () => {
     setIsVendorModalOpen(false);
+    setSelectedVendor(null);
   };
 
-  // Handle Vendor Save
-  const handleSaveVendor = async (vendorData) => {
-    setLoading(true);
-    try {
-      const newVendorData = await productAPI.createVendor(vendorData);
+  // Handle Vendor Form Success (create or update)
+  const handleVendorFormSuccess = async () => {
+    // Refresh vendors list
+    const updatedVendors = await productAPI.fetchVendors();
+    setVendors(updatedVendors);
 
-      if (newVendorData) {
-        const updatedVendors = await productAPI.fetchVendors();
-        setVendors(updatedVendors);
-
-        if (basicInfoTabRef.current) {
-          basicInfoTabRef.current.setVendorSearchValue(newVendorData.name);
-        }
-
-        setNewProduct({
-          ...newProduct,
-          vendor: newVendorData.name,
-        });
-
-        closeVendorModal();
-      }
-    } catch (err) {
-      console.error("Error saving vendor:", err);
-      throw err;
-    } finally {
-      setLoading(false);
+    // Clear vendor search to refresh dropdown
+    if (basicInfoTabRef.current) {
+      basicInfoTabRef.current.clearVendorSearch();
     }
+
+    closeVendorModal();
   };
 
   // Sync checked rows from BasicInfoTab to selectedPricingLines
@@ -1822,11 +1810,11 @@ const GlobalProductFormModal = () => {
         units={units}
       />
 
-      <VendorModal
+      <VendorForm
         isOpen={isVendorModalOpen}
         onClose={closeVendorModal}
-        isLoading={loading}
-        onSaveVendor={handleSaveVendor}
+        onSuccess={handleVendorFormSuccess}
+        initialData={selectedVendor}
       />
 
       <GroupingModal

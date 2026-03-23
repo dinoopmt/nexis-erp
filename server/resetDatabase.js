@@ -9,7 +9,7 @@ dotenv.config();
  * Usage: node resetDatabase.js
  */
 
-const dbUri = process.env.MONGO_URI || 'mongodb://localhost:27017/nexis-erp';
+const dbUri = process.env.MONGO_URI || 'mongodb://localhost:27017/nexis_erp';
 
 async function resetDatabase() {
   try {

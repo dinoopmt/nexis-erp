@@ -85,7 +85,7 @@ const StoreSettings = () => {
   const fetchStoreSettings = async () => {
     try {
       setIsLoading(true);
-      const response = await axios.get(`${API_URL}/api/v1/settings/store`);
+      const response = await axios.get(`${API_URL}/settings/store`);
       if (response.data.data) {
         setStoreData(response.data.data);
       }
@@ -193,7 +193,7 @@ const StoreSettings = () => {
     try {
       setIsLoading(true);
       setError('');
-      const response = await axios.post(`${API_URL}/api/v1/settings/store`, storeData);
+      const response = await axios.post(`${API_URL}/settings/store`, storeData);
       setSuccess('Store settings saved successfully');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {

@@ -46,7 +46,7 @@ export const useGrnFormData = () => {
     try {
       const financialYear = getCurrentFinancialYear();
       const response = await axios.get(
-        `${API_URL}/api/v1/grn/next-number?financialYear=${financialYear}`
+        `${API_URL}/grn/next-number?financialYear=${financialYear}`
       );
       
       if (response.data?.grnNo) {

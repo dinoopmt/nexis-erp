@@ -1,8 +1,28 @@
 import Grn from "../../../Models/Grn.js";
 import GrnService from "../services/GRNService.js";
 import VendorPaymentService from "../../accounting/services/VendorPaymentService.js";
+
+/**
+ * Map frontend payment terms format to VendorPayment enum values
+ * Frontend sends: due_on_receipt, net_30, net_60, net_90
+ * Backend expects: IMMEDIATE, NET_30, NET_60, NET_90
+ */
+const mapPaymentTermsToEnum = (termValue) => {
+  const mapping = {
+    'due_on_receipt': 'IMMEDIATE',
+    'immediate': 'IMMEDIATE',
+    'net_7': 'NET_7',
+    'net_14': 'NET_14',
+    'net_30': 'NET_30',
+    'net_60': 'NET_60',
+    'net_90': 'NET_90',
+    'custom': 'CUSTOM',
+  };
+  return mapping[String(termValue).toLowerCase()] || 'NET_30';
+};
 import GRNJournalService from "../../accounting/services/GRNJournalService.js";
 import GRNStockUpdateService from "../../accounting/services/GRNStockUpdateService.js";
+import GRNEditManager from "../../accounting/services/GRNEditManager.js";
 
 // ✅ NEW: Get next GRN number using sequence table (FIFO method)
 export const getNextGrnNumber = async (req, res) => {
@@ -189,11 +209,12 @@ export const createGrn = async (req, res) => {
     let paymentEntries = null;
     try {
       paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+        grnId: newGrn._id,  // ✅ Pass MongoDB ObjectId for referential integrity
         grnNumber,
         grnDate,
         vendorId,
         vendorName,
-        paymentTerms: paymentTerms || "NET_30",
+        paymentTerms: mapPaymentTermsToEnum(paymentTerms) || "NET_30",  // ✅ Map to enum format
         subtotal: parseFloat(subtotal || 0),
         discountAmount: parseFloat(discountAmount || 0),
         taxAmount: parseFloat(taxAmount || 0),
@@ -299,6 +320,25 @@ export const updateGrn = async (req, res) => {
       return res.status(404).json({ message: "GRN not found" });
     }
 
+    // ========================================
+    // 📊 CAPTURE ORIGINAL DATA BEFORE UPDATE
+    // ========================================
+    const originalData = {
+      totalAmount: grn.totalAmount ? parseFloat(grn.totalAmount) : 0,
+      finalTotal: grn.finalTotal ? parseFloat(grn.finalTotal) : 0,
+      netTotal: grn.netTotal ? parseFloat(grn.netTotal) : 0,
+      items: grn.items.map(item => ({
+        productId: item.productId?.toString?.() || item.productId,
+        quantity: item.quantity || 0,
+        unitCost: item.unitCost || 0
+      }))
+    };
+
+    console.log(`📊 [CASCADE PREP] ORIGINAL data captured BEFORE update:`);
+    console.log(`   Original Total: ${originalData.totalAmount}`);
+    console.log(`   Original Items: ${originalData.items.length}`);
+    console.log(`   Original Item Qty: ${originalData.items[0]?.quantity}`);
+
     // Track old status for change detection
     const oldStatus = grn.status;
 
@@ -319,7 +359,7 @@ export const updateGrn = async (req, res) => {
     grn.items = items;
     grn.notes = notes || "";
     
-    // ✅ ADDED: Update all calculated totals
+    // ✅ Update all calculated totals
     grn.totalQty = parseInt(totalQty || 0);
     grn.subtotal = parseFloat(subtotal || 0);
     grn.discountAmount = parseFloat(discountAmount || 0);
@@ -330,10 +370,64 @@ export const updateGrn = async (req, res) => {
     grn.finalTotal = parseFloat(finalTotal || 0);
     grn.totalAmount = parseFloat(finalTotal || subtotal || 0);
 
-    // Save the updated GRN
-    await grn.save();
+    // ========================================
+    // 🔄 USE TRANSACTION-BASED EDIT MANAGER
+    // ========================================
+    // ✅ DO NOT call grn.save() here - let the transaction manager handle persistence
+    // This ensures delta calculation works correctly (finds old vs new values BEFORE update)
+    
+    let cascadeResult = null;
 
-    console.log(`✅ GRN updated successfully: ${id}`);
+    // For Received/Draft GRN - use transaction-based edit with atomicity
+    if (grn.status === "Received" || grn.status === "Draft" || grn.status === "Verified") {
+      console.log(`\n✏️ [EDIT] Validating and updating: ${grn.grnNumber}`);
+      console.log(`   Status: ${grn.status}`);
+      console.log(`   New Total: ${grn.finalTotal || grn.totalAmount}`);
+      console.log(`   New Item Qty: ${items[0]?.quantity}`);
+
+      try {
+        // Import improved edit manager (transaction-based, atomic)
+        const { default: ImprovedGRNEditManager } = await import("../../../modules/accounting/services/ImprovedGRNEditManager.js");
+        
+        // ✅ Use transaction-based manager (handles everything atomically)
+        // This fetches the original GRN, calculates deltas, and updates all collections
+        cascadeResult = await ImprovedGRNEditManager.editGRN(
+          id,
+          {
+            items: items,
+            notes: notes || req.body.notes
+          },
+          req.body.createdBy || "System"
+        );
+
+        if (cascadeResult.success) {
+          console.log(`✅ [EDIT] Completed successfully`);
+          console.log(`   Items: ${cascadeResult.changes.itemsCount}`);
+          console.log(`   Deltas applied: ${cascadeResult.changes.deltasApplied}`);
+          console.log(`✅ GRN updated successfully: ${id}`);
+        } else {
+          console.error(`❌ [EDIT] Manager returned error: ${cascadeResult.error}`);
+        }
+      } catch (editError) {
+        console.error(`⚠️ [EDIT] Error during update:`, editError.message);
+        cascadeResult = {
+          success: false,
+          error: editError.message
+        };
+      }
+    } else if (grn.status === "Posted") {
+      console.log(`ℹ️ [EDIT] Posted GRN - no further edits allowed`);
+      cascadeResult = {
+        success: false,
+        reason: "Cannot edit Posted GRN"
+      };
+    } else {
+      console.log(`ℹ️ [EDIT] Status: ${grn.status} - Edit completed`);
+      cascadeResult = {
+        success: true,
+        reason: "GRN updated"
+      };
+    }
 
     // ✅ NEW: Create accounting journal entries when GRN status changes to "Received"
     let journalEntry = null;
@@ -366,7 +460,8 @@ export const updateGrn = async (req, res) => {
       message: "GRN updated successfully",
       grn,
       journalEntry: journalEntry || undefined,
-      journalEntryShipping: journalEntryShipping || undefined
+      journalEntryShipping: journalEntryShipping || undefined,
+      cascadeUpdate: cascadeResult || undefined
     });
   } catch (error) {
     console.error("❌ Error updating GRN:", error);
@@ -391,6 +486,20 @@ export const postGrn = async (req, res) => {
       console.warn(`❌ GRN not found: ${id}`);
       return res.status(404).json({ message: "GRN not found" });
     }
+
+    console.log("✅ GRN fetched from DB:", {
+      grnNumber: grn.grnNumber,
+      grnId: grn._id,
+      status: grn.status,
+      itemsCount: grn.items?.length,
+      itemsIsArray: Array.isArray(grn.items),
+      hasItems: !!grn.items,
+      firstItemCheck: grn.items?.[0] ? {
+        itemCode: grn.items[0].itemCode,
+        productId: grn.items[0].productId?.toString?.() || grn.items[0].productId,
+        quantity: grn.items[0].quantity
+      } : "NO ITEMS"
+    });
 
     if (grn.status === "Posted") {
       console.warn(`⚠️ GRN already posted: ${grn.grnNumber}`);
@@ -442,6 +551,19 @@ export const postGrn = async (req, res) => {
 
     // 2. UPDATE STOCK, BATCHES, COSTS
     try {
+      console.log("🔍 GRN data before stock update:", {
+        grnNumber: grn.grnNumber,
+        grnId: grn._id,
+        itemsCount: grn.items?.length || 0,
+        itemsIsArray: Array.isArray(grn.items),
+        firstItemStructure: grn.items?.[0] ? {
+          productId: grn.items[0].productId,
+          itemCode: grn.items[0].itemCode,
+          quantity: grn.items[0].quantity,
+          itemName: grn.items[0].itemName
+        } : null
+      });
+
       stockUpdate = await GRNStockUpdateService.processGrnStockUpdate(grn, createdBy || "System");
       console.log("✅ Stock updates completed:", {
         itemsProcessed: stockUpdate.processedItems.length,
@@ -450,6 +572,20 @@ export const postGrn = async (req, res) => {
       });
 
       // Include any errors from stock update
+      console.log(`📊 Stock Update Result:`, {
+        processedItems: stockUpdate?.processedItems?.length || 0,
+        currentStockUpdates: stockUpdate?.currentStockUpdates?.length || 0,
+        createdBatches: stockUpdate?.createdBatches?.length || 0,
+        costUpdates: stockUpdate?.costUpdates?.length || 0,
+        errors: stockUpdate?.errors?.length || 0
+      });
+      
+      if (stockUpdate?.currentStockUpdates && stockUpdate.currentStockUpdates.length > 0) {
+        console.log(`✅ Current Stock Updates Details:`, JSON.stringify(stockUpdate.currentStockUpdates, null, 2));
+      } else {
+        console.warn(`⚠️ NO CurrentStock updates recorded`);
+      }
+
       if (stockUpdate.errors && stockUpdate.errors.length > 0) {
         errors.push(...stockUpdate.errors.map(e => ({ type: "STOCK", ...e })));
       }
@@ -459,8 +595,8 @@ export const postGrn = async (req, res) => {
       errors.push({ type: "STOCK", error: stockError.message });
     }
 
-    // 3. UPDATE GRN STATUS TO POSTED
-    grn.status = "Posted";
+    // 3. UPDATE GRN STATUS TO RECEIVED (triggers stock update)
+    grn.status = "Received";
     grn.postedDate = new Date();
     grn.postedBy = createdBy || "System";
     await grn.save();
@@ -488,11 +624,13 @@ export const postGrn = async (req, res) => {
         batchesCreated: stockUpdate?.createdBatches?.length || 0,
         costUpdates: stockUpdate?.costUpdates?.length || 0,
         variantUpdates: stockUpdate?.variantUpdates?.length || 0,
+        currentStockUpdates: stockUpdate?.currentStockUpdates?.length || 0,
         auditLogs: stockUpdate?.logs?.length || 0,
         summary: {
           updatedProducts: stockUpdate?.updatedProducts?.length || 0,
           errors: stockUpdate?.errors?.length || 0
-        }
+        },
+        currentStockDetails: stockUpdate?.currentStockUpdates || []
       },
       errors: errors.length > 0 ? errors : null,
       timestamp: new Date()

@@ -216,6 +216,27 @@ const grnSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // ✅ CONCURRENCY CONTROL: Edit locking
+    editLock: {
+      lockedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      lockedAt: {
+        type: Date,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+    },
+    // ✅ OPTIMISTIC LOCKING: Version field for detecting concurrent edits
+    __v: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

@@ -83,7 +83,7 @@ const authenticateToken = (req, res, next) => {
   next();
 };
 
-module.exports = {
+export {
   errorHandler,
   requestLogger,
   validateRequired,

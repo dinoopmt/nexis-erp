@@ -37,7 +37,6 @@ export const useProductAPI = () => {
    */
   const fetchProducts = useCallback(async (page = 1, limit = 100, selectedGroupingFilter = "") => {
     try {
-      const skip = (page - 1) * limit;
       const cacheKey = `${REQUEST_CACHE_KEY.PRODUCTS}:p${page}:l${limit}:${selectedGroupingFilter}`;
 
       // Check cache first (cache individual pages)
@@ -52,7 +51,7 @@ export const useProductAPI = () => {
         return pending;
       }
 
-      let url = `${API_URL}/products/getproducts?limit=${limit}&skip=${skip}`;
+      let url = `${API_URL}/products/getproducts?page=${page}&limit=${limit}`;
       if (selectedGroupingFilter) {
         url += `&groupingId=${selectedGroupingFilter}`;
       }

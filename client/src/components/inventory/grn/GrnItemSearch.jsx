@@ -2,20 +2,43 @@
  * GrnItemSearch Component
  * Item search input with dropdown suggestions
  */
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Search, Plus } from "lucide-react";
 
 const GrnItemSearch = ({ itemSearch, searchResults, searchLoading, onSearch, onSelectItem, onCreateProduct }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
   const filteredItems = searchResults.slice(0, 10);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelectItem = (product) => {
+    onSelectItem(product);
+    setIsOpen(false); // Close dropdown when item is selected
+  };
+
   return (
-    <div className="relative w-full">
+    <div className="relative w-full" ref={containerRef}>
       <div className="relative flex items-center gap-2">
         <Search size={16} className="absolute left-3 text-gray-400" />
         <input
           type="text"
           value={itemSearch}
-          onChange={(e) => onSearch(e.target.value)}
+          onChange={(e) => {
+            onSearch(e.target.value);
+            setIsOpen(true); // Open dropdown when typing
+          }}
+          onFocus={() => setIsOpen(true)} // Open dropdown when focused
           placeholder="Search by name or code..."
           className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
         />
@@ -37,7 +60,7 @@ const GrnItemSearch = ({ itemSearch, searchResults, searchLoading, onSearch, onS
       </div>
 
       {/* Results Dropdown */}
-      {filteredItems.length > 0 && !searchLoading && (
+      {isOpen && filteredItems.length > 0 && !searchLoading && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
           {filteredItems.map((product) => {
             const displayCode = product.itemcode || product.sku || product.code || "-";
@@ -63,7 +86,7 @@ const GrnItemSearch = ({ itemSearch, searchResults, searchLoading, onSearch, onS
             return (
               <div
                 key={product._id || product.id}
-                onClick={() => onSelectItem(product)}
+                onClick={() => handleSelectItem(product)}
                 className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
               >
                 <div className="font-semibold text-sm mb-1">{displayName}</div>
