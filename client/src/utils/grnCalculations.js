@@ -100,16 +100,32 @@ export const calculateFocOnPost = (item) => {
 
 /**
  * Calculate GRN totals (quantity, subtotal, discount, tax, net total)
+ * ✅ FIXED: Now correctly calculates totals for INCLUSIVE tax items
+ * For inclusive tax, uses netCostWithoutTax instead of raw cost
  */
 export const calculateGrnTotals = (items, shippingCost = 0) => {
   const totalQty = items.reduce(
     (sum, item) => sum + (parseInt(item.qty) || 0),
     0,
   );
-  const totalSubtotal = items.reduce(
-    (sum, item) => sum + (parseFloat(item.qty) || 0) * (parseFloat(item.cost) || 0),
-    0,
-  );
+  
+  // ✅ FIXED: Calculate totalSubtotal using netCostWithoutTax for inclusive tax items
+  // For exclusive tax, use raw netCost (qty * cost - discount)
+  const totalSubtotal = items.reduce((sum, item) => {
+    const qty = parseFloat(item.qty) || 0;
+    const cost = parseFloat(item.cost) || 0;
+    const discount = parseFloat(item.discount) || 0;
+    
+    let itemSubtotal = qty * cost - discount;
+    
+    // ✅ NEW: For INCLUSIVE tax items, use netCostWithoutTax (before tax included)
+    if (item.taxType === "inclusive" && item.netCostWithoutTax) {
+      itemSubtotal = parseFloat(item.netCostWithoutTax) || itemSubtotal;
+    }
+    
+    return sum + itemSubtotal;
+  }, 0);
+  
   const totalDiscount = items.reduce(
     (sum, item) => sum + (parseFloat(item.discount) || 0),
     0,

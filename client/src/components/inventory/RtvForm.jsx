@@ -47,6 +47,14 @@ const RtvForm = ({ onNavigate }) => {
     loadRtvList();
   }, [statusFilter]);
 
+  // ✅ Calculate remaining quantity available for return (same as GRN reversal)
+  const calculateRemainingQty = (item) => {
+    if (!item) return 0;
+    const originalQty = item.originalQuantity || item.quantity || 0;
+    const alreadyReturnedQty = item.rtvReturnedQuantity || item.returnedQuantity || 0;
+    return Math.max(0, originalQty - alreadyReturnedQty);
+  };
+
   // Load RTV list
   const loadRtvList = async () => {
     try {
@@ -133,23 +141,43 @@ const RtvForm = ({ onNavigate }) => {
     }
 
     // ✅ STOCK VALIDATION: Check available quantities before saving
+    // Using same calculation as GRN reversal: Available = Received - Already Returned
     const stockErrors = [];
+    const quantityWarnings = [];
+
     formData.items.forEach(item => {
-      const originalQty = item.quantity || 0;
-      const returnedQty = item.returnedQuantity || 0;
-      const availableQty = Math.max(0, originalQty - returnedQty);
+      const remainingQty = calculateRemainingQty(item);
+      const returnQty = item.quantity || 0;
       
-      if (availableQty <= 0) {
-        stockErrors.push(`${item.itemCode}: No stock available (already fully returned)`);
+      // Check if trying to return more than available
+      if (returnQty > remainingQty) {
+        stockErrors.push({
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          requested: returnQty,
+          available: remainingQty,
+          alreadyReturned: item.rtvReturnedQuantity || item.returnedQuantity || 0,
+          message: `Can only return ${remainingQty} (already returned: ${item.rtvReturnedQuantity || item.returnedQuantity || 0})`
+        });
+      }
+      
+      // Warning if returning the full remaining quantity
+      if (returnQty === remainingQty && remainingQty > 0) {
+        quantityWarnings.push(`${item.itemCode}: Returning full remaining amount (${remainingQty})`);
       }
     });
 
     if (stockErrors.length > 0) {
       toast.error(
         <>
-          <div className="font-semibold mb-2">Stock Availability Issues:</div>
+          <div className="font-semibold mb-2">❌ Return Quantity Exceeds Available Stock:</div>
           {stockErrors.map((err, idx) => (
-            <div key={idx} className="text-sm">❌ {err}</div>
+            <div key={idx} className="text-sm mb-2 border-l-2 border-red-500 pl-2">
+              <strong>{err.itemCode}</strong> - {err.itemName}
+              <div className="text-xs text-gray-700 mt-0.5">
+                Requested: {formatNumber(err.requested)} | Available: {formatNumber(err.available)} | Already Returned: {formatNumber(err.alreadyReturned)}
+              </div>
+            </div>
           ))}
         </>
       );
@@ -391,7 +419,17 @@ const RtvForm = ({ onNavigate }) => {
                     onUpdateQuantity={(id, qty) => {
                       const item = formData.items.find(i => i.id === id);
                       if (item) {
-                        item.quantity = qty;
+                        // ✅ Calculate max return quantity and enforce it
+                        const remainingQty = calculateRemainingQty(item);
+                        const limitedQty = Math.min(qty, remainingQty);
+                        
+                        if (qty > remainingQty) {
+                          toast.warning(
+                            `⚠️ ${item.itemCode}: Cannot return ${formatNumber(qty)}. Max available: ${formatNumber(remainingQty)} (Already returned: ${formatNumber(item.rtvReturnedQuantity || item.returnedQuantity || 0)})`
+                          );
+                        }
+                        
+                        item.quantity = limitedQty;
                         setFormData({ ...formData });
                       }
                     }}
@@ -453,6 +491,64 @@ const RtvForm = ({ onNavigate }) => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ✅ Remaining Quantities Section */}
+              {formData.items.length > 0 && (
+                <div className="bg-green-50 border-t border-green-200 px-4 py-2">
+                  <p className="text-xs font-semibold text-green-900 mb-2">📊 Return Quantity Status</p>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {formData.items.map((item) => {
+                      const remainingQty = calculateRemainingQty(item);
+                      const returnQty = item.quantity || 0;
+                      const alreadyReturned = item.rtvReturnedQuantity || item.returnedQuantity || 0;
+                      const isAtMax = returnQty === remainingQty;
+                      const exceedsMax = returnQty > remainingQty;
+                      
+                      return (
+                        <div 
+                          key={item.id} 
+                          className={`text-xs p-2 rounded border ${
+                            exceedsMax ? 'bg-red-100 border-red-300' : 
+                            isAtMax ? 'bg-yellow-100 border-yellow-300' : 
+                            'bg-white border-green-100'
+                          }`}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <p className="font-medium text-gray-800">
+                              {item.itemCode} - {item.itemName}
+                            </p>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              exceedsMax ? 'bg-red-600 text-white' :
+                              isAtMax ? 'bg-yellow-600 text-white' :
+                              'bg-green-600 text-white'
+                            }`}>
+                              {exceedsMax ? '⚠️ Exceeds' : isAtMax ? '⚡ Full Amount' : '✓ OK'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 text-xs">
+                            <div>
+                              <span className="text-gray-600">Requesting:</span>
+                              <p className="font-bold text-gray-900">{formatNumber(returnQty)}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Available:</span>
+                              <p className="font-bold text-green-700">{formatNumber(remainingQty)}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Already Returned:</span>
+                              <p className="font-bold text-orange-700">{formatNumber(alreadyReturned)}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Originally Received:</span>
+                              <p className="font-bold text-blue-700">{formatNumber(item.originalQuantity || item.quantity || 0)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

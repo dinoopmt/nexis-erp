@@ -153,6 +153,89 @@ export const createGrn = async (req, res) => {
       });
     }
 
+    // ✅ NEW: Check for duplicate invoice/LPO within same vendor & financial year
+    // Extract financial year from GRN date (e.g., "2024-03-04" → "2024-25")
+    const grnDateObj = new Date(grnDate);
+    const year = grnDateObj.getFullYear();
+    const month = grnDateObj.getMonth(); // 0-11
+    
+    // Financial year: If month >= 3 (Mar), FY is current year+1 (e.g., Mar 2024 = FY 2024-25)
+    // Otherwise, previous year (e.g., Feb 2024 = FY 2023-24)
+    const financialYear = month >= 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+    
+    // Check for duplicate invoice number
+    if (invoiceNo && invoiceNo.trim()) {
+      const duplicateInvoice = await Grn.findOne({
+        vendorId,
+        invoiceNo: invoiceNo.trim(),
+        grnNumber: { $ne: grnNumber }, // Exclude current GRN (for editing)
+        // Check if GRN is in the same financial year (extract from grnDate)
+        $expr: {
+          $eq: [
+            // Use aggregation to extract financial year from grnDate
+            {
+              $dateToString: {
+                format: "%Y-%m",
+                date: "$grnDate"
+              }
+            },
+            {
+              $dateToString: {
+                format: "%Y-%m", 
+                date: new Date(grnDate)
+              }
+            }
+          ]
+        }
+      });
+      
+      if (duplicateInvoice) {
+        console.warn(`❌ Duplicate invoice number ${invoiceNo} for vendor ${vendorId} in financial year ${financialYear}`);
+        return res.status(400).json({
+          message: `Invoice number "${invoiceNo}" already exists for this vendor in the same financial year (GRN: ${duplicateInvoice.grnNumber})`,
+          error: "DUPLICATE_INVOICE",
+          duplicateGrn: duplicateInvoice.grnNumber,
+          invoiceNo
+        });
+      }
+    }
+
+    // Check for duplicate LPO number
+    if (lpoNo && lpoNo.trim()) {
+      const duplicateLpo = await Grn.findOne({
+        vendorId,
+        lpoNo: lpoNo.trim(),
+        grnNumber: { $ne: grnNumber }, // Exclude current GRN (for editing)
+        // Check if GRN is in the same financial year
+        $expr: {
+          $eq: [
+            {
+              $dateToString: {
+                format: "%Y-%m",
+                date: "$grnDate"
+              }
+            },
+            {
+              $dateToString: {
+                format: "%Y-%m", 
+                date: new Date(grnDate)
+              }
+            }
+          ]
+        }
+      });
+      
+      if (duplicateLpo) {
+        console.warn(`❌ Duplicate LPO number ${lpoNo} for vendor ${vendorId} in financial year ${financialYear}`);
+        return res.status(400).json({
+          message: `LPO number "${lpoNo}" already exists for this vendor in the same financial year (GRN: ${duplicateLpo.grnNumber})`,
+          error: "DUPLICATE_LPO",
+          duplicateGrn: duplicateLpo.grnNumber,
+          lpoNo
+        });
+      }
+    }
+
     // Create GRN with all fields
     const newGrn = new Grn({
       grnNumber,
@@ -318,6 +401,83 @@ export const updateGrn = async (req, res) => {
     if (!grn) {
       console.warn(`❌ GRN not found for update: ${id}`);
       return res.status(404).json({ message: "GRN not found" });
+    }
+
+    // ✅ NEW: Check for duplicate invoice/LPO within same vendor & financial year (excluding current GRN)
+    const grnDateObj = new Date(grnDate);
+    const year = grnDateObj.getFullYear();
+    const month = grnDateObj.getMonth(); // 0-11
+    
+    const financialYear = month >= 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+    
+    // Check for duplicate invoice number
+    if (invoiceNo && invoiceNo.trim()) {
+      const duplicateInvoice = await Grn.findOne({
+        _id: { $ne: id }, // Exclude current GRN
+        vendorId,
+        invoiceNo: invoiceNo.trim(),
+        $expr: {
+          $eq: [
+            {
+              $dateToString: {
+                format: "%Y-%m",
+                date: "$grnDate"
+              }
+            },
+            {
+              $dateToString: {
+                format: "%Y-%m", 
+                date: new Date(grnDate)
+              }
+            }
+          ]
+        }
+      });
+      
+      if (duplicateInvoice) {
+        console.warn(`❌ Duplicate invoice number ${invoiceNo} for vendor ${vendorId} in financial year ${financialYear}`);
+        return res.status(400).json({
+          message: `Invoice number "${invoiceNo}" already exists for this vendor in the same financial year (GRN: ${duplicateInvoice.grnNumber})`,
+          error: "DUPLICATE_INVOICE",
+          duplicateGrn: duplicateInvoice.grnNumber,
+          invoiceNo
+        });
+      }
+    }
+
+    // Check for duplicate LPO number
+    if (lpoNo && lpoNo.trim()) {
+      const duplicateLpo = await Grn.findOne({
+        _id: { $ne: id }, // Exclude current GRN
+        vendorId,
+        lpoNo: lpoNo.trim(),
+        $expr: {
+          $eq: [
+            {
+              $dateToString: {
+                format: "%Y-%m",
+                date: "$grnDate"
+              }
+            },
+            {
+              $dateToString: {
+                format: "%Y-%m", 
+                date: new Date(grnDate)
+              }
+            }
+          ]
+        }
+      });
+      
+      if (duplicateLpo) {
+        console.warn(`❌ Duplicate LPO number ${lpoNo} for vendor ${vendorId} in financial year ${financialYear}`);
+        return res.status(400).json({
+          message: `LPO number "${lpoNo}" already exists for this vendor in the same financial year (GRN: ${duplicateLpo.grnNumber})`,
+          error: "DUPLICATE_LPO",
+          duplicateGrn: duplicateLpo.grnNumber,
+          lpoNo
+        });
+      }
     }
 
     // ========================================

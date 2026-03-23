@@ -7,6 +7,7 @@ import CurrentStock from "../../../Models/CurrentStock.js";
 import CostingService from "../../../services/CostingService.js";
 import UniversalStockRecalculationService from "./UniversalStockRecalculationService.js";
 import StockRecalculationHelper from "./StockRecalculationHelper.js";
+import { indexProduct } from "../../../config/meilisearch.js";
 
 /**
  * GRNStockUpdateService
@@ -53,6 +54,8 @@ class GRNStockUpdateService {
         createdBatches: [],
         costUpdates: [],
         variantUpdates: [],
+        pricingUpdates: [],           // ✅ NEW: Product pricing updates
+        variantPricingUpdates: [],    // ✅ NEW: Variant pricing updates
         currentStockUpdates: [],  // ✅ Initialize here
         logs: [],
         errors: []
@@ -127,6 +130,30 @@ class GRNStockUpdateService {
             results.variantUpdates.push(variantUpdate);
           }
 
+          // ✅ NEW: 4.5 Update product pricing after cost change
+          // Updates: lastReceivedCost, costIncludeVat, marginPercent, marginAmount, pricingLevels
+          const productPricingUpdate = await this.updateProductPricingAfterCostChange(
+            product,
+            costUpdate?.newCost,
+            costUpdate?.oldCost,
+            item
+          );
+          if (productPricingUpdate) {
+            results.pricingUpdates = results.pricingUpdates || [];
+            results.pricingUpdates.push(productPricingUpdate);
+          }
+
+          // ✅ NEW: 4.6 Update variant pricing after product cost change
+          // Updates variant costs, margins, and prices
+          const variantPricingUpdate = await this.updateVariantPricingAfterCostChange(
+            product,
+            costUpdate?.newCost
+          );
+          if (variantPricingUpdate) {
+            results.variantPricingUpdates = results.variantPricingUpdates || [];
+            results.variantPricingUpdates.push(variantPricingUpdate);
+          }
+
           // 5. Create stock movement record
           await this.createStockMovement(
             product,
@@ -136,14 +163,16 @@ class GRNStockUpdateService {
             userId
           );
 
-          // 6. Create audit log
+          // 6. Create audit log (enhanced with pricing updates)
           await this.createAuditLog(
             product,
             item,
             grnData,
             userId,
             stockUpdate,
-            costUpdate
+            costUpdate,
+            productPricingUpdate,
+            variantPricingUpdate
           );
           results.logs.push({
             productId: product._id.toString(),
@@ -164,6 +193,8 @@ class GRNStockUpdateService {
         batchesCreated: results.createdBatches.length,
         costUpdates: results.costUpdates.length,
         variantUpdates: results.variantUpdates.length,
+        pricingUpdates: results.pricingUpdates?.length || 0,     // ✅ NEW
+        variantPricingUpdates: results.variantPricingUpdates?.length || 0,  // ✅ NEW
         currentStockUpdates: results.currentStockUpdates?.length || 0,
         errors: results.errors.length
       });
@@ -480,6 +511,15 @@ class GRNStockUpdateService {
 
       await product.save();
 
+      // ✅ RE-INDEX in Meilisearch so search results show fresh cost
+      try {
+        await indexProduct(product);
+        console.log(`🔍 Re-indexed product ${product.itemcode} in Meilisearch with new cost ${newCost}`);
+      } catch (indexErr) {
+        console.warn(`⚠️  Failed to re-index ${product.itemcode} in Meilisearch:`, indexErr.message);
+        // Don't fail the entire operation if Meilisearch indexing fails
+      }
+
       console.log(`✅ Cost updated for ${product.itemcode}: ${oldCost} → ${newCost} (${costingMethod}, effective: ${effectiveUnitCost.toFixed(2)}, variant qty: ${item.quantity}, factor: ${conversionFactor}, base units: ${actualQuantity})`);
 
       return {
@@ -618,23 +658,35 @@ class GRNStockUpdateService {
   }
 
   /**
-   * Create audit log for stock update
+   * Create audit log for stock update (enhanced with pricing changes)
    * @param {Object} product - Product document
    * @param {Object} item - GRN line item
    * @param {Object} grnData - GRN data
    * @param {string} userId - User ID
    * @param {Object} stockUpdate - Stock update details
    * @param {Object} costUpdate - Cost update details
+   * @param {Object} productPricingUpdate - ✅ NEW: Product pricing update details
+   * @param {Object} variantPricingUpdate - ✅ NEW: Variant pricing update details
    */
-  static async createAuditLog(product, item, grnData, userId, stockUpdate, costUpdate) {
+  static async createAuditLog(product, item, grnData, userId, stockUpdate, costUpdate, productPricingUpdate, variantPricingUpdate) {
     try {
       const changes = {
         action: "GRN_STOCK_RECEIVED",
         grnNumber: grnData.grnNumber,
         vendor: grnData.vendorName,
         ...stockUpdate,
-        ...costUpdate
+        ...costUpdate,
+        ...(productPricingUpdate && { productPricingUpdate }),  // ✅ NEW: Add pricing updates
+        ...(variantPricingUpdate && { variantPricingUpdate })   // ✅ NEW: Add variant pricing updates
       };
+
+      let description = `Stock received for ${product.itemcode}: +${item.quantity} units from GRN ${grnData.grnNumber}`;
+      
+      // ✅ NEW: Enhance description with pricing changes
+      if (productPricingUpdate?.pricingUpdate) {
+        const { marginPercent, previousPrice, newPrice } = productPricingUpdate.pricingUpdate;
+        description += `; Pricing updated: margin ${marginPercent.toFixed(2)}%, price ${previousPrice} → ${newPrice}`;
+      }
 
       const log = new ActivityLog({
         userId: userId,
@@ -642,14 +694,14 @@ class GRNStockUpdateService {
         action: "CREATE",
         module: "Inventory",
         resource: "Stock - GRN Receipt",
-        description: `Stock received for ${product.itemcode}: +${item.quantity} units from GRN ${grnData.grnNumber}`,
+        description: description,
         changes: changes,
         status: "success"
       });
 
       await log.save();
 
-      console.log(`✅ Audit log created for ${product.itemcode}`);
+      console.log(`✅ Audit log created for ${product.itemcode} (including pricing changes)`);
 
     } catch (error) {
       console.error("❌ Error creating audit log:", error);
@@ -720,6 +772,232 @@ class GRNStockUpdateService {
 
     } catch (error) {
       console.error(`❌ Error in updateCurrentStock:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * ✅ NEW: Update product pricing after cost change during GRN
+   * Updates: lastReceivedCost, costIncludeVat, marginPercent, marginAmount, pricingLevels
+   * 
+   * KEY LOGIC: Price is FIXED (preserved). Margin% and margin amount change due to cost change.
+   * 
+   * @param {Object} product - Product document
+   * @param {number} newCost - New cost from GRN
+   * @param {number} oldCost - Previous cost
+   * @param {Object} item - GRN line item (for tax info)
+   * @returns {Promise<Object|null>} - Pricing update details
+   */
+  static async updateProductPricingAfterCostChange(product, newCost, oldCost, item) {
+    try {
+      if (!newCost || newCost <= 0) {
+        return null; // No pricing update if cost is invalid
+      }
+
+      const lastReceivedCost = product.cost || oldCost;
+      const fixedSellingPrice = product.price || 0;  // FIXED - Do not change
+
+      // ✅ STEP 1: Update lastReceivedCost (track history)
+      if (!product.lastReceivedCost) {
+        product.lastReceivedCost = oldCost;
+      }
+
+      // ✅ STEP 2: Update costIncludeVat based on tax
+      let costIncludeVat = newCost;
+      if (item?.taxType === "inclusive" && item?.taxPercent > 0) {
+        costIncludeVat = newCost; // Already includes tax
+      } else if (item?.taxPercent > 0) {
+        // Tax is exclusive, add it to cost
+        costIncludeVat = newCost + (newCost * (item.taxPercent / 100));
+      }
+      product.costIncludeVat = Math.round(costIncludeVat * 100) / 100;
+
+      // ✅ STEP 3: RECALCULATE marginPercent based on FIXED price
+      // Formula: marginPercent = (fixedPrice - newCost) / newCost * 100
+      // This WILL change because cost changed but price stayed same
+      let newMarginPercent = 0;
+      if (fixedSellingPrice > newCost) {
+        newMarginPercent = ((fixedSellingPrice - newCost) / newCost) * 100;
+      }
+      product.marginPercent = Math.round(newMarginPercent * 100) / 100;
+
+      // ✅ STEP 4: RECALCULATE marginAmount based on FIXED price
+      // Formula: marginAmount = fixedPrice - newCost
+      // This CHANGES because cost changed
+      const marginAmount = fixedSellingPrice - newCost;
+      product.marginAmount = Math.round(marginAmount * 100) / 100;
+
+      // ✅ STEP 5: Update pricingLevels[0] with FIXED price (NOT recalculated)
+      // All levels keep the same fixed price
+      if (!product.pricingLevels) {
+        product.pricingLevels = new Map();
+      }
+
+      const pricingLineIndex = "0"; // Main pricing line
+      if (!product.pricingLevels.get(pricingLineIndex)) {
+        product.pricingLevels.set(pricingLineIndex, {});
+      }
+
+      const pricingLine = product.pricingLevels.get(pricingLineIndex);
+      
+      // ✅ Update all 5 levels to FIXED price (preserve customer pricing)
+      pricingLine.level1 = fixedSellingPrice;
+      pricingLine.level2 = fixedSellingPrice;
+      pricingLine.level3 = fixedSellingPrice;
+      pricingLine.level4 = fixedSellingPrice;
+      pricingLine.level5 = fixedSellingPrice;
+
+      product.pricingLevels.set(pricingLineIndex, pricingLine);
+
+      // ✅ Price stays the same (no update needed)
+      // product.price remains = fixedSellingPrice
+
+      await product.save();
+
+      // ✅ RE-INDEX in Meilisearch so search results show fresh pricing data
+      try {
+        await indexProduct(product);
+        console.log(`🔍 Re-indexed product ${product.itemcode} in Meilisearch with updated pricing`);
+      } catch (indexErr) {
+        console.warn(`⚠️  Failed to re-index ${product.itemcode} in Meilisearch:`, indexErr.message);
+        // Don't fail the entire operation if Meilisearch indexing fails
+      }
+
+      console.log(`✅ Product pricing updated for ${product.itemcode}: cost ${oldCost} → ${newCost}, margin% recalculated to ${newMarginPercent.toFixed(2)}%, price FIXED at ${fixedSellingPrice}`);
+
+      return {
+        productId: product._id.toString(),
+        itemCode: product.itemcode,
+        costUpdate: {
+          oldCost,
+          newCost,
+          lastReceivedCost,
+          costIncludeVat
+        },
+        pricingUpdate: {
+          price: fixedSellingPrice,           // FIXED - Does not change
+          marginPercentOld: oldCost > 0 ? ((fixedSellingPrice - oldCost) / oldCost) * 100 : 0,
+          marginPercentNew: newMarginPercent, // RECALCULATED
+          marginAmountOld: fixedSellingPrice - oldCost,
+          marginAmountNew: marginAmount,      // RECALCULATED
+          pricingLevels: {
+            level1: fixedSellingPrice,
+            level2: fixedSellingPrice,
+            level3: fixedSellingPrice,
+            level4: fixedSellingPrice,
+            level5: fixedSellingPrice
+          }
+        }
+      };
+
+    } catch (error) {
+      console.error("❌ Error updating product pricing after cost change:", error);
+      return null;
+    }
+  }
+
+  /**
+   * ✅ NEW: Update variant pricing after product cost change
+   * Updates unit variant costs, margins, and prices
+   * 
+   * KEY LOGIC: Variant price is FIXED. Margin% and margin amount change due to cost change.
+   * 
+   * @param {Object} product - Product document
+   * @param {number} newProductCost - New product base cost
+   * @returns {Promise<Object|null>} - Variant pricing update details
+   */
+  static async updateVariantPricingAfterCostChange(product, newProductCost) {
+    try {
+      if (!newProductCost || !product.packingUnits || product.packingUnits.length === 0) {
+        return null; // No variants to update
+      }
+
+      const updates = [];
+
+      for (let i = 0; i < product.packingUnits.length; i++) {
+        const unit = product.packingUnits[i];
+        const conversionFactor = unit.conversionFactor || 1;
+
+        // ✅ Calculate new variant cost: base cost × conversion factor
+        const newVariantCost = newProductCost * conversionFactor;
+        const roundedVariantCost = Math.round(newVariantCost * 100) / 100;
+
+        // ✅ Get FIXED variant selling price (do not change)
+        const fixedVariantPrice = unit.price || 0;
+        
+        // ✅ RECALCULATE variant margin% based on FIXED price and new cost
+        // Formula: marginPercent = (fixedPrice - cost) / cost * 100
+        let variantMarginPercentOld = 0;
+        if (unit.cost && unit.cost > 0) {
+          variantMarginPercentOld = ((fixedVariantPrice - unit.cost) / unit.cost) * 100;
+        }
+
+        let variantMarginPercentNew = 0;
+        if (fixedVariantPrice > roundedVariantCost) {
+          variantMarginPercentNew = ((fixedVariantPrice - roundedVariantCost) / roundedVariantCost) * 100;
+        }
+        const roundedMarginPercentNew = Math.round(variantMarginPercentNew * 100) / 100;
+
+        // ✅ RECALCULATE variant margin amount based on FIXED price
+        // Formula: marginAmount = fixedPrice - cost
+        const variantMarginAmountOld = fixedVariantPrice - (unit.cost || 0);
+        const variantMarginAmountNew = fixedVariantPrice - roundedVariantCost;
+        const roundedMarginAmountNew = Math.round(variantMarginAmountNew * 100) / 100;
+
+        // ✅ Update variant fields
+        unit.cost = roundedVariantCost;
+        unit.margin = roundedMarginPercentNew;
+        unit.marginAmount = roundedMarginAmountNew;
+        // Price stays FIXED - no update to unit.price
+
+        // Update costIncludeVat if tax info exists
+        if (unit.taxPercent && unit.taxPercent > 0) {
+          if (unit.taxInPrice) {
+            unit.costIncludeVat = roundedVariantCost; // Already includes tax
+          } else {
+            unit.costIncludeVat = roundedVariantCost + (roundedVariantCost * (unit.taxPercent / 100));
+          }
+        }
+
+        updates.push({
+          unitName: unit.name,
+          conversionFactor,
+          costUpdate: {
+            oldCost: unit.cost,
+            newCost: roundedVariantCost
+          },
+          pricingUpdate: {
+            price: fixedVariantPrice,              // FIXED - Does not change
+            marginPercentOld: variantMarginPercentOld,
+            marginPercentNew: roundedMarginPercentNew,  // RECALCULATED
+            marginAmountOld: variantMarginAmountOld,
+            marginAmountNew: roundedMarginAmountNew     // RECALCULATED
+          }
+        });
+      }
+
+      await product.save();
+
+      // ✅ RE-INDEX in Meilisearch so search results show fresh variant data
+      try {
+        await indexProduct(product);
+        console.log(`🔍 Re-indexed product ${product.itemcode} in Meilisearch with updated variant pricing`);
+      } catch (indexErr) {
+        console.warn(`⚠️  Failed to re-index ${product.itemcode} in Meilisearch:`, indexErr.message);
+        // Don't fail the entire operation if Meilisearch indexing fails
+      }
+
+      console.log(`✅ Variant pricing updated for ${product.itemcode}: ${updates.length} variants - prices FIXED, margins recalculated`);
+
+      return {
+        productId: product._id.toString(),
+        itemCode: product.itemcode,
+        variantsUpdated: updates.length,
+        updates
+      };
+
+    } catch (error) {
+      console.error("❌ Error updating variant pricing after cost change:", error);
       return null;
     }
   }

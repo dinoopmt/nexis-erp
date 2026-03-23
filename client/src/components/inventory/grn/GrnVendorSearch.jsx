@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown, X } from "lucide-react";
 
-const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, onVendorSelect }) => {
+const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isViewMode = false, onVendorSelect }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredVendors, setFilteredVendors] = useState([]);
@@ -84,19 +84,26 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, onVend
     <div className="relative w-full" ref={containerRef}>
       {/* Vendor Input */}
       <div
-        className="relative flex items-center px-3 py-2 border border-gray-300 rounded text-sm focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer bg-white hover:border-blue-400 transition"
-        onClick={() => setIsOpen(!isOpen)}
+        className={`relative flex items-center px-3 py-2 border border-gray-300 rounded text-sm focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-500 cursor-pointer ${
+          isViewMode ? "bg-gray-100 opacity-60" : "bg-white hover:border-blue-400"
+        } transition`}
+        onClick={() => !isViewMode && setIsOpen(!isOpen)}
       >
         <input
           type="text"
           value={isOpen ? searchTerm : displayName}
           onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setIsOpen(true);
+            if (!isViewMode) {
+              setSearchTerm(e.target.value);
+              setIsOpen(true);
+            }
           }}
-          onClick={() => setIsOpen(true)}
+          onClick={() => !isViewMode && setIsOpen(true)}
           placeholder="Search vendor..."
-          className="flex-1 outline-none text-sm bg-transparent"
+          disabled={isViewMode} // ✅ Disable in view mode
+          className={`flex-1 outline-none text-sm bg-transparent ${
+            isViewMode ? "cursor-not-allowed" : ""
+          }`}
         />
 
         {selectedVendorId && !isOpen && (
@@ -117,8 +124,8 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, onVend
         />
       </div>
 
-      {/* Dropdown List */}
-      {isOpen && (
+      {/* Dropdown List - Hidden in view mode */}
+      {isOpen && !isViewMode && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-20 max-h-64 overflow-y-auto">
           {filteredVendors && filteredVendors.length > 0 ? (
             filteredVendors.map((vendor) => (

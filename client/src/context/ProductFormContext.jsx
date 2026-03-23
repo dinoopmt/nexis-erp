@@ -8,6 +8,7 @@
  * openProductForm({ mode: 'create', onSave: handleProductSaved });
  */
 import React, { createContext, useState, useCallback } from 'react';
+import { clearAllCache } from '../utils/searchCache';
 
 export const ProductFormContext = createContext();
 
@@ -60,6 +61,10 @@ export const ProductFormProvider = ({ children }) => {
     if (onSaveCallback) {
       onSaveCallback(newProduct);
     }
+    
+    // ✅ Clear product search cache when product is updated
+    clearAllCache();
+    console.log('🧹 Cleared search cache after product update');
     
     // 🔴 P2: Broadcast product update event
     window.dispatchEvent(

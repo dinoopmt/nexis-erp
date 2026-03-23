@@ -21,6 +21,7 @@ const GrnItemsTable = ({
   onCellValueChanged,
   gridContext,
   highlightedItemId,
+  isViewMode = false, // ✅ NEW: Read-only mode
 }) => {
   const gridRef = useRef(null);
 
@@ -90,16 +91,21 @@ const GrnItemsTable = ({
           ref={gridRef}
           columnDefs={columns}
           rowData={items || []}
-          onCellValueChanged={onCellValueChanged}
+          onCellValueChanged={!isViewMode ? onCellValueChanged : undefined} // ✅ Disable cell changes in view mode
           context={gridContext}
           theme="legacy"
           domLayout={gridConfig.domLayout}
           animateRows={gridConfig.animateRows}
-          defaultColDef={gridConfig.defaultColDef}
+          defaultColDef={{
+            ...gridConfig.defaultColDef,
+            editable: !isViewMode, // ✅ Disable editing in view mode
+          }}
           rowHeight={gridConfig.rowHeight}
           headerHeight={gridConfig.headerHeight}
           suppressMenuHide={gridConfig.suppressMenuHide}
           stopEditingWhenCellsLoseFocus={gridConfig.stopEditingWhenCellsLoseFocus}
+          suppressClicksWhenReadOnly={isViewMode} // ✅ Prevent clicks on read-only cells
+          readOnlyEdit={isViewMode} // ✅ Read-only mode flag
           getRowClass={(params) => {
             const rowId = params.data?.id;
             const shouldHighlight = highlightedItemId && rowId === highlightedItemId;

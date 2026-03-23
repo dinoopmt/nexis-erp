@@ -18,6 +18,7 @@ import { ProductFormContext } from "../../context/ProductFormContext";
 
 // Utilities
 import { calculateGrnTotals, calculateItemCost, calculateFocOnPost } from "../../utils/grnCalculations";
+import { clearAllCache } from "../../utils/searchCache";
 
 // Sub-Components
 import GrnListTable from "./grn/GrnListTable";
@@ -45,6 +46,7 @@ const GrnForm = () => {
 
   // Search & Selection States
   const [showNewGrnModal, setShowNewGrnModal] = useState(false);
+  const [isViewMode, setIsViewMode] = useState(false); // ✅ Read-only view mode
   const [itemSearch, setItemSearch] = useState("");
   const [barcodeValue, setBarcodeValue] = useState("");
   const [showUnitSelector, setShowUnitSelector] = useState(false);
@@ -403,10 +405,14 @@ const GrnForm = () => {
   };
 
   const getTotalExTax = () => {
+    // ✅ FIXED: For summary, totalSubtotal already has tax extracted for inclusive tax items
+    // So we just subtract discount from the already-corrected subtotal
     return grnTotals.totalSubtotal - getDiscountAmount();
   };
 
   const getNetTotal = () => {
+    // ✅ FIXED: getTotalExTax() now shows ACTUAL ex-tax amount
+    // Adding tax gives the final payable amount
     return getTotalExTax() + grnTotals.totalTaxAmount;
   };
 
@@ -733,6 +739,79 @@ const GrnForm = () => {
         userData: localStorage.getItem("user"),
       });
 
+      // ✅ NEW: Validate invoice/LPO duplication (same vendor, same financial year)
+      const grnDate = new Date(submitData.grnDate);
+      const grnYear = grnDate.getFullYear();
+      const grnMonth = grnDate.getMonth(); // 0-11
+      const grnFinancialYear = grnMonth >= 3 ? `${grnYear}-${grnYear + 1}` : `${grnYear - 1}-${grnYear}`;
+
+      // Check existing GRNs in the list
+      const existingGrns = grnList || [];
+      
+      // Check for duplicate invoice number
+      if (submitData.invoiceNo && submitData.invoiceNo.trim()) {
+        const duplicateInvoice = existingGrns.find(grn => {
+          // Skip if it's the same GRN being edited
+          if (editingId && grn._id === editingId) return false;
+          
+          // Check if same vendor
+          if (grn.vendorId?.toString() !== submitData.vendorId?.toString() && grn.vendorId !== submitData.vendorId) {
+            return false;
+          }
+          
+          // Check if same financial year
+          if (grn.grnDate) {
+            const existingDate = new Date(grn.grnDate);
+            const existingYear = existingDate.getFullYear();
+            const existingMonth = existingDate.getMonth();
+            const existingFY = existingMonth >= 3 ? `${existingYear}-${existingYear + 1}` : `${existingYear - 1}-${existingYear}`;
+            if (existingFY !== grnFinancialYear) return false;
+          }
+          
+          // Check if same invoice number
+          return grn.invoiceNo === submitData.invoiceNo.trim();
+        });
+
+        if (duplicateInvoice) {
+          toast.error(
+            `⚠️ Invoice number "${submitData.invoiceNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateInvoice.grnNumber})`
+          );
+          return;
+        }
+      }
+
+      // Check for duplicate LPO number
+      if (submitData.lpoNo && submitData.lpoNo.trim()) {
+        const duplicateLpo = existingGrns.find(grn => {
+          // Skip if it's the same GRN being edited
+          if (editingId && grn._id === editingId) return false;
+          
+          // Check if same vendor
+          if (grn.vendorId?.toString() !== submitData.vendorId?.toString() && grn.vendorId !== submitData.vendorId) {
+            return false;
+          }
+          
+          // Check if same financial year
+          if (grn.grnDate) {
+            const existingDate = new Date(grn.grnDate);
+            const existingYear = existingDate.getFullYear();
+            const existingMonth = existingDate.getMonth();
+            const existingFY = existingMonth >= 3 ? `${existingYear}-${existingYear + 1}` : `${existingYear - 1}-${existingYear}`;
+            if (existingFY !== grnFinancialYear) return false;
+          }
+          
+          // Check if same LPO number
+          return grn.lpoNo === submitData.lpoNo.trim();
+        });
+
+        if (duplicateLpo) {
+          toast.error(
+            `⚠️ LPO number "${submitData.lpoNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateLpo.grnNumber})`
+          );
+          return;
+        }
+      }
+
       const response = await axios({
         method: editingId ? "PUT" : "POST",
         url: `${API_URL}/grn${editingId ? `/${editingId}` : ""}`,
@@ -740,14 +819,27 @@ const GrnForm = () => {
         headers: { "Content-Type": "application/json" },
       });
 
+      console.log(`✅ GRN Save Response:`, {
+        status: response.status,
+        statusText: response.statusText,
+        hasData: !!response.data,
+        dataId: response.data?._id,
+        editingId: editingId
+      });
+
       if (response.status === 200 || response.status === 201) {
-        toast.success(
-          editingId ? "GRN updated successfully" : "GRN created successfully",
-        );
+        // ✅ Track completion status for combined message
+        let completionStatus = {
+          saved: true,
+          posted: false,
+          postError: null,
+          inventoryUpdates: null
+        };
 
         // ✅ NEW: If GRN was CREATED (not edited), automatically POST it to trigger stock updates
         if (!editingId && response.data?._id) {
           console.log(`📤 Auto-posting new GRN to trigger stock updates: ${response.data._id}`);
+          
           try {
             const postResponse = await axios.post(
               `${API_URL}/grn/${response.data._id}/post`,
@@ -756,17 +848,42 @@ const GrnForm = () => {
             
             console.log(`✅ GRN Posted successfully:`, {
               status: postResponse.status,
+              statusText: postResponse.statusText,
               currentStockUpdates: postResponse.data?.inventory?.currentStockUpdates || 0,
               batchesCreated: postResponse.data?.inventory?.batchesCreated || 0,
               costUpdates: postResponse.data?.inventory?.costUpdates || 0
             });
             
-            toast.success("GRN posted successfully - Stock updated");
+            completionStatus.posted = true;
+            completionStatus.inventoryUpdates = {
+              currentStock: postResponse.data?.inventory?.currentStockUpdates || 0,
+              batches: postResponse.data?.inventory?.batchesCreated || 0,
+              costUpdates: postResponse.data?.inventory?.costUpdates || 0
+            };
           } catch (postError) {
             console.error(`❌ Error posting GRN:`, postError.response?.data || postError.message);
-            toast.error("GRN created but post failed - stock not updated yet");
+            completionStatus.postError = postError.response?.data?.message || postError.message;
           }
         }
+
+        // ✅ Show SINGLE combined toast message
+        let toastMessage = "";
+        if (editingId) {
+          toastMessage = "✅ GRN updated successfully";
+        } else if (completionStatus.posted) {
+          toastMessage = `✅ GRN created & posted successfully - Stock updated (${completionStatus.inventoryUpdates.currentStock} entries, ${completionStatus.inventoryUpdates.costUpdates} costs updated)`;
+        } else if (completionStatus.postError) {
+          toastMessage = `✅ GRN created successfully\n⚠️ Auto-post failed: ${completionStatus.postError}`;
+        } else {
+          toastMessage = "✅ GRN created successfully";
+        }
+
+        console.log(`📢 Showing combined toast: ${toastMessage}`);
+        toast.success(toastMessage);
+
+        // ✅ Clear product search cache to ensure fresh costs display in dropdown
+        clearAllCache();
+        console.log("🧹 Cleared product search cache after GRN save");
 
         // Refresh list
         const listResponse = await axios.get(`${API_URL}/grn`);
@@ -893,6 +1010,60 @@ const GrnForm = () => {
               grn.vendorName?.toLowerCase().includes(grnSearch.toLowerCase())) &&
               (grnStatusFilter === "" || grn.status === grnStatusFilter)
             )}
+          onView={(grn) => {
+            // ✅ Map backend GRN data to frontend form format (VIEW MODE)
+            const mappedItems = (grn.items || []).map(item => ({
+              id: item._id || Math.random().toString(36),
+              productId: item.productId,
+              productName: item.itemName,
+              itemCode: item.itemCode,
+              qty: item.quantity,
+              cost: item.unitCost,
+              netCost: item.netCost || (item.quantity * item.unitCost - (item.itemDiscount || 0)),
+              netCostWithoutTax: item.netCostWithoutTax || 0,
+              finalCost: item.totalCost || 0,
+              unitType: item.unitType || "PC",
+              foc: item.foc || false,
+              focQty: item.focQty || 0,
+              discount: item.itemDiscount || 0,
+              discountPercent: item.itemDiscountPercent || 0,
+              taxType: item.taxType || grn.taxType || "exclusive",
+              taxPercent: item.taxPercent || 0,
+              taxAmount: item.taxAmount || 0,
+              trackExpiry: item.trackExpiry || false,
+              batchNumber: item.batchNumber || "",
+              expiryDate: item.expiryDate || null,
+              notes: item.notes || "",
+            }));
+
+            const recalculatedItems = mappedItems.map(item => {
+              const itemToCalculate = { ...item };
+              calculateItemCost(itemToCalculate, true);
+              return itemToCalculate;
+            });
+            
+            const mappedGrn = {
+              grnNo: grn.grnNumber,
+              invoiceNo: grn.invoiceNo || "",
+              lpoNo: grn.lpoNo || "",
+              vendorId: grn.vendorId,
+              vendorName: grn.vendorName,
+              grnDate: grn.grnDate ? new Date(grn.grnDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+              taxType: grn.taxType || "exclusive",
+              notes: grn.notes || "",
+              documents: grn.documents || [],
+              paymentTerms: grn.paymentTerms || "due_on_receipt",
+              shippingCost: grn.shippingCost || 0,
+              shipperId: grn.shipperId || "",
+              shipperName: grn.shipperName || "",
+              items: recalculatedItems,
+            };
+            
+            setFormData(mappedGrn);
+            setEditingId(grn._id);
+            setIsViewMode(true); // ✅ Enable view mode
+            setShowNewGrnModal(true);
+          }}
           onEdit={(grn) => {
             // ✅ Map backend GRN data to frontend form format
             const mappedItems = (grn.items || []).map(item => ({
@@ -994,11 +1165,12 @@ const GrnForm = () => {
             {/* Modal Header */}
             <div className="sticky top-0 flex rounded-t-lg justify-between items-center p-2 border-b bg-gray-50 flex-shrink-0">
               <h2 className="text-lg font-bold text-gray-900">
-                {editingId ? "Edit Purchase Entry" : "New Purchase Entry"}
+                {isViewMode ? "📖 View Purchase Entry" : (editingId ? "Edit Purchase Entry" : "New Purchase Entry")}
               </h2>
               <button
                 onClick={async () => {
                   setShowNewGrnModal(false);
+                  setIsViewMode(false); // ✅ Reset view mode on close
                   await resetForm();
                 }}
                 className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-black-200 rounded-full transition-colors"
@@ -1014,8 +1186,9 @@ const GrnForm = () => {
               <GrnFormHeader
                 formData={formData}
                 vendors={vendors}
+                isViewMode={isViewMode} // ✅ Pass view mode
                 onFormChange={(field, value) =>
-                  setFormData((prev) => ({ ...prev, [field]: value }))
+                  !isViewMode && setFormData((prev) => ({ ...prev, [field]: value })) // Disable changes in view mode
                 }
                 onVendorChange={(e) => {
                   const vendorId = e.target?.value || "";
@@ -1044,7 +1217,8 @@ const GrnForm = () => {
                 }}
               />
 
-              {/* Item Search & Barcode Section */}
+              {/* Item Search & Barcode Section - Hidden in View Mode */}
+              {!isViewMode && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-shrink-0 pb-2">
                 {/* Item Search */}
                 <GrnItemSearch
@@ -1082,6 +1256,7 @@ const GrnForm = () => {
                   }}
                 />
               </div>
+              )}
 
               {/* Items Table */}
               <GrnItemsTable
@@ -1091,6 +1266,7 @@ const GrnForm = () => {
                 gridConfig={gridConfig}
                 gridHeight={gridHeight}
                 gridContainerRef={gridContainerRef}
+                isViewMode={isViewMode} // ✅ Pass view mode to disable editing
                 gridContext={{ onBatchExpiryClick: handleBatchExpiryClick }}
                 highlightedItemId={highlightedItemId}
                 onCellValueChanged={(event) => {
@@ -1306,7 +1482,8 @@ const GrnForm = () => {
                 </div>
               </div>
               
-              {/* Action Buttons Row */}
+              {/* Action Buttons Row - Hidden in View Mode */}
+              {!isViewMode && (
               <div className="flex gap-3 justify-end pr-3">
                 
                 <button
@@ -1398,6 +1575,26 @@ const GrnForm = () => {
                   ✓ Post GRN
                 </button>
               </div>
+              )}
+
+              {/* View Mode Info */}
+              {isViewMode && (
+                <div className="flex gap-3 justify-end pr-3">
+                  <div className="px-3 py-2 bg-blue-50 border border-blue-300 rounded text-xs text-blue-700 font-medium">
+                    📖 Viewing GRN in read-only mode
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setShowNewGrnModal(false);
+                      setIsViewMode(false);
+                      await resetForm();
+                    }}
+                    className="px-3 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 font-semibold transition"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

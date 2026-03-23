@@ -21,6 +21,8 @@ import StockMovement from '../../../Models/StockMovement.js';
 import InventoryBatch from '../../../Models/InventoryBatch.js';
 import VendorPayment from '../../../Models/VendorPayment.js';
 import StockBefore from '../../../Models/StockBefore.js';
+import AddProduct from '../../../Models/AddProduct.js';
+import GRNStockUpdateService from './GRNStockUpdateService.js';
 
 class ImprovedGRNEditManager {
   /**
@@ -74,6 +76,52 @@ class ImprovedGRNEditManager {
         }
 
         // ===============================================
+        // STEP 1.5: CHECK IF THIS IS THE LATEST GRN FOR EACH PRODUCT
+        // ===============================================
+        console.log(`\n  🔍 Validating GRN recency for products...`);
+
+        const productLatestGrnMap = new Map(); // Track if each product's GRN is latest
+
+        for (const item of oldGRN.items || []) {
+          if (!item.productId) continue;
+
+          const productId = item.productId.toString ? item.productId.toString() : item.productId;
+
+          // Find ALL GRNs for this product (ordered by date, latest first)
+          const allProductGRNs = await Grn.find(
+            { 
+              'items.productId': productId,
+              status: { $in: ['Received', 'Verified', 'Draft'] }
+            },
+            { _id: 1, grnNumber: 1, createdAt: 1 }
+          )
+            .sort({ createdAt: -1 })
+            .limit(1)
+            .session(session);
+
+          if (allProductGRNs.length > 0) {
+            const latestGrn = allProductGRNs[0];
+            const isLatest = latestGrn._id.toString() === oldGRN._id.toString();
+
+            productLatestGrnMap.set(productId, {
+              isLatest,
+              latestGrnId: latestGrn._id.toString(),
+              latestGrnNumber: latestGrn.grnNumber,
+              currentGrnId: oldGRN._id.toString(),
+              currentGrnNumber: oldGRN.grnNumber
+            });
+
+            if (!isLatest) {
+              console.log(`     ⚠️  Product ${productId}: Currently in ${oldGRN.grnNumber}, Latest is ${latestGrn.grnNumber}`);
+              console.log(`        ❌ Product cost will NOT be updated (not latest GRN)`);
+            } else {
+              console.log(`     ✅ Product ${productId}: In latest GRN (${oldGRN.grnNumber})`);
+              console.log(`        ✅ Product cost WILL be updated if cost changed`);
+            }
+          }
+        }
+
+        // ===============================================
         // STEP 2: BUILD ITEM MAPS (OLD vs NEW)
         // ===============================================
         const oldItemMap = this.buildItemMap(oldGRN.items);
@@ -92,11 +140,18 @@ class ImprovedGRNEditManager {
 
         for (const key of allKeys) {
           const { productId, batchNumber } = this.parseItemKey(key);
-          const oldQty = oldItemMap.get(key)?.quantity || 0;
-          const newQty = newItemMap.get(key)?.quantity || 0;
+          const oldItem = oldItemMap.get(key);
+          const newItem = newItemMap.get(key);
+          const oldQty = oldItem?.quantity || 0;
+          const newQty = newItem?.quantity || 0;
           const delta = newQty - oldQty;
 
-          if (delta !== 0) {
+          // Check if quantity changed OR cost/price changed
+          const oldCost = oldItem?.unitCost || 0;
+          const newCost = newItem?.unitCost || 0;
+          const costChanged = oldCost !== newCost;
+
+          if (delta !== 0 || costChanged) {
             deltas.push({
               key,
               productId,
@@ -104,11 +159,17 @@ class ImprovedGRNEditManager {
               oldQty,
               newQty,
               delta,
-              oldItem: oldItemMap.get(key),
-              newItem: newItemMap.get(key)
+              oldItem,
+              newItem,
+              costChanged
             });
 
-            console.log(`  📋 ${productId}: ${oldQty} → ${newQty} (delta: ${delta > 0 ? '+' : ''}${delta})`);
+            if (delta !== 0) {
+              console.log(`  📋 ${productId}: Qty ${oldQty} → ${newQty} (delta: ${delta > 0 ? '+' : ''}${delta})`);
+            }
+            if (costChanged) {
+              console.log(`  📋 ${productId}: Cost ${oldCost} → ${newCost}`);
+            }
           }
         }
 
@@ -118,6 +179,12 @@ class ImprovedGRNEditManager {
         console.log(`\n  🔄 Updating current stock...`);
 
         for (const delta of deltas) {
+          // Skip stock update if quantity didn't change (cost-only change)
+          if (delta.delta === 0) {
+            console.log(`     ℹ️ ${delta.productId}: Quantity unchanged, skipping stock update`);
+            continue;
+          }
+
           const { productId, oldQty, newQty } = delta;
 
           // Update stock with delta using $inc (atomic increment)
@@ -176,6 +243,9 @@ class ImprovedGRNEditManager {
         console.log(`\n  📦 Updating inventory batches...`);
 
         for (const delta of deltas) {
+          // Skip batch update if quantity didn't change
+          if (delta.delta === 0) continue;
+
           const { productId, batchNumber, newQty } = delta;
 
           if (batchNumber) {
@@ -207,6 +277,8 @@ class ImprovedGRNEditManager {
         console.log(`\n  📜 Updating stock movement records...`);
 
         for (const delta of deltas) {
+          // Skip movement update if quantity didn't change (cost-only changes don't affect movement records)
+          if (delta.delta === 0) continue;
           const { productId, oldQty, newQty } = delta;
 
           // Find and update the original StockMovement created when GRN was posted
@@ -292,8 +364,93 @@ class ImprovedGRNEditManager {
         }
 
         // ===============================================
-        // STEP 10: UPDATE GRN DOCUMENT
+        // STEP 9.5: UPDATE PRODUCT COSTS (if costs changed)
         // ===============================================
+        console.log(`\n  💰 Updating product costs (Only if this is the LATEST GRN)...`);
+
+        const costUpdates = [];
+
+        for (const delta of deltas) {
+          // Skip if cost didn't change
+          if (!delta.costChanged) continue;
+
+          const { productId, newItem, oldItem } = delta;
+
+          if (!newItem || !productId) continue;
+
+          // ✅ CHECK: Is this the latest GRN for this product?
+          const productGrnInfo = productLatestGrnMap.get(productId);
+          
+          if (productGrnInfo && !productGrnInfo.isLatest) {
+            console.log(`     ⚠️  Skipping cost update for ${productId}: Not the latest GRN`);
+            console.log(`        Current: ${productGrnInfo.currentGrnNumber}`);
+            console.log(`        Latest:  ${productGrnInfo.latestGrnNumber}`);
+            console.log(`        💡 Pricing line uses only LATEST GRN cost (${productGrnInfo.latestGrnNumber})`);
+            costUpdates.push({
+              productId,
+              skipped: true,
+              reason: 'Not the latest GRN for this product',
+              currentGrn: productGrnInfo.currentGrnNumber,
+              latestGrn: productGrnInfo.latestGrnNumber
+            });
+            continue;
+          }
+
+          // ✅ Proceed with cost update only if it's the latest GRN
+          console.log(`     ✅ This IS the latest GRN - proceeding with cost update`);
+
+          // Find the product
+          const product = await AddProduct.findById(productId).session(session);
+          if (!product) {
+            console.warn(`     ⚠️ Product not found: ${productId}, skipping cost update`);
+            continue;
+          }
+
+          try {
+            // Update product cost using GRNStockUpdateService
+            const costUpdate = await GRNStockUpdateService.updateProductCost(
+              product,
+              newItem,
+              oldGRN
+            );
+
+            if (costUpdate) {
+              console.log(`     ✅ Product ${product.itemcode}: Cost updated ${costUpdate.oldCost} → ${costUpdate.newCost} (${costUpdate.costingMethod})`);
+              costUpdates.push(costUpdate);
+
+              // ✅ Update product pricing (margin%, margin amount) after cost change
+              const pricingUpdate = await GRNStockUpdateService.updateProductPricingAfterCostChange(
+                product,
+                costUpdate.newCost,
+                costUpdate.oldCost,
+                newItem
+              );
+
+              if (pricingUpdate) {
+                console.log(`     ✅ Product pricing updated: Margin% ${pricingUpdate.pricingUpdate.marginPercentOld.toFixed(2)}% → ${pricingUpdate.pricingUpdate.marginPercentNew.toFixed(2)}%, Margin Amount ${pricingUpdate.pricingUpdate.marginAmountOld.toFixed(2)} → ${pricingUpdate.pricingUpdate.marginAmountNew.toFixed(2)}`);
+              }
+
+              // ✅ Update variant costs and pricing if applicable
+              const variantUpdate = await GRNStockUpdateService.updateVariantPricingAfterCostChange(
+                product,
+                costUpdate.newCost
+              );
+
+              if (variantUpdate) {
+                console.log(`     ✅ Variant pricing updated: ${variantUpdate.variantsUpdated} variants`);
+                variantUpdate.updates.forEach(update => {
+                  console.log(`        - ${update.unitName}: Cost ${update.costUpdate.oldCost.toFixed(2)} → ${update.costUpdate.newCost.toFixed(2)}, Margin ${update.pricingUpdate.marginPercentOld.toFixed(2)}% → ${update.pricingUpdate.marginPercentNew.toFixed(2)}%`);
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`     ❌ Error updating product cost for ${product?.itemcode}:`, error.message);
+            // Continue with other products on error
+          }
+        }
+
+        console.log(`     ✅ Product cost updates completed: ${costUpdates.length} products updated`);
+
         console.log(`\n  📝 Updating GRN document...`);
 
         // ✅ Recalculate ALL GRN totals including tax, discount, etc.
@@ -340,6 +497,7 @@ class ImprovedGRNEditManager {
             productIdsAffected: deltas.map(d => d.productId),
             stockUpdates,
             paymentUpdated,
+            costUpdates: costUpdates.length,
             totalsRecalculated: newTotals
           }
         };
@@ -350,6 +508,7 @@ class ImprovedGRNEditManager {
       console.log(`   Items: ${result.changes.itemsCount}`);
       console.log(`   Deltas applied: ${result.changes.deltasApplied}`);
       console.log(`   Payment updated: ${result.changes.paymentUpdated}`);
+      console.log(`   Product costs updated: ${result.changes.costUpdates}`);
 
       return result;
 

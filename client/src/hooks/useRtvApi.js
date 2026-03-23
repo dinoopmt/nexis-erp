@@ -10,7 +10,7 @@ export const useRtvApi = () => {
   // ✅ Fetch all RTVs
   const fetchRtvList = async (filters = {}) => {
     try {
-      const response = await axios.get(`${API_URL}/api/v1/rtv`, { params: filters });
+      const response = await axios.get(`${API_URL}/rtv`, { params: filters });
       return response.data?.data || response.data || [];
     } catch (error) {
       console.error("Error fetching RTV list:", error);
@@ -22,7 +22,7 @@ export const useRtvApi = () => {
   // ✅ Fetch RTV by ID
   const fetchRtvById = async (rtvId) => {
     try {
-      const response = await axios.get(`${API_URL}/api/v1/rtv/${rtvId}`);
+      const response = await axios.get(`${API_URL}/rtv/${rtvId}`);
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error fetching RTV:", error);
@@ -34,7 +34,7 @@ export const useRtvApi = () => {
   // ✅ Create RTV
   const createRtv = async (rtvData) => {
     try {
-      const response = await axios.post(`${API_URL}/api/v1/rtv`, rtvData);
+      const response = await axios.post(`${API_URL}/rtv`, rtvData);
       toast.success("RTV created successfully");
       return response.data?.data || response.data;
     } catch (error) {
@@ -47,7 +47,7 @@ export const useRtvApi = () => {
   // ✅ Update RTV
   const updateRtv = async (rtvId, rtvData) => {
     try {
-      const response = await axios.put(`${API_URL}/api/v1/rtv/${rtvId}`, rtvData);
+      const response = await axios.put(`${API_URL}/rtv/${rtvId}`, rtvData);
       toast.success("RTV updated successfully");
       return response.data?.data || response.data;
     } catch (error) {
@@ -61,7 +61,7 @@ export const useRtvApi = () => {
   const submitRtv = async (rtvId) => {
     try {
       const response = await axios.patch(
-        `${API_URL}/api/v1/rtv/${rtvId}/submit`,
+        `${API_URL}/rtv/${rtvId}/submit`,
         {}
       );
       toast.success("RTV submitted successfully");
@@ -77,7 +77,7 @@ export const useRtvApi = () => {
   const approveRtv = async (rtvId) => {
     try {
       const response = await axios.patch(
-        `${API_URL}/api/v1/rtv/${rtvId}/approve`,
+        `${API_URL}/rtv/${rtvId}/approve`,
         {}
       );
       toast.success("RTV approved successfully");
@@ -93,7 +93,7 @@ export const useRtvApi = () => {
   const postRtv = async (rtvId) => {
     try {
       const response = await axios.patch(
-        `${API_URL}/api/v1/rtv/${rtvId}/post`,
+        `${API_URL}/rtv/${rtvId}/post`,
         {}
       );
       toast.success("RTV posted successfully - Stock and GL entries reversed");
@@ -109,7 +109,7 @@ export const useRtvApi = () => {
   const cancelRtv = async (rtvId, reason) => {
     try {
       const response = await axios.patch(
-        `${API_URL}/api/v1/rtv/${rtvId}/cancel`,
+        `${API_URL}/rtv/${rtvId}/cancel`,
         { reason }
       );
       toast.success("RTV cancelled successfully");
@@ -124,7 +124,7 @@ export const useRtvApi = () => {
   // ✅ Delete RTV (only if draft)
   const deleteRtv = async (rtvId) => {
     try {
-      await axios.delete(`${API_URL}/api/v1/rtv/${rtvId}`);
+      await axios.delete(`${API_URL}/rtv/${rtvId}`);
       toast.success("RTV deleted successfully");
     } catch (error) {
       console.error("Error deleting RTV:", error);
@@ -136,7 +136,7 @@ export const useRtvApi = () => {
   // ✅ Get next RTV number
   const fetchRtvNextNumber = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/v1/rtv/next-number`);
+      const response = await axios.get(`${API_URL}/rtv/next-number`);
       return response.data?.rtvNo || null;
     } catch (error) {
       console.error("Error fetching RTV next number:", error);
@@ -148,8 +148,8 @@ export const useRtvApi = () => {
   const fetchGrnList = async (vendorId) => {
     try {
       const url = vendorId 
-        ? `${API_URL}/api/v1/rtv/grn/list?vendorId=${vendorId}`
-        : `${API_URL}/api/v1/rtv/grn/list`;
+        ? `${API_URL}/rtv/grn/list?vendorId=${vendorId}`
+        : `${API_URL}/rtv/grn/list`;
       console.log("Fetching GRN list from:", url);
       const response = await axios.get(url);
       console.log("GRN list response:", response);
@@ -180,7 +180,7 @@ export const useRtvApi = () => {
   const fetchGrn = async (grnNumber) => {
     try {
       const response = await axios.get(
-        `${API_URL}/api/v1/grn/${grnNumber}`
+        `${API_URL}/grn/${grnNumber}`
       );
       return response.data?.data || response.data;
     } catch (error) {
@@ -194,7 +194,7 @@ export const useRtvApi = () => {
   const generateCreditNote = async (rtvId) => {
     try {
       const response = await axios.post(
-        `${API_URL}/api/v1/rtv/${rtvId}/credit-note`,
+        `${API_URL}/rtv/${rtvId}/credit-note`,
         {}
       );
       toast.success("Credit note generated successfully");

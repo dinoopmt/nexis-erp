@@ -10,6 +10,7 @@ import DocumentUploadModal from "./DocumentUploadModal";
 const GrnFormHeader = ({
   formData,
   vendors,
+  isViewMode = false, // ✅ NEW: Read-only mode
   onFormChange,
   onVendorChange,
   onFileUpload,
@@ -49,7 +50,10 @@ const GrnFormHeader = ({
             type="text"
             value={formData.invoiceNo}
             onChange={(e) => onFormChange("invoiceNo", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isViewMode} // ✅ Disable in view mode
+            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none ${
+              isViewMode ? "bg-gray-100 text-gray-600 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-500"
+            }`}
           />
         </div>
 
@@ -62,7 +66,10 @@ const GrnFormHeader = ({
             type="text"
             value={formData.lpoNo}
             onChange={(e) => onFormChange("lpoNo", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isViewMode} // ✅ Disable in view mode
+            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none ${
+              isViewMode ? "bg-gray-100 text-gray-600 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-500"
+            }`}
           />
         </div>
 
@@ -75,7 +82,10 @@ const GrnFormHeader = ({
             type="date"
             value={formData.grnDate}
             onChange={(e) => onFormChange("grnDate", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isViewMode} // ✅ Disable in view mode
+            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none ${
+              isViewMode ? "bg-gray-100 text-gray-600 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-500"
+            }`}
           />
         </div>
 
@@ -87,7 +97,10 @@ const GrnFormHeader = ({
           <select
             value={formData.taxType}
             onChange={(e) => onFormChange("taxType", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isViewMode} // ✅ Disable in view mode
+            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none ${
+              isViewMode ? "bg-gray-100 text-gray-600 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-500"
+            }`}
           >
             <option value="">-- Select Tax Type --</option>
             <option value="exclusive">Tax Exclusive</option>
@@ -122,7 +135,9 @@ const GrnFormHeader = ({
             vendors={vendors}
             selectedVendorId={formData.vendorId}
             selectedVendorName={formData.vendorName}
+            isViewMode={isViewMode} // ✅ Pass view mode
             onVendorSelect={(vendor) => {
+              if (isViewMode) return; // Prevent selection in view mode
               if (!vendor) {
                 // Clear selection
                 onVendorChange({
@@ -197,7 +212,10 @@ const GrnFormHeader = ({
           <select
             value={formData.paymentTerms}
             onChange={(e) => onFormChange("paymentTerms", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isViewMode} // ✅ Disable in view mode
+            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none ${
+              isViewMode ? "bg-gray-100 text-gray-600 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-500"
+            }`}
           >
             <option value="">-- Select Payment Terms --</option>
             <option value="due_on_receipt">Due on Receipt (Cash)</option>
@@ -216,7 +234,10 @@ const GrnFormHeader = ({
             value={formData.notes}
             onChange={(e) => onFormChange("notes", e.target.value)}
             placeholder="Additional notes..."
-            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            disabled={isViewMode} // ✅ Disable in view mode
+            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none resize-none ${
+              isViewMode ? "bg-gray-100 text-gray-600 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-500"
+            }`}
             rows="2"
           />
         </div>

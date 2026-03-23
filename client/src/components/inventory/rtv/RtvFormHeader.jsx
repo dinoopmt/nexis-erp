@@ -21,7 +21,7 @@ const RtvFormHeader = ({
     const fetchVendors = async () => {
       try {
         setLoadingVendors(true);
-        const response = await axios.get(`${API_URL}/api/v1/vendors/getvendors?limit=1000`);
+        const response = await axios.get(`${API_URL}/vendors/getvendors?limit=1000`);
         setVendors(response.data?.vendors || response.data?.data || []);
       } catch (error) {
         console.error("Error fetching vendors:", error);

@@ -10,6 +10,7 @@ import CostingService from "../../../services/CostingService.js";
 import StockHistoryManager from "../../../utils/StockHistoryManager.js";
 import GRNTransactionValidator from "./GRNTransactionValidator.js";
 import StockRecalculationHelper from "./StockRecalculationHelper.js";
+import GRNStockUpdateService from "./GRNStockUpdateService.js";  // ✅ NEW: Import for pricing updates during edit
 import mongoose from "mongoose";
 
 /**
@@ -1587,6 +1588,110 @@ class GRNEditManager {
         } catch (recalcErr) {
           console.warn(`⚠️ Recalculation warning (non-blocking): ${recalcErr.message}`);
         }
+
+        // ========================================
+        // ✨ PHASE 1.6: UPDATE PRODUCT PRICING (NEW)
+        // ========================================
+        // ✅ NEW: When GRN is edited with different costs, update pricing
+        // ✨ CONDITION: Only update if this GRN is the most recently created (last invoice)
+        console.log(`\n✨ [PHASE 1.6] Updating product pricing for items with cost changes...`);
+        const pricingUpdateSummary = {
+          count: 0,
+          items: [],
+          skippedNotLastGRN: [],
+          errors: []
+        };
+
+        for (let idx = 0; idx < updatedGRN.items.length; idx++) {
+          const newItem = updatedGRN.items[idx];
+          if (!newItem.productId) continue;
+
+          // Find corresponding old item to get old cost
+          const oldItem = oldData.items.find(item => item.productId?.toString() === newItem.productId?.toString());
+          if (!oldItem) {
+            console.log(`   ℹ️ Item ${newItem.itemCode}: New item (no old version), skipping pricing update`);
+            continue; // New item added, not an edit
+          }
+
+          // Check if cost changed
+          const costChanged = (oldItem.unitCost || 0) !== (newItem.unitCost || 0);
+          if (!costChanged) {
+            console.log(`   ℹ️ Item ${newItem.itemCode}: Cost unchanged (${newItem.unitCost}), skipping pricing update`);
+            continue;
+          }
+
+          try {
+            const product = await AddProduct.findById(newItem.productId);
+            if (!product) {
+              console.warn(`   ⚠️ Item ${newItem.itemCode}: Product not found, skipping pricing update`);
+              continue;
+            }
+
+            // ✨ NEW CHECK: Verify this GRN is the last created (most recent) for this product
+            const lastGRNForProduct = await Grn.findOne({ 'items.productId': newItem.productId })
+              .sort({ createdAt: -1 })
+              .select('_id grnNumber createdAt')
+              .lean();
+            
+            const isLastGRN = lastGRNForProduct && lastGRNForProduct._id.toString() === updatedGRN._id.toString();
+            
+            if (!isLastGRN) {
+              console.log(`   ⏭️ Item ${newItem.itemCode}: This GRN is not the last created invoice, skipping pricing update`);
+              pricingUpdateSummary.skippedNotLastGRN.push({
+                itemCode: newItem.itemCode,
+                oldCost: oldItem.unitCost,
+                newCost: newItem.unitCost,
+                reason: 'GRN is not the most recently created'
+              });
+              continue;
+            }
+
+            console.log(`   🔄 Item ${newItem.itemCode}: Cost changed ${oldItem.unitCost} → ${newItem.unitCost} (Last GRN - updating product master)`);
+
+            // ✅ Only update master product pricing if this is the last created GRN
+            const productPricingUpdate = await GRNStockUpdateService.updateProductPricingAfterCostChange(
+              product,
+              newItem.unitCost,
+              oldItem.unitCost,
+              newItem
+            );
+
+            if (productPricingUpdate) {
+              console.log(`     ✅ Product pricing updated: margin% = ${productPricingUpdate.pricingUpdate.marginPercentNew}%, price = ${productPricingUpdate.pricingUpdate.price}`);
+              pricingUpdateSummary.items.push({
+                itemCode: newItem.itemCode,
+                oldCost: oldItem.unitCost,
+                newCost: newItem.unitCost,
+                pricingUpdate: productPricingUpdate.pricingUpdate
+              });
+            }
+
+            // ✅ Update variant pricing only if this is the last GRN
+            const variantPricingUpdate = await GRNStockUpdateService.updateVariantPricingAfterCostChange(
+              product,
+              newItem.unitCost
+            );
+
+            if (variantPricingUpdate) {
+              console.log(`     ✅ ${variantPricingUpdate.variantsUpdated} variants updated`);
+            }
+
+            pricingUpdateSummary.count++;
+
+          } catch (pricingError) {
+            console.error(`   ❌ Error updating pricing for ${newItem.itemCode}: ${pricingError.message}`);
+            pricingUpdateSummary.errors.push({
+              itemCode: newItem.itemCode,
+              error: pricingError.message
+            });
+          }
+        }
+
+        console.log(`✅ [PHASE 1.6] Pricing update complete: ${pricingUpdateSummary.count} items updated, ${pricingUpdateSummary.skippedNotLastGRN.length} skipped (not last invoice)`);
+        if (pricingUpdateSummary.errors.length > 0) {
+          console.warn(`   ⚠️ Pricing errors: ${pricingUpdateSummary.errors.length}`);
+        }
+        updateSummary.pricingUpdates = pricingUpdateSummary;
 
         // ========================================
         // �💳 PHASE 2: UPDATE VENDOR PAYMENTS
