@@ -3,13 +3,15 @@ import InventoryBatch from "../../../Models/InventoryBatch.js";
 import StockBatch from "../../../Models/StockBatch.js";
 import StockMovement from "../../../Models/StockMovement.js";
 import ActivityLog from "../../../Models/ActivityLog.js";
+import Grn from "../../../Models/Grn.js";
+import RTVJournalService from "./RTVJournalService.js";
 
 /**
  * RTVStockUpdateService
  * Handles stock reversal when RTV is posted
  * - Reduce product quantity
  * - Reduce/update batch records
- * - Update product cost (reverse costing method impact)
+ * - Update product cost (with latest GRN cost shift logic - Rule 3)
  * - Create audit logs
  * - Reverse batch expiry tracking
  */
@@ -81,6 +83,27 @@ class RTVStockUpdateService {
           );
           if (costReversal) {
             results.costReversal.push(costReversal);
+
+            // ✅ RULE 3: Create GL adjustment entry if cost shifted
+            if (costReversal.costShiftRule === "LATEST_GRN_FULL_RETURN") {
+              const adjustmentEntry = await RTVJournalService.createCostShiftJournalEntry({
+                rtvNumber: rtvData.rtvNumber,
+                rtvDate: rtvData.rtvDate,
+                itemCode: product.itemcode,
+                itemName: product.productName || product.itemName,
+                oldCost: costReversal.oldCost,
+                newCost: costReversal.newCost,
+                costDifference: costReversal.difference,
+                quantityAffected: product.quantityInStock,
+                grnId: item.grnId,
+                createdBy: userId
+              });
+
+              if (adjustmentEntry) {
+                results.costReversal[results.costReversal.length - 1].glAdjustmentEntry = adjustmentEntry;
+                console.log(`✅ GL adjustment entry created for cost shift: ${adjustmentEntry.voucherNumber}`);
+              }
+            }
           }
 
           // ✅ 4. Create stock movement record (OUTBOUND)
@@ -256,59 +279,172 @@ class RTVStockUpdateService {
   }
 
   /**
-   * Reverse product cost impact from RTV
-   * ✅ REVERSE: Adjust product cost back up based on costing method
-   * For WAC: Recalculate using remaining stock
+   * ✅ RULE 3: Check if this is the LATEST GRN for the product
+   * Critical for detecting when product cost should shift
+   *
+   * @param {ObjectId} productId - Product ID
+   * @param {ObjectId} currentGrnId - Current GRN being returned
+   * @returns {Promise<Boolean>} - true if this is the latest/most recent GRN
+   */
+  static async checkIfLatestGrnForProduct(productId, currentGrnId) {
+    try {
+      // Find most recent GRN with this product
+      const latestGrn = await Grn.findOne({
+        items: { $elemMatch: { productId: productId } },
+        status: { $in: ["Received", "Posted"] } // Only consider posted GRNs
+      }).sort({ grnDate: -1 }).select('_id');
+
+      if (!latestGrn) return false;
+
+      const isLatest = latestGrn._id.toString() === currentGrnId.toString();
+      
+      console.log(`🔍 Latest GRN Check for Product ${productId}:`, {
+        currentGrnId: currentGrnId.toString(),
+        latestGrnId: latestGrn._id.toString(),
+        isLatest
+      });
+
+      return isLatest;
+    } catch (error) {
+      console.error("❌ Error checking if latest GRN:", error);
+      return false;
+    }
+  }
+
+  /**
+   * ✅ RULE 3: Get the PREVIOUS GRN cost for a product
+   * Used when latest GRN is fully returned - shifts cost to previous layer
+   *
+   * @param {ObjectId} productId - Product ID
+   * @param {ObjectId} currentGrnId - Current GRN being returned (to exclude)
+   * @returns {Promise<Number|null>} - Previous GRN's unit cost, or null if none exists
+   */
+  static async getPreviousGrnCost(productId, currentGrnId) {
+    try {
+      // Find the next most recent GRN for this product (before current)
+      const previousGrn = await Grn.findOne({
+        items: { $elemMatch: { productId: productId } },
+        _id: { $ne: currentGrnId },
+        status: { $in: ["Received", "Posted"] }
+      }).sort({ grnDate: -1 }).select('items');
+
+      if (!previousGrn) {
+        console.warn(`⚠️ No previous GRN found for product ${productId}`);
+        return null;
+      }
+
+      // Get the cost from that GRN's line item
+      const previousItem = previousGrn.items.find(
+        i => i.productId.toString() === productId.toString()
+      );
+
+      if (!previousItem) return null;
+
+      console.log(`📊 Previous GRN Cost Found:`, {
+        productId: productId.toString(),
+        previousGrnId: previousGrn._id.toString(),
+        previousCost: previousItem.unitCost
+      });
+
+      return previousItem.unitCost || null;
+
+    } catch (error) {
+      console.error("❌ Error getting previous GRN cost:", error);
+      return null;
+    }
+  }
+
+  /**
+   * ✅ RULE 3: Reverse product cost impact from RTV
+   * ENHANCED: Now handles Latest GRN Full Return case (cost shift to previous GRN)
    *
    * @param {Object} product - Product document
    * @param {Object} item - RTV line item
-   * @param {Object} rtvData - RTV data
+   * @param {Object} rtvData - RTV data with grnId
    * @returns {Promise<Object|null>} - Cost reversal details
    */
   static async reverseProductCost(product, item, rtvData) {
     try {
       const costingMethod = product.costingMethod || "FIFO";
       const oldCost = product.cost || 0;
+      const quantityReturned = item.quantity || 0;
+      const currentStock = product.quantityInStock; // After reversal
 
-      // Note: For FIFO/LIFO, cost typically doesn't change on return
-      // For WAC (Weighted Average Cost), we need to recalculate
-      // The cost of returned items affects the overall average
-
-      if (costingMethod === "WAC") {
-        // ✅ CRITICAL: Recalculate WAC after removing this batch
-        // New WAC = (remaining inventory value) / (remaining quantity)
+      // ✅ NEW LOGIC: Check if this is latest GRN and if stock becomes zero
+      if (rtvData.items && rtvData.items.length > 0) {
+        const currentItem = rtvData.items.find(i => i.productId?.toString() === product._id.toString());
         
-        const quantityReturned = item.quantity || 0;
-        const currentStock = product.quantityInStock; // After reversal
+        if (currentItem?.grnId) {
+          const isLatestGrn = await this.checkIfLatestGrnForProduct(
+            product._id,
+            currentItem.grnId
+          );
+
+          // ✅ RULE 3 CASE 2: Latest GRN fully returned → Shift cost to previous GRN
+          if (isLatestGrn && currentStock <= 0) {
+            const previousCost = await this.getPreviousGrnCost(
+              product._id,
+              currentItem.grnId
+            );
+
+            if (previousCost && previousCost !== oldCost) {
+              product.cost = previousCost;
+              product.lastCostUpdate = new Date();
+              product.lastCostUpdateBy = rtvData.createdBy;
+
+              console.log(`✅ RULE 3 APPLIED: Latest GRN fully returned, cost shifted for ${product.itemcode}: ${oldCost} → ${previousCost}`);
+
+              return {
+                productId: product._id.toString(),
+                itemCode: product.itemcode,
+                costingMethod,
+                costShiftRule: "LATEST_GRN_FULL_RETURN",
+                oldCost,
+                newCost: previousCost,
+                quantityReturned,
+                difference: previousCost - oldCost,
+                reason: "Latest GRN fully returned, using previous GRN cost"
+              };
+            }
+          }
+          // ✅ RULE 3 CASE 1: Old GRN or partial latest GRN → No cost change
+          else if (isLatestGrn) {
+            console.log(`✅ RULE 3 CASE 1: Partial return from latest GRN, cost remains: ${product.itemcode} = ${oldCost}`);
+            return null; // No cost change for partial returns
+          } else {
+            console.log(`✅ RULE 3 CASE 1: Return from old GRN, cost remains: ${product.itemcode} = ${oldCost}`);
+            return null; // No cost change for old GRN returns
+          }
+        }
+      }
+
+      // Fallback: WAC recalculation (if no GRN linkage for some reason)
+      if (costingMethod === "WAC") {
         const returnedValue = quantityReturned * item.unitCost;
 
-        // Calculate new WAC without the returned items
         if (currentStock > 0) {
-          const currentTotalValue = currentStock * oldCost + returnedValue; // Value before removal
+          const currentTotalValue = currentStock * oldCost + returnedValue;
           const newWac = currentTotalValue / (currentStock + quantityReturned);
-          
           const newCost = Math.round(newWac * 100) / 100;
 
           product.cost = newCost;
           product.lastCostUpdate = new Date();
           product.lastCostUpdateBy = rtvData.createdBy;
 
-          console.log(`✅ WAC adjusted for ${product.itemcode}: ${oldCost} → ${newCost} (returned: ${quantityReturned} @ ${item.unitCost})`);
+          console.log(`✅ WAC adjusted for ${product.itemcode}: ${oldCost} → ${newCost}`);
 
           return {
             productId: product._id.toString(),
             itemCode: product.itemcode,
             costingMethod,
+            costShiftRule: "WAC_RECALCULATION",
             oldCost,
             newCost,
-            quantityReturned,
-            returnedValue,
-            difference: newCost - oldCost
+            quantityReturned
           };
         }
       }
 
-      // For FIFO/LIFO, cost remains the same on return
       return null;
 
     } catch (error) {

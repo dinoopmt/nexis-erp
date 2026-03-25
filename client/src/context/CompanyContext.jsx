@@ -1,4 +1,6 @@
 import React, { createContext, useState, useCallback, useEffect } from 'react'
+import axios from 'axios'
+import { API_URL } from '../config/config'
 
 // Create the context
 export const CompanyContext = createContext()
@@ -36,13 +38,9 @@ export const CompanyProvider = ({ children }) => {
   const fetchCompanyData = useCallback(async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/v1/settings/company')
+      const response = await axios.get(`${API_URL}/settings/company`)
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch company: ${response.statusText}`)
-      }
-
-      const data = await response.json()
+      const data = response.data
       if (data.data) {
         setCompany(data.data)
         // Fetch tax master for this country
@@ -61,13 +59,9 @@ export const CompanyProvider = ({ children }) => {
   // Fetch tax master for country
   const fetchTaxMaster = useCallback(async (countryCode) => {
     try {
-      const response = await fetch(`/api/v1/tax-masters`)
+      const response = await axios.get(`${API_URL}/tax-masters`)
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tax masters: ${response.statusText}`)
-      }
-
-      const data = await response.json()
+      const data = response.data
       if (data.success && data.data) {
         // Filter by country code
         const countryTaxes = data.data.filter(
@@ -86,17 +80,9 @@ export const CompanyProvider = ({ children }) => {
   const updateCompany = useCallback(async (updates) => {
     try {
       setLoading(true)
-      const response = await fetch('/api/v1/settings/company', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
+      const response = await axios.post(`${API_URL}/settings/company`, updates)
 
-      if (!response.ok) {
-        throw new Error(`Failed to update company: ${response.statusText}`)
-      }
-
-      const data = await response.json()
+      const data = response.data
       if (data.data) {
         setCompany(data.data)
         // Fetch updated tax master if country changed

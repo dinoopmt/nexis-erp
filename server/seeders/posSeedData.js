@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import POSTerminal from '../Models/POS/POSTerminal.js';
 import User from '../Models/User.js';
 import Role from '../Models/Role.js';
-import connectDB from '../config/database.js';
+import connectDB from '../db/db.js';
 
 async function seedPOS() {
   try {

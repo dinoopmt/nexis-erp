@@ -177,6 +177,9 @@ const RtvSelectionModal = ({
             originalBatchNumber: item.batchNumber || "",
             // ✅ Preserve expiry info for GL reversal at correct cost
             originalExpiryDate: item.expiryDate || null,
+            // ✅ RULE 3: Store GRN ID at item level for latest GRN detection
+            // This enables proper cost shift when latest GRN fully returned
+            grnId: selectedGrn._id,
           }))
         ]
       }));

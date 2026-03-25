@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import UnitType from '../Models/UnitType.js';
-import connectDB from '../config/database.js';
+import connectDB from '../db/db.js';
 
 dotenv.config();
 

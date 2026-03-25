@@ -26,6 +26,7 @@ import CustomerReceipts from "../components/accounts/CustomerReceipts";
 
 import SalesOrder from "../components/sales/SalesOrder";
 import SalesInvoice from "../components/sales/SalesInvoice";
+import SalesInvoiceNew from "../components/sales/SalesInvoiceNew";
 import DeliveryNote from "../components/sales/DeliveryNote";
 import SalesReturn from "../components/sales/SalesReturn";
 import Quotation from "../components/sales/Quotation";
@@ -77,6 +78,7 @@ const menus = [
       { name: "Delivery Note", id: "DeliveryNote", path: "/delivery-note" },
       { name: "Sales Return", id: "SalesReturn", path: "/sales-return" },
       { name: "Customers", id: "Customers", path: "/customers" },
+      {name: "Sales Invoice New", id: "SalesInvoiceNew", path: "/sales-invoice-refactored" },
     ],
   },
 
@@ -595,6 +597,7 @@ function Home() {
             <Route path="/quotation" element={<Quotation />} />
             <Route path="/sales-order" element={<SalesOrder />} />
             <Route path="/sales-invoice" element={<SalesInvoice />} />
+            <Route path="/sales-invoice-refactored" element={<SalesInvoiceNew />} />
             <Route path="/delivery-note" element={<DeliveryNote />} />
             <Route path="/sales-return" element={<SalesReturn />} />
             <Route path="/customers" element={<Customers />} />

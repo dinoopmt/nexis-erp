@@ -1081,58 +1081,13 @@ const GlobalProductFormModal = () => {
       // ✅ Close validation error modal if open (so it doesn't block interactions)
       setValidationErrorModal(false);
       
-      // ✅ Validate Item Code - if provided/changed, ensure uniqueness
-      // Skip validation if itemcode is "Auto-generated" (server will handle generation)
-      if (newProduct.itemcode && newProduct.itemcode !== "Auto-generated") {
-        if (mode === "create") {
-          // For new products: block if item code exists anywhere
-          const itemcodeExists = await productAPI.checkItemcodeExists(newProduct.itemcode);
-          if (itemcodeExists) {
-            toast.error(
-              `Item code "${newProduct.itemcode}" already exists in database. Please use a different item code.`,
-              { duration: 5000, position: "top-center" },
-            );
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      // ✅ Validate All Barcodes are Unique
+      // ✅ Backend handles all uniqueness validation (itemcode + barcodes in single query)
+      // Frontend only does basic structural validation (done in validateProduct())
+      
+      // Get selected variants for save
       const selectedVariants = pricingLines.filter(
         (_, index) => index === 0 || selectedPricingLines.has(index),
       );
-
-      const barcodesToCheck = selectedVariants
-        .filter((v) => v.barcode)
-        .map((v) => v.barcode);
-
-      // Check for duplicates within the product
-      const uniqueBarcodes = new Set(barcodesToCheck);
-      if (uniqueBarcodes.size !== barcodesToCheck.length) {
-        toast.error(
-          "Duplicate barcodes found within this product. Please ensure all barcodes are unique.",
-          { duration: 5000, position: "top-center" },
-        );
-        setLoading(false);
-        return;
-      }
-
-      // ✅ Check if any barcode exists in database
-      if (mode === "create") {
-        // For new products: block if any barcode exists anywhere
-        for (const barcode of barcodesToCheck) {
-          const barcodeExists = await productAPI.checkBarcodeExists(barcode);
-          if (barcodeExists) {
-            toast.error(
-              `Barcode "${barcode}" already exists in database. Please use a different barcode.`,
-              { duration: 5000, position: "top-center" },
-            );
-            setLoading(false);
-            return;
-          }
-        }
-      }
 
       // Build selected pricing variants (only checked rows)
       let selectedVariantsForSave = [...selectedVariants];
@@ -1182,38 +1137,81 @@ const GlobalProductFormModal = () => {
         }
       );
 
-      const savedProduct = await productAPI.saveProduct(
+      const saveResult = await productAPI.saveProduct(
         productData,
         mode === "edit" ? productData._id : null,
       );
 
-      if (savedProduct) {
-        const syncStartTime = performance.now();
-        
-        // ✅ IMMEDIATE: DISPATCH PRODUCT UPDATED EVENT FIRST - Non-blocking, highest priority
-        const event = new CustomEvent('productUpdated', {
-          detail: { product: savedProduct }
+      // ✅ Handle new response format: { product, meilisearchSync, message } or null if failed
+      if (!saveResult) {
+        // API call failed and already showed error toast, just return
+        setLoading(false);
+        return;
+      }
+
+      const savedProduct = saveResult.product;
+      const meilisearchSync = saveResult.meilisearchSync;
+
+      if (!savedProduct) {
+        // Something went wrong with the save
+        toast.error("Product save failed: No data returned from server", { 
+          duration: 3000, 
+          position: "top-center" 
         });
-        window.dispatchEvent(event);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ PRODUCT SAVED SUCCESSFULLY - Continue with post-save handling
+      const syncStartTime = performance.now();
         
-        // ✅ ASYNC NON-BLOCKING: Clear search cache in background (doesn't block UI)
-        if (savedProduct.name) {
-          Promise.resolve().then(() => {
-            clearQueryCache(savedProduct.name);
-          });
+      // ✅ IMMEDIATE: DISPATCH PRODUCT UPDATED EVENT FIRST - Non-blocking, highest priority
+      // Include productId and meilisearchSync status for subscribers
+      const event = new CustomEvent('productUpdated', {
+        detail: { 
+          product: savedProduct,
+          productId: savedProduct._id,
+          meilisearchSync: meilisearchSync
         }
+      });
+      window.dispatchEvent(event);
         
-        // Prevent duplicate success messages by checking if we just saved this product
-        if (lastSavedProductRef.current !== savedProduct._id) {
-          lastSavedProductRef.current = savedProduct._id;
+      // ✅ ASYNC NON-BLOCKING: Clear search cache in background (doesn't block UI)
+      if (savedProduct.name) {
+        Promise.resolve().then(() => {
+          clearQueryCache(savedProduct.name);
+        });
+      }
+        
+      // ✅ Auto-retry Meilisearch sync if update failed (only for edit mode)
+      if (mode === 'edit' && meilisearchSync && !meilisearchSync.success) {
+        console.warn('⚠️  Meilisearch sync failed on update, attempting auto-retry...');
+        toast.loading('Retrying search index update...', { duration: 1500 });
+        
+        // Wait a moment for any pending operations to complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Attempt re-sync
+        const resyncResult = await productAPI.resyncProductToMeilisearch(savedProduct._id);
+        
+        if (resyncResult.success) {
+          console.log(`✅ Auto-retry successful for product ${savedProduct._id}`);
+        } else {
+          console.warn(`⚠️  Auto-retry failed: ${resyncResult.error}`);
+        }
+      }
+        
+      // Prevent duplicate success messages by checking if we just saved this product
+      if (lastSavedProductRef.current !== savedProduct._id) {
+        lastSavedProductRef.current = savedProduct._id;
           
-          // ✅ IMPROVED SAVE BEHAVIOR:
-          // CREATE mode: Save → Fetch complete data from DB → Switch to EDIT → Keep modal OPEN
-          // EDIT mode: Save → Refresh list in background → Close modal
+        // ✅ IMPROVED SAVE BEHAVIOR:
+        // CREATE mode: Save → Fetch complete data from DB → Switch to EDIT → Keep modal OPEN
+        // EDIT mode: Save → Refresh list in background → Close modal
           
-          if (mode === 'create') {
-            // ✅ CREATE MODE: Fetch complete product data same as EDIT mode
-            try {
+        if (mode === 'create') {
+          // ✅ CREATE MODE: Fetch complete product data same as EDIT mode
+          try {
               // Small delay to ensure database is fully updated with auto-generated itemcode
               await new Promise(resolve => setTimeout(resolve, 500));
               
@@ -1230,7 +1228,7 @@ const GlobalProductFormModal = () => {
               console.log("🔍 Full Fetched Product:", completeProduct);
               console.log("🔍 Full Saved Product:", savedProduct);
 
-              toast.success("Product created successfully! ✅ Now in edit mode for further updates.", { 
+              toast.success("Product created successfully! ✅ Now in edit mode for further updates.\n(Search index syncing in background...)", { 
                 duration: 2500, 
                 position: "top-center" 
               });
@@ -1292,12 +1290,11 @@ const GlobalProductFormModal = () => {
               
               // ✅ CRITICAL: Explicitly set itemcode to ensure UI updates (not "Auto-generated")
               // Must happen after setNewProduct to override any cached "Auto-generated" text
-              setTimeout(() => {
-                setNewProduct(prev => ({
-                  ...prev,
-                  itemcode: completeProduct.itemcode || "",  // Actual itemcode from DB
-                }));
-              }, 100);
+              await new Promise(resolve => setTimeout(resolve, 100));
+              setNewProduct(prev => ({
+                ...prev,
+                itemcode: completeProduct.itemcode || "",  // Actual itemcode from DB
+              }));
               
               // ✅ Load and rebuild pricing lines using helper function
               buildPricingLinesFromProduct(productToEdit);
@@ -1313,10 +1310,9 @@ const GlobalProductFormModal = () => {
               }
               
               // Keep modal OPEN - user can continue editing
-              setTimeout(() => {
-                lastSavedProductRef.current = null;
-              }, 500);
-            } catch (fetchErr) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+              lastSavedProductRef.current = null;
+          } catch (fetchErr) {
               console.error("Error fetching complete product data after save:", fetchErr);
               toast.error("Product created but failed to reload complete data. Please refresh.", {
                 duration: 3000,
@@ -1324,10 +1320,10 @@ const GlobalProductFormModal = () => {
               });
               // Still switch to edit mode with what we have
               updateMode('edit');
-            }
-          } else {
-            // ✅ EDIT MODE: Keep modal OPEN after save (user will close manually)
-            toast.success("Product updated successfully! ✅ Search cache cleared.", { 
+          }
+        } else {
+          // ✅ EDIT MODE: Keep modal OPEN after save (user will close manually)
+            toast.success("Product updated successfully! ✅ (Search index syncing in background...)", { 
               duration: 2000, 
               position: "top-center" 
             });
@@ -1337,14 +1333,13 @@ const GlobalProductFormModal = () => {
             
             // Call callback directly WITHOUT closing modal
             // (notifyProductSaved closes modal, but we want to keep it open in EDIT mode)
-            if (hasOnSaveCallback) {
-              onSaveCallback(savedProduct);
-            }
+          if (hasOnSaveCallback) {
+            onSaveCallback(savedProduct);
           }
-        } else {
-          // Product already saved, silently update state
-          setNewProduct(savedProduct);
         }
+      } else {
+        // Product already saved, silently update state
+        setNewProduct(savedProduct);
       }
     } catch (err) {
       console.error("Error saving product:", err);

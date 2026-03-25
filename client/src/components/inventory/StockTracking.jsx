@@ -34,7 +34,7 @@ const StockTracking = () => {
     const fetchProducts = async () => {
       try {
         const response = await axios.get(
-          `${API_URL}/api/v1/products/listProduct?country=${config?.country || "UAE"}`
+          `${API_URL}/products/listProduct?country=${config?.country || "UAE"}`
         );
         setProducts(response.data);
       } catch (err) {
@@ -58,13 +58,13 @@ const StockTracking = () => {
       try {
         // Fetch current stock
         const stockResponse = await axios.get(
-          `${API_URL}/api/v1/stock/current/${selectedProductId}`
+          `${API_URL}/stock/current/${selectedProductId}`
         );
         setCurrentStock(stockResponse.data);
 
         // Fetch stock history
         const historyResponse = await axios.get(
-          `${API_URL}/api/v1/stock/history/${selectedProductId}`
+          `${API_URL}/stock/history/${selectedProductId}`
         );
         setStockHistory(historyResponse.data);
       } catch (err) {

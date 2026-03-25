@@ -245,7 +245,7 @@ const SalesInvoice = () => {
   // clear screen after saving invoice
   const resetForm = async () => {
     const newInvoiceNumber = await axios.get(
-      `${API_URL}/api/v1/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
+      `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
     );
     setInvoiceData({
       invoiceNo:
@@ -282,7 +282,7 @@ const SalesInvoice = () => {
     setLoading(true);
     try {
       const res = await axios.get(
-        `${API_URL}/api/v1/sales-invoices/getSalesInvoices`,
+        `${API_URL}/sales-invoices/getSalesInvoices`,
       );
       setInvoices(res.data);
       setError(null);
@@ -332,7 +332,7 @@ const SalesInvoice = () => {
       // Country isolation: Only fetch customers for company's country (NOT international sales)
       const companyCountry = config?.country || 'UAE';
       const res = await axios.get(
-        `${API_URL}/api/v1/customers/getcustomers?limit=100&country=${encodeURIComponent(companyCountry)}`,
+        `${API_URL}/customers/getcustomers?limit=100&country=${encodeURIComponent(companyCountry)}`,
       );
       setCustomers(res.data.customers || []);
     } catch (err) {
@@ -1070,13 +1070,13 @@ const SalesInvoice = () => {
       let savedInvoiceId;
       if (editId) {
         await axios.put(
-          `${API_URL}/api/v1/sales-invoices/updateSalesInvoice/${editId}`,
+          `${API_URL}/sales-invoices/updateSalesInvoice/${editId}`,
           payload,
         );
         savedInvoiceId = editId;
       } else {
         const response = await axios.post(
-          `${API_URL}/api/v1/sales-invoices/createSalesInvoice`,
+          `${API_URL}/sales-invoices/createSalesInvoice`,
           payload,
         );
         savedInvoiceId = response.data._id || response.data.id;
@@ -1096,7 +1096,7 @@ const SalesInvoice = () => {
         };
         
         await axios.post(
-          `${API_URL}/api/v1/stock/outbound`,
+          `${API_URL}/stock/outbound`,
           stockOutPayload,
         );
         console.log("Stock reduced successfully for invoice:", savedInvoiceId);
@@ -1197,7 +1197,7 @@ const SalesInvoice = () => {
     const fetchNextInvoiceNumber = async () => {
       try {
         const res = await axios.get(
-          `${API_URL}/api/v1/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
+          `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
         );
         setInvoiceData((prev) => ({
           ...prev,
@@ -1251,7 +1251,7 @@ const SalesInvoice = () => {
                 // Fetch all products when opening lookup
                 try {
                   const res = await axios.get(
-                    `${API_URL}/api/v1/products/getproducts?limit=50000`,  // ✅ Fetch up to 50k products
+                    `${API_URL}/products/getproducts?limit=50000`,  // ✅ Fetch up to 50k products
                   );
                   setProducts(res.data.products || res.data);
                   setItemSearch(""); // Clear search to show all products

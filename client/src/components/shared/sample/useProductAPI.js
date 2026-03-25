@@ -212,7 +212,7 @@ export const useProductAPI = () => {
    * Save product to database (create or update)
    * @param {Object} productData - Product data to save
    * @param {string} editId - Product ID if updating, null if creating
-   * @returns {Promise<Object|null>} Saved product object or null if failed
+   * @returns {Promise<Object|null>} Saved product object with meilisearchSync info, or null if failed
    */
   const saveProduct = useCallback(async (productData, editId = null) => {
     try {
@@ -224,7 +224,19 @@ export const useProductAPI = () => {
         ? await axios.put(url, productData)
         : await axios.post(url, productData);
       
-      return response.data.product;
+      // ✅ Return both product and meilisearchSync status
+      const result = {
+        product: response.data.product,
+        meilisearchSync: response.data.meilisearchSync || { success: false, error: 'No sync info' },
+        message: response.data.message,
+      };
+
+      // ⚠️ If Meilisearch sync failed, log warning but don't fail the product save
+      if (!result.meilisearchSync.success) {
+        console.warn('⚠️  Meilisearch sync warning:', result.meilisearchSync.error);
+      }
+
+      return result;
     } catch (err) {
       // ...error handling remains the same...
 
@@ -243,6 +255,51 @@ export const useProductAPI = () => {
       }
 
       return null;
+    }
+  }, []);
+
+  /**
+   * Re-sync a single product to Meilisearch (for fixing stale search data)
+   * @param {string} productId - Product ID to sync
+   * @returns {Promise<Object>} Sync result { success, synced, error }
+   */
+  const resyncProductToMeilisearch = useCallback(async (productId) => {
+    try {
+      console.log(`🔄 Re-syncing product ${productId} to Meilisearch...`);
+      
+      const response = await axios.post(
+        `${API_URL}/products/sync-product-meilisearch/${productId}`
+      );
+      
+      const result = {
+        success: response.data.success,
+        synced: response.data.synced,
+        productName: response.data.productName,
+        error: response.data.syncError,
+      };
+
+      if (result.success) {
+        console.log(`✅ Product re-synced to Meilisearch:`, result.productName);
+        toast.success(`Product search index updated for ${result.productName}`, {
+          duration: 2000,
+          position: "top-right",
+        });
+      } else {
+        console.warn(`⚠️  Re-sync failed:`, result.error);
+        toast.error(`Failed to update search index: ${result.error}`, {
+          duration: 3000,
+          position: "top-right",
+        });
+      }
+
+      return result;
+    } catch (err) {
+      console.error('❌ Error re-syncing product:', err);
+      toast.error('Failed to re-sync product to search index', {
+        duration: 3000,
+        position: "top-right",
+      });
+      return { success: false, error: err.message };
     }
   }, []);
 
@@ -602,6 +659,7 @@ export const useProductAPI = () => {
     assignBarcodeToProduct,
     saveProduct,
     deleteProduct,
+    resyncProductToMeilisearch,  // ✅ NEW: Re-sync product to search index
 
     // Vendor operations
     fetchVendors,

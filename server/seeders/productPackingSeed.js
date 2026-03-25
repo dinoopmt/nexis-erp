@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import ProductPacking from '../Models/ProductPacking.js';
 import AddProduct from '../Models/AddProduct.js';
 import UnitType from '../Models/UnitType.js';
-import connectDB from '../config/database.js';
+import connectDB from '../db/db.js';
 
 dotenv.config();
 

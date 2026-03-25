@@ -11,25 +11,49 @@ import { indexProduct, bulkIndexProducts, deleteProductIndex } from "../../../co
  * @param {object} product - Product document
  * @returns {Promise<boolean>}
  */
-export const syncProductToMeilisearch = async (product) => {
-  try {
-    // Populate vendor, categoryId, and packingUnits references
-    const populatedProduct = await Product.findById(product._id)
-      .populate('vendor', 'name')
-      .populate('categoryId', 'name')
-      .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')  // ✅ Populate unit references inside packingUnits
-      .lean();
+export const syncProductToMeilisearch = async (product, maxRetries = 3) => {
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // ✅ Populate vendor, categoryId, and packingUnits references
+      const populatedProduct = await Product.findById(product._id)
+        .populate('vendor', 'name')
+        .populate('categoryId', 'name')
+        .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
+        .lean();
 
-    if (populatedProduct) {
-      await indexProduct(populatedProduct);
-      console.log(`✅ Synced product: ${populatedProduct.name} (${populatedProduct._id})`);
-      return true;
+      if (!populatedProduct) {
+        console.warn(`⚠️  Product not found in database: ${product._id}`);
+        return { success: false, synced: false, error: 'Product not found in database' };
+      }
+
+      // ✅ Index the product - check if it actually succeeded
+      const indexResult = await indexProduct(populatedProduct);
+      
+      if (indexResult === false) {
+        throw new Error('Meilisearch indexing returned false - client may not be connected');
+      }
+
+      console.log(`✅ Synced product: ${populatedProduct.name} (${populatedProduct._id}) - Attempt ${attempt}/${maxRetries}`);
+      return { success: true, synced: true, productId: populatedProduct._id };
+      
+    } catch (err) {
+      lastError = err;
+      console.error(`⚠️  Attempt ${attempt}/${maxRetries} failed to sync product ${product._id}:`, err.message);
+      
+      // If this is not the last attempt, wait before retrying
+      if (attempt < maxRetries) {
+        const delayMs = Math.pow(2, attempt) * 100; // Exponential backoff: 200ms, 400ms, 800ms
+        console.log(`⏳ Retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
-    return false;
-  } catch (err) {
-    console.error(`❌ Error syncing product ${product._id}:`, err.message);
-    return false;
   }
+  
+  // All retries exhausted
+  console.error(`❌ Failed to sync product ${product._id} after ${maxRetries} attempts:`, lastError?.message);
+  return { success: false, synced: false, error: lastError?.message || 'Unknown error' };
 };
 
 /**

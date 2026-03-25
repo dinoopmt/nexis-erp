@@ -159,6 +159,56 @@ router.post("/optimization/reset", async (req, res) => {
   }
 });
 
+// ================= SYNC SINGLE PRODUCT TO MEILISEARCH =================
+// ✅ Manually re-sync a specific product (useful for fixing stale search data)
+router.post("/sync-product-meilisearch/:id", async (req, res) => {
+  try {
+    console.log(`🔄 Syncing product ${req.params.id} to Meilisearch...`);
+    
+    const { syncProductToMeilisearch } = await import("../services/ProductMeilisearchSync.js");
+    const Product = await import("../../../Models/AddProduct.js");
+    
+    // Get product from database
+    const product = await Product.default.findById(req.params.id);
+    
+    if (!product) {
+      return res.status(404).json({
+        message: "Product not found",
+        success: false
+      });
+    }
+    
+    // Sync to Meilisearch
+    const syncResult = await syncProductToMeilisearch(product);
+    
+    res.json({
+      message: `✅ Product sync attempt completed`,
+      success: syncResult.success,
+      synced: syncResult.synced,
+      productId: product._id,
+      productName: product.name,
+      productData: {
+        _id: product._id,
+        name: product.name,
+        itemcode: product.itemcode,
+        taxPercent: product.taxPercent,
+        price: product.price,
+        cost: product.cost,
+        barcode: product.barcode
+      },
+      syncError: syncResult.error || null,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error("❌ Error syncing product:", err);
+    res.status(500).json({
+      message: "Error syncing product to Meilisearch",
+      error: err.message,
+      success: false
+    });
+  }
+});
+
 // ================= CACHE MANAGEMENT ENDPOINTS (Admin Only) =================
 // ⚠️ Note: Redis caching has been replaced with Meilisearch
 router.post("/cache/flush", async (req, res) => {

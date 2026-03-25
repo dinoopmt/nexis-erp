@@ -25,6 +25,13 @@ const rtvItemSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  // ✅ RULE 3: Link to source GRN at item level (for latest GRN detection & cost shift)
+  // Enables proper cost handling when this specific GRN item is fully returned
+  grnId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Grn",
+    default: null,
+  },
   // ✅ RETURN: Quantity being returned (inverse of GRN)
   quantity: {
     type: Number,

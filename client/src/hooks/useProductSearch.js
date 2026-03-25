@@ -26,16 +26,26 @@ const attemptMeilisearchReindex = async () => {
     localStorage.setItem('meilisearch_last_reindex_attempt', now.toString());
 
     console.log('🔄 Triggering Meilisearch re-indexing...');
+    console.log('📍 API_URL:', API_URL);
+    
+    // Ensure proper URL construction
     const reindexUrl = `${API_URL}/products/bulk-sync-meilisearch`;
+    console.log('📍 Requesting:', reindexUrl);
 
     const response = await axios.post(reindexUrl, {}, {
       timeout: 30000, // 30 second timeout for re-indexing
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
 
     console.log('✅ Re-indexing triggered successfully:', response.data);
     return true;
   } catch (err) {
     console.error('❌ Failed to trigger re-indexing:', err.message);
+    console.error('❌ Error status:', err.response?.status);
+    console.error('❌ Error response:', err.response?.data);
+    console.error('❌ Full error:', err);
     return false;
   }
 };

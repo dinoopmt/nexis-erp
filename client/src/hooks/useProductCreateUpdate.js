@@ -115,17 +115,38 @@ export const useProductCreateUpdate = ({
           currentUsername,
         });
 
-        // Save to API
-        const savedProduct = await productAPI.saveProduct(
+        // Save to API (returns { product, meilisearchSync, message })
+        const saveResult = await productAPI.saveProduct(
           finalData,
           isEditMode ? productId : null
         );
 
-        if (savedProduct) {
+        if (saveResult?.product) {
+          const savedProduct = saveResult.product;
+          
           if (lastSavedProductRef.current !== savedProduct._id) {
             toast.success(`Product saved successfully`, { duration: 3000 });
             lastSavedProductRef.current = savedProduct._id;
           }
+
+          // ✅ Auto-retry Meilisearch sync if update failed
+          if (isEditMode && saveResult.meilisearchSync && !saveResult.meilisearchSync.success) {
+            console.warn('⚠️  Meilisearch sync failed on update, attempting auto-retry...');
+            toast.loading('Retrying search index update...', { duration: 1500 });
+            
+            // Wait a moment for any pending operations to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Attempt re-sync
+            const resyncResult = await productAPI.resyncProductToMeilisearch(productId);
+            
+            if (resyncResult.success) {
+              console.log(`✅ Auto-retry successful for product ${productId}`);
+            } else {
+              console.warn(`⚠️  Auto-retry failed: ${resyncResult.error}`);
+            }
+          }
+
           return savedProduct;
         }
       } catch (error) {

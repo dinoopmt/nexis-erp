@@ -87,14 +87,28 @@ const userRegister = async () => {
 export default userRegister;
 
 // Run as standalone script
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isStandaloneScript = import.meta.url === `file://${process.argv[1]}` || 
+                           process.argv[1]?.includes('userSeed.js');
+
+if (isStandaloneScript) {
+  console.log("🚀 Starting user seeder...");
   userRegister()
-    .then(() => {
+    .then(async () => {
       console.log("✓ User seeding complete");
+      try {
+        await mongoose.connection.close();
+      } catch (e) {
+        // Connection already closed
+      }
       process.exit(0);
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error("✗ User seeding failed:", err);
+      try {
+        await mongoose.connection.close();
+      } catch (e) {
+        // Connection already closed
+      }
       process.exit(1);
     });
 }

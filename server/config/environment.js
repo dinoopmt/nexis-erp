@@ -14,7 +14,7 @@ const environment = {
   MONGO_URI: process.env.MONGO_URI || 'mongodb://localhost:27017/nexis_erp',
   JWT_SECRET: process.env.JWT_SECRET || 'your-secret-key',
   JWT_EXPIRE: process.env.JWT_EXPIRE || '7d',
-  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  CORS_ORIGIN: process.env.CORS_ORIGIN || ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000'],
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   API_TIMEOUT: parseInt(process.env.API_TIMEOUT, 10) || 30000,
 };

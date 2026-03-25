@@ -66,11 +66,12 @@ export const ProductFormProvider = ({ children }) => {
     clearAllCache();
     console.log('🧹 Cleared search cache after product update');
     
-    // 🔴 P2: Broadcast product update event
+    // 🔴 P2: Broadcast product update event (include productId for downstream handlers)
     window.dispatchEvent(
       new CustomEvent('productUpdated', {
         detail: {
           product: newProduct,
+          productId: newProduct?._id,  // ✅ Include productId for auto-retry logic
           timestamp: Date.now(),
         },
       })

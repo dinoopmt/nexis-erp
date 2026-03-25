@@ -56,7 +56,7 @@ const StockVarianceReport = () => {
       }
 
       const response = await axios.get(
-        `${API_URL}/api/v1/stock-variance/report?${params}`
+        `${API_URL}/stock-variance/report?${params}`
       );
 
       setVarianceData(response.data.data);
@@ -82,7 +82,7 @@ const StockVarianceReport = () => {
       }
 
       const response = await axios.get(
-        `${API_URL}/api/v1/stock-variance/investigation?${params}`
+        `${API_URL}/stock-variance/investigation?${params}`
       );
       setInvestigationData(response.data);
     } catch (err) {

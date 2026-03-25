@@ -361,8 +361,19 @@ export const addProduct = async (req, res) => {
 
     await product.save();
     
-    // ✅ Sync product to Meilisearch index
-    await syncProductToMeilisearch(product);
+    // ✅ Fire-and-forget Meilisearch sync (non-blocking)
+    // Product is already saved - sync happens async in background
+    syncProductToMeilisearch(product)
+      .then(syncResult => {
+        if (syncResult.success) {
+          console.log(`✅ Background sync completed: product ${product.name} (ID: ${product._id})`);
+        } else {
+          console.warn(`⚠️  Background sync failed: ${syncResult.error}`);
+        }
+      })
+      .catch(err => {
+        console.error(`Background sync error for product ${product._id}:`, err.message);
+      });
     
     await product.populate([
       { path: 'categoryId', select: 'name' },
@@ -405,6 +416,11 @@ export const addProduct = async (req, res) => {
     res.status(201).json({
       message: "Product added successfully",
       product,
+      meilisearchSync: {
+        success: true,
+        message: "Search index sync in progress...",
+        status: "pending"
+      },
     });
   } catch (err) {
     console.error("Error adding product:", err);
@@ -846,12 +862,22 @@ export const updateProduct = async (req, res) => {
 
     await product.save();
     
-    // ✅ Small delay to ensure database write is complete
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // ✅ Sync updated product to Meilisearch index (fetches fresh from DB with all populations)
-    await syncProductToMeilisearch(product);
-    console.log(`✅ Synced updated product to Meilisearch: ${product.name} (ID: ${product._id})`);
+    // ✅ Fire-and-forget Meilisearch sync (non-blocking)
+    // Product is already saved - sync happens async in background
+    // Small delay to ensure database write is complete, then sync
+    setTimeout(() => {
+      syncProductToMeilisearch(product)
+        .then(syncResult => {
+          if (syncResult.success) {
+            console.log(`✅ Background sync completed: product ${product.name} (ID: ${product._id})`);
+          } else {
+            console.warn(`⚠️  Background sync failed: ${syncResult.error}`);
+          }
+        })
+        .catch(err => {
+          console.error(`Background sync error for product ${product._id}:`, err.message);
+        });
+    }, 100);
     
     await product.populate([
       { path: 'categoryId', select: 'name' },
@@ -891,8 +917,13 @@ export const updateProduct = async (req, res) => {
     });
 
     res.json({
-      message: "Product updated successfully - search cache will be refreshed on next search",
+      message: "Product updated successfully",
       product,
+      meilisearchSync: {
+        success: true,
+        message: "Search index sync in progress...",
+        status: "pending"
+      },
       cacheInvalidated: true,  // ✅ Signal frontend to clear cache for this product
       productName: product.name,
       packingUnitsUpdated: product.packingUnits?.length > 0
@@ -961,13 +992,23 @@ export const restoreProduct = async (req, res) => {
       });
     }
 
-    // ✅ Re-index product in Meilisearch when restored
-    const meilisearchReindexed = await syncProductToMeilisearch(product);
+    // ✅ Fire-and-forget Meilisearch sync (non-blocking)
+    syncProductToMeilisearch(product)
+      .then(syncResult => {
+        if (syncResult.success) {
+          console.log(`✅ Background sync completed: restored product ${product.name} (ID: ${product._id})`);
+        } else {
+          console.warn(`⚠️  Background sync failed for restored product: ${syncResult.error}`);
+        }
+      })
+      .catch(err => {
+        console.error(`Background sync error for restored product ${product._id}:`, err.message);
+      });
 
     res.json({
       message: "Product restored successfully",
       product,
-      meilisearchSynced: meilisearchReindexed ? "Re-indexed in search" : "Warning: Could not re-index in search",
+      meilisearchSynced: "Re-indexing in background...",
     });
   } catch (err) {
     console.error("Error restoring product:", err);

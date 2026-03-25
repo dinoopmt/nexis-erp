@@ -40,11 +40,11 @@ export async function updateCompanySettings(req, res) {
       });
     }
 
-    // Validate country enum value
-    const validCountries = ['UAE', 'Oman', 'India'];
-    if (!validCountries.includes(country)) {
+    // ✅ Validate country code (use codes that match MongoDB enum)
+    const validCountryCodes = ['AE', 'OM', 'IN'];
+    if (!validCountryCodes.includes(country)) {
       return res.status(400).json({ 
-        message: `Invalid country. Must be one of: ${validCountries.join(', ')}`
+        message: `Invalid country code. Must be one of: ${validCountryCodes.join(', ')} (AE=UAE, OM=Oman, IN=India)`
       });
     }
 

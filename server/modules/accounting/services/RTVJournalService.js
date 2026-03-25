@@ -368,6 +368,188 @@ class RTVJournalService {
   }
 
   /**
+   * ✅ RULE 3: Create GL Adjustment Entry when product cost shifts
+   * Used when latest GRN fully returned and cost shifts to previous GRN
+   * 
+   * Example: Product cost shifts from 12 to 10
+   * - Debit: Inventory Adjustment Account (increase future cost base)
+   * - Credit: Cost of Goods Sold (reduce COGS)
+   * 
+   * @param {Object} costShiftData - Cost shift information:
+   *   - rtvNumber: RTV number
+   *   - rtvDate: Date of RTV
+   *   - itemCode: Product code
+   *   - itemName: Product name
+   *   - oldCost: Previous product cost
+   *   - newCost: New product cost
+   *   - costDifference: newCost - oldCost (usually negative)
+   *   - quantityAffected: Stock quantity affected
+   *   - grnId: GRN that was fully returned
+   *   - createdBy: User creating entry
+   * 
+   * @returns {Promise<Object>} - Created adjustment journal entry
+   */
+  static async createCostShiftJournalEntry(costShiftData) {
+    try {
+      const {
+        rtvNumber,
+        rtvDate,
+        itemCode,
+        itemName,
+        oldCost,
+        newCost,
+        costDifference,
+        quantityAffected,
+        grnId,
+        createdBy
+      } = costShiftData;
+
+      console.log("📝 Creating Cost Shift Adjustment Journal Entry:", {
+        rtvNumber,
+        itemCode,
+        oldCost,
+        newCost,
+        costDifference,
+        quantityAffected
+      });
+
+      // Validate required fields
+      if (!rtvNumber || !rtvDate || !itemCode || costDifference === undefined) {
+        console.error("❌ Missing required fields for cost shift journal entry");
+        return null;
+      }
+
+      // Skip if cost difference is zero (no adjustment needed)
+      if (costDifference === 0) {
+        console.warn("⚠️ Cost difference is zero, skipping adjustment entry");
+        return null;
+      }
+
+      // Get accounts
+      const inventoryAdjustmentAccount = await ChartOfAccounts.findOne({
+        accountNumber: "140410", // Inventory Adjustment (or similar)
+        isActive: true,
+        isDeleted: false
+      }).lean();
+
+      const cogsAccount = await ChartOfAccounts.findOne({
+        accountNumber: "510100", // Cost of Goods Sold (or similar)
+        isActive: true,
+        isDeleted: false
+      }).lean();
+
+      const financialYearId = await this.getFinancialYear(rtvDate);
+
+      if (!financialYearId) {
+        console.error("❌ Failed to fetch financial year");
+        return null;
+      }
+
+      // If specific accounts don't exist, use trading goods fallback
+      const adjustmentAccountId = inventoryAdjustmentAccount?._id || 
+                                   (await this.getInventoryAccount());
+      const expenseAccountId = cogsAccount?._id || (await this.getInventoryAccount());
+
+      if (!adjustmentAccountId || !expenseAccountId) {
+        console.error("❌ Failed to fetch required accounts");
+        return null;
+      }
+
+      // Calculate adjustment amount (in cents)
+      const adjustmentAmount = Math.round(Math.abs(costDifference) * quantityAffected * 100);
+
+      if (adjustmentAmount === 0) {
+        console.warn("⚠️ Adjustment amount is zero");
+        return null;
+      }
+
+      // ✅ RULE 3: Determine debit/credit based on cost direction
+      let debitAccountId, creditAccountId, debitAmount, creditAmount;
+
+      if (costDifference < 0) {
+        // Cost decreased (e.g., 12 → 10)
+        // Debit: Inventory Adjustment (increase asset)
+        // Credit: COGS (reduce expense)
+        debitAccountId = adjustmentAccountId;
+        creditAccountId = expenseAccountId;
+        debitAmount = adjustmentAmount;
+        creditAmount = 0;
+      } else {
+        // Cost increased (e.g., 10 → 12)
+        // Debit: COGS (increase expense)
+        // Credit: Inventory Adjustment (decrease asset)
+        debitAccountId = expenseAccountId;
+        creditAccountId = adjustmentAccountId;
+        debitAmount = 0;
+        creditAmount = adjustmentAmount;
+      }
+
+      // Generate voucher number
+      const voucherNumber = await this.generateVoucherNumber("IA"); // Inventory Adjustment
+
+      // Create line items
+      const lineItems = [
+        {
+          accountId: debitAccountId,
+          debitAmount,
+          creditAmount: costDifference < 0 ? 0 : adjustmentAmount,
+          description: `Cost Shift: RTV #${rtvNumber} - ${itemCode} (${itemName}) cost changed ${oldCost} → ${newCost}`
+        },
+        {
+          accountId: creditAccountId,
+          debitAmount: costDifference < 0 ? 0 : adjustmentAmount,
+          creditAmount: costDifference < 0 ? adjustmentAmount : 0,
+          description: `Cost Shift: RTV #${rtvNumber} - ${itemCode} adjustment (qty: ${quantityAffected})`
+        }
+      ];
+
+      // Create journal entry
+      const journalEntry = new JournalEntry({
+        voucherNumber,
+        voucherType: "IA", // Inventory Adjustment
+        entryDate: new Date(rtvDate),
+        financialYearId,
+        description: `Cost Shift Adjustment - RTV #${rtvNumber}: ${itemCode} (${oldCost} → ${newCost})`,
+        referenceNumber: rtvNumber,
+        lineItems,
+        totalDebit: costDifference < 0 ? adjustmentAmount : adjustmentAmount,
+        totalCredit: costDifference < 0 ? adjustmentAmount : adjustmentAmount,
+        status: "DRAFT", // Start as draft for review
+        postedBy: createdBy,
+        postedDate: null,
+        relatedRtvNumber: rtvNumber,
+        relatedGrnId: grnId
+      });
+
+      await journalEntry.save();
+      await journalEntry.populate("lineItems.accountId", "accountNumber accountName");
+
+      console.log(`✅ Cost Shift Journal Entry created: ${voucherNumber}`);
+      console.log(`   Amount: AED ${(adjustmentAmount / 100).toFixed(2)} (${Math.abs(costDifference).toFixed(2)} per unit × ${quantityAffected})`);
+
+      return {
+        voucherNumber: journalEntry.voucherNumber,
+        status: journalEntry.status,
+        adjustmentAmount: adjustmentAmount / 100,
+        costChange: `${oldCost} → ${newCost}`,
+        lineItems: journalEntry.lineItems.map(item => ({
+          account: item.accountId.accountNumber,
+          accountName: item.accountId.accountName,
+          debit: item.debitAmount / 100,
+          credit: item.creditAmount / 100
+        }))
+      };
+
+    } catch (error) {
+      console.error("❌ Error creating cost shift journal entry:", {
+        message: error.message,
+        rtvNumber: costShiftData?.rtvNumber
+      });
+      return null;
+    }
+  }
+
+  /**
    * Reverse a posted journal entry (for RTV cancellation)
    * @param {string} journalEntryId - Journal Entry ID
    * @param {string} userId - User reversing the entry

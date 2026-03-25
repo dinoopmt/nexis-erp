@@ -143,6 +143,7 @@ const CompanyMaster = () => {
     try {
       const dataToSubmit = {
         ...formData,
+        country: formData.countryCode,  // ✅ Send country CODE (AE) not name (UAE)
         taxRate: parseFloat(formData.taxRate) || 0,
       }
 
