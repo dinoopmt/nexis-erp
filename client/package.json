@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:electron": "vite build && npm run electron:build",
+    "electron:build": "electron-builder",
+    "electron:dev": "npm run dev",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -38,6 +41,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.24",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -45,5 +50,36 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.3.5",
     "vite": "^7.2.4"
+  },
+  "build": {
+    "appId": "com.nexiserp.app",
+    "productName": "NEXIS ERP",
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "certificateFile": null,
+      "certificatePassword": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NEXIS ERP"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    }
   }
 }

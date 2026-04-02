@@ -1,0 +1,24 @@
+{
+  "name": "nexis-erp",
+  "version": "1.0.0",
+  "description": "NEXIS ERP - Enterprise Resource Planning System",
+  "main": "electron/main.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "npm run dev:all",
+    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm start",
+    "dev:client": "cd client && npm run dev",
+    "build:all": "npm run build:server && npm run build:client",
+    "build:server": "echo 'Server build (if needed)'",
+    "build:client": "cd client && npm run build",
+    "build:electron": "cd client && npm run build:electron",
+    "electron:dev": "cd client && npm run dev & electron . --inspect=5858",
+    "electron:build": "cd client && npm run electron:build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "author": "NEXIS Team",
+  "license": "MIT"
+}
