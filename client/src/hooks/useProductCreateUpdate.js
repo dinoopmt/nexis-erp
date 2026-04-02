@@ -1,5 +1,5 @@
 import { useCallback, useContext, useState, useRef } from "react";
-import { toast } from "react-hot-toast";
+import { showToast } from "../components/shared/AnimatedCenteredToast.jsx";
 import { ProductFormContext } from "../context/ProductFormContext";
 import { useProductAPI } from "../components/shared/sample/useProductAPI";
 import { clearQueryCache, clearAllCache } from "../utils/searchCache";
@@ -94,7 +94,7 @@ export const useProductCreateUpdate = ({
         console.log("✅ Product loaded for editing");
       } catch (error) {
         console.error("❌ Edit error:", error);
-        toast.error(error.message || "Failed to load product", { duration: 5000 });
+        showToast('error', error.message || "Failed to load product");
       }
     },
     [productAPI, openProductForm, products, filteredProducts, onProductSaved, activeCountryCode]
@@ -125,14 +125,14 @@ export const useProductCreateUpdate = ({
           const savedProduct = saveResult.product;
           
           if (lastSavedProductRef.current !== savedProduct._id) {
-            toast.success(`Product saved successfully`, { duration: 3000 });
+            showToast('success', `Product saved successfully`);
             lastSavedProductRef.current = savedProduct._id;
           }
 
           // ✅ Auto-retry Meilisearch sync if update failed
           if (isEditMode && saveResult.meilisearchSync && !saveResult.meilisearchSync.success) {
             console.warn('⚠️  Meilisearch sync failed on update, attempting auto-retry...');
-            toast.loading('Retrying search index update...', { duration: 1500 });
+            showToast('info', 'Retrying search index update...');
             
             // Wait a moment for any pending operations to complete
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -151,7 +151,7 @@ export const useProductCreateUpdate = ({
         }
       } catch (error) {
         console.error("❌ Save error:", error);
-        toast.error(error.message || "Failed to save product", { duration: 5000 });
+        showToast('error', error.message || "Failed to save product");
         throw error;
       }
     },

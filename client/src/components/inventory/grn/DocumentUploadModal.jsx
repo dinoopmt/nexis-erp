@@ -4,7 +4,7 @@
  */
 import React, { useState, useRef } from "react";
 import { Upload, X, Eye } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { showToast } from "../../shared/AnimatedCenteredToast.jsx";
 
 const DocumentUploadModal = ({ isOpen, onClose, onFileUpload, documents = [], onDocumentRemove }) => {
   const [dragActive, setDragActive] = useState(false);
@@ -37,12 +37,12 @@ const DocumentUploadModal = ({ isOpen, onClose, onFileUpload, documents = [], on
   const validateAndUploadFiles = (files) => {
     const pdfFiles = Array.from(files).filter((file) => {
       if (file.type !== "application/pdf") {
-        toast.error(`${file.name} - Only PDF files allowed`);
+        showToast('error', `${file.name} - Only PDF files allowed`);
         return false;
       }
       if (file.size > 10 * 1024 * 1024) {
         // 10MB limit
-        toast.error(`${file.name} - File size cannot exceed 10MB`);
+        showToast('error', `${file.name} - File size cannot exceed 10MB`);
         return false;
       }
       return true;
@@ -50,7 +50,7 @@ const DocumentUploadModal = ({ isOpen, onClose, onFileUpload, documents = [], on
 
     if (pdfFiles.length > 0) {
       onFileUpload(pdfFiles);
-      toast.success(`${pdfFiles.length} PDF(s) uploaded successfully`);
+      showToast('success', `${pdfFiles.length} PDF(s) uploaded successfully`);
     }
   };
 

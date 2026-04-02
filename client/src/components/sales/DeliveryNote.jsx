@@ -150,7 +150,7 @@ const DeliveryNote = () => {
         setDeliveryNotes(response.data || []);
       } catch (err) {
         console.error("Error fetching delivery notes:", err);
-        showToast("Failed to load delivery notes", "error");
+        showToast("error", "Failed to load delivery notes");
       }
     };
     fetchDeliveryNotes();
@@ -188,7 +188,7 @@ const DeliveryNote = () => {
       incrementDeliveredQuantity(product._id);
       setScannerInput("");
     } else {
-      showToast("Product not found: " + scannerInput, "error");
+      showToast("error", "Product not found: " + scannerInput);
     }
   };
 
@@ -202,7 +202,7 @@ const DeliveryNote = () => {
         : item
     );
     setNoteData((prev) => ({ ...prev, items: newItems }));
-    showToast("Quantity incremented", "success");
+    showToast("success", "Quantity incremented");
   };
 
   const handleSalesOrderSelect = (orderId) => {
@@ -227,7 +227,7 @@ const DeliveryNote = () => {
           remark: "",
         })),
       }));
-      showToast(`Loaded ${order.orderNumber} items`, "success");
+      showToast("success", `Loaded ${order.orderNumber} items`);
     }
   };
 
@@ -244,7 +244,7 @@ const DeliveryNote = () => {
 
   const handleSaveDeliveryNote = async () => {
     if (!noteData.salesOrderId || noteData.items.length === 0) {
-      showToast("Please select a sales order and add items", "error");
+      showToast("error", "Please select a sales order and add items");
       return;
     }
 
@@ -291,8 +291,8 @@ const DeliveryNote = () => {
       const response = await axios[editId ? "put" : "post"](url, payload);
 
       showToast(
-        editId ? "Delivery note updated successfully" : "Delivery note created successfully",
-        "success"
+        "success",
+        editId ? "Delivery note updated successfully" : "Delivery note created successfully"
       );
 
       if (!editId) {
@@ -318,7 +318,7 @@ const DeliveryNote = () => {
       setEditId(null);
       setDeliveryNotes([...deliveryNotes, response.data]);
     } catch (err) {
-      showToast(err.response?.data?.error || "Error saving delivery note", "error");
+      showToast("error", err.response?.data?.error || "Error saving delivery note");
     } finally {
       setLoading(false);
     }
@@ -351,9 +351,9 @@ const DeliveryNote = () => {
       try {
         await axios.delete(`${API_URL}/api/v1/delivery-notes/deleteDeliveryNote/${id}`);
         setDeliveryNotes(deliveryNotes.filter((n) => n._id !== id));
-        showToast("Delivery note deleted successfully", "success");
+        showToast("success", "Delivery note deleted successfully");
       } catch (err) {
-        showToast("Error deleting delivery note", "error");
+        showToast("error", "Error deleting delivery note");
       }
     }
   };
@@ -368,9 +368,9 @@ const DeliveryNote = () => {
           n._id === id ? { ...n, status: newStatus } : n
         )
       );
-      showToast("Status updated successfully", "success");
+      showToast("success", "Status updated successfully");
     } catch (err) {
-      showToast("Error updating status", "error");
+      showToast("error", "Error updating status");
     }
   };
 

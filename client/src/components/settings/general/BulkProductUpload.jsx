@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Download, AlertCircle, CheckCircle, XCircle, Loader } from 'lucide-react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import toast from 'react-hot-toast';
+import { showToast } from "../../shared/AnimatedCenteredToast.jsx";
 import { API_URL } from '../../../config/config';
 
 const BulkProductUpload = () => {
@@ -102,7 +102,7 @@ const BulkProductUpload = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
     XLSX.writeFile(wb, `product_template_${new Date().toISOString().split('T')[0]}.xlsx`);
 
-    toast.success('Template downloaded successfully!');
+    showToast('success', 'Template downloaded successfully!');
   };
 
   // ==================== DOWNLOAD SIMPLE TEMPLATE ====================
@@ -146,7 +146,7 @@ const BulkProductUpload = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
     XLSX.writeFile(wb, `product_simple_template_${new Date().toISOString().split('T')[0]}.xlsx`);
 
-    toast.success('Simple template downloaded successfully!');
+    showToast('success', 'Simple template downloaded successfully!');
   };
 
   // ==================== HANDLE FILE SELECTION ====================
@@ -156,7 +156,7 @@ const BulkProductUpload = () => {
 
     // Validate file type
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls') && !file.name.endsWith('.csv')) {
-      toast.error('Please upload an Excel (.xlsx, .xls) or CSV file');
+      showToast('error', 'Please upload an Excel (.xlsx, .xls) or CSV file');
       return;
     }
 
@@ -270,7 +270,7 @@ const BulkProductUpload = () => {
       }
 
       if (filteredData.length === 0) {
-        toast.error('No data found in the uploaded file');
+        showToast('error', 'No data found in the uploaded file');
         setFilePreparation({
           isProcessing: false,
           stage: null,
@@ -306,9 +306,9 @@ const BulkProductUpload = () => {
         message: ''
       });
 
-      toast.success(`Loaded ${filteredData.length} products for preview`);
+      showToast('success', `Loaded ${filteredData.length} products for preview`);
     } catch (error) {
-      toast.error(`Error reading file: ${error.message}`);
+      showToast('error', `Error reading file: ${error.message}`);
       setFilePreparation({
         isProcessing: false,
         stage: null,
@@ -495,7 +495,7 @@ const BulkProductUpload = () => {
   // ==================== UPLOAD PRODUCTS (WITH BATCH PROCESSING) ====================
   const handleUpload = async () => {
     if (!preview?.fullData) {
-      toast.error('No data to upload. Please select a file first.');
+      showToast('error', 'No data to upload. Please select a file first.');
       return;
     }
 
@@ -514,7 +514,7 @@ const BulkProductUpload = () => {
 
     // If no cleaned products, stop
     if (validation.cleanedProducts.length === 0) {
-      toast.error('No valid products to upload. All rows contain errors.');
+      showToast('error', 'No valid products to upload. All rows contain errors.');
       return;
     }
 
@@ -631,7 +631,7 @@ const BulkProductUpload = () => {
           totalFailed += batchProducts.length;
 
           // Continue with next batch instead of stopping
-          toast.error(`⚠️ Batch ${batchNum} failed, continuing with next batch...`);
+          showToast('error', `⚠️ Batch ${batchNum} failed, continuing with next batch...`);
         }
       }
 
@@ -690,7 +690,7 @@ const BulkProductUpload = () => {
         ? `✅ Success! ${totalSuccessful + totalUpdated} products imported (${skippedValidationRows} skipped)` 
         : `⚠️ Partial Success: ${totalSuccessful + totalUpdated} imported, ${totalFailed} failed`;
       
-      toast.success(successMsg);
+      showToast('success', successMsg);
       await sleep(1500);
       setLoading(false);
 
@@ -707,7 +707,7 @@ const BulkProductUpload = () => {
         message: errorMessage,
         details: error.response?.data
       });
-      toast.error(`❌ Import failed: ${errorMessage}`);
+      showToast('error', `❌ Import failed: ${errorMessage}`);
       setLoading(false);
     }
   };

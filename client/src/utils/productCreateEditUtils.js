@@ -7,8 +7,6 @@
  * so they can be reused in different modal patterns
  */
 
-import { toast } from "react-hot-toast";
-
 /**
  * Build pricing lines from product data
  * Used when loading a product for edit mode
@@ -18,11 +16,17 @@ export const buildPricingLinesFromProduct = (productData) => {
 
   let pricingVariants = [];
 
+  // ✅ When taxInPrice=true, use finalPrice (what user entered with tax)
+  // ✅ When taxInPrice=false, use price (base price without tax)
+  const displayPrice = productData.taxInPrice && productData.finalPrice 
+    ? productData.finalPrice 
+    : productData.price || "";
+
   // ROW 0: Always create base unit from top-level fields
   pricingVariants.push({
     unit: productData.unitType || "",
     factor: productData.factor !== undefined && productData.factor !== null ? productData.factor : 1,
-    price: productData.price || "",
+    price: displayPrice,
     barcode: productData.barcode || "",
     cost: productData.cost || "",
     costIncludetax: productData.costIncludeVat || "",
@@ -173,25 +177,58 @@ export const buildProductForSave = (
     };
   });
 
-  // Apply tax logic
+  // Apply tax logic - Calculate taxAmount and finalPrice WITHOUT modifying base price
   const taxPercent = parseFloat(productData.taxPercent) || 0;
-  if (!productData.taxInPrice && taxPercent > 0) {
-    selectedVariantsForSave = selectedVariantsForSave.map((variant) => ({
+  const taxInPrice = productData.taxInPrice || false;
+  
+  // ✅ Extract base price when tax is included in the price
+  const extractBasePrice = (finalPrice, taxPercent, taxInPrice) => {
+    const finalPriceValue = parseFloat(finalPrice) || 0;
+    if (finalPriceValue === 0 || taxPercent === 0) return finalPriceValue;
+    
+    if (taxInPrice) {
+      // If tax is included in price: base = finalPrice / (1 + taxPercent/100)
+      return round(finalPriceValue / (1 + taxPercent / 100));
+    } else {
+      // If tax is NOT included, the price IS the base price
+      return finalPriceValue;
+    }
+  };
+  
+  // ✅ Calculate taxAmount and finalPrice for each variant (without modifying base price)
+  const calculateTaxAmount = (price, taxPercent) => {
+    const basePriceValue = parseFloat(price) || 0;
+    if (basePriceValue === 0 || taxPercent === 0) return 0;
+    
+    // Tax amount = base price * (taxPercent / 100)
+    return round((basePriceValue * taxPercent) / 100);
+  };
+  
+  const calculateFinalPrice = (basePrice, taxAmount) => {
+    const basePriceValue = parseFloat(basePrice) || 0;
+    const taxAmountValue = parseFloat(taxAmount) || 0;
+    const finalPrice = basePriceValue + taxAmountValue;
+    return round(finalPrice);
+  };
+
+  // Add taxAmount and finalPrice to selected variants
+  selectedVariantsForSave = selectedVariantsForSave.map((variant) => {
+    const basePriceForVariant = extractBasePrice(variant.price, taxPercent, taxInPrice);
+    const taxAmountForVariant = calculateTaxAmount(basePriceForVariant, taxPercent);
+    const finalPriceForVariant = calculateFinalPrice(basePriceForVariant, taxAmountForVariant);
+    
+    return {
       ...variant,
-      price:
-        variant.price !== undefined &&
-        variant.price !== null &&
-        variant.price !== ""
-          ? round(parseFloat(variant.price) * (1 + taxPercent / 100)).toString()
-          : variant.price,
-    }));
-  }
+      price: basePriceForVariant,  // ✅ Store base price (without tax)
+      taxAmount: taxAmountForVariant,
+      finalPrice: finalPriceForVariant,
+    };
+  });
 
   // Build packingUnits
   const packingUnits = selectedVariantsForSave
     .slice(1)
     .map((variant, idx) => {
-      const calculatedPrice = basePrice * (variant.factor || 1);
       return {
         name: variant.unit || `Unit ${variant.factor}`,
         barcode: variant.barcode || "",
@@ -202,20 +239,24 @@ export const buildProductForSave = (
         costIncludeVat: parseFloat(variant.costIncludetax) || 0,
         margin: parseFloat(variant.margin) || 0,
         marginAmount: parseFloat(variant.marginAmount) || 0,
-        price: calculatedPrice,
-        taxAmount: parseFloat(variant.taxAmount) || 0,
-        taxInPrice: variant.taxInPrice !== undefined ? variant.taxInPrice : productData.taxInPrice || false,
+        price: parseFloat(variant.price) || 0,  // ✅ Base price (extracted/without tax)
+        taxAmount: parseFloat(variant.taxAmount) || 0,  // ✅ Calculated tax amount
+        finalPrice: parseFloat(variant.finalPrice) || 0,  // ✅ Final price = price + taxAmount
+        taxInPrice: taxInPrice,
         conversionFactor: variant.factor || 1,
       };
     });
 
   // Build pricing levels
+  // ✅ Use extracted base price from first variant (which has been extracted from input price)
+  const baseProductPrice = selectedVariantsForSave[0]?.price || 0;
   const pricingLevelsToSave = {};
   selectedVariantsForSave.forEach((variant, index) => {
-    const calculatedPrice = index === 0 ? basePrice : basePrice * (variant.factor || 1);
+    // Use extracted base price for pricing levels
+    const basePriceForLevel = index === 0 ? baseProductPrice : baseProductPrice * (variant.factor || 1);
     const userDefinedLevels = productData.pricingLevels?.[index] || {};
     pricingLevelsToSave[index] = {
-      level1: userDefinedLevels.level1 ? parseFloat(userDefinedLevels.level1) : calculatedPrice || null,
+      level1: userDefinedLevels.level1 ? parseFloat(userDefinedLevels.level1) : basePriceForLevel || null,
       level2: userDefinedLevels.level2 ? parseFloat(userDefinedLevels.level2) : null,
       level3: userDefinedLevels.level3 ? parseFloat(userDefinedLevels.level3) : null,
       level4: userDefinedLevels.level4 ? parseFloat(userDefinedLevels.level4) : null,
@@ -224,17 +265,22 @@ export const buildProductForSave = (
   });
 
   // Final product data
+  // ✅ Calculate final product prices using the already-extracted base price
+  const baseProductTaxAmount = parseFloat(calculateTaxAmount(baseProductPrice, taxPercent)) || 0;
+  const baseProductFinalPrice = parseFloat(calculateFinalPrice(baseProductPrice, baseProductTaxAmount)) || 0;
+  
   let finalProductData = {
     ...productData,
     itemcode: productData.itemcode === "Auto-generated" ? "" : productData.itemcode,
     cost: topLevelCost,
-    price: topLevelPrice,
+    price: parseFloat(baseProductPrice) || 0,  // ✅ Base price WITHOUT tax (extracted from input)
+    taxAmount: baseProductTaxAmount,  // ✅ Calculated tax amount
+    finalPrice: baseProductFinalPrice,  // ✅ Final price = price + taxAmount
     barcode: topLevelBarcode,
     factor: topLevelFactor,
     costIncludeVat: topLevelCostIncludeVat,
     marginPercent: topLevelMarginPercent,
     marginAmount: topLevelMarginAmount,
-    taxAmount: topLevelTaxAmount,
     unitType: unitType,
     packingUnits: packingUnits,
     pricingLevels: pricingLevelsToSave,
@@ -297,6 +343,12 @@ export const buildProductForSave = (
  * Ensures all fields are present even if backend doesn't return them
  */
 export const prepareProductForEdit = (completeProduct, activeCountryCode = "AE") => {
+  // ✅ When taxInPrice=true, display finalPrice (what user entered)
+  // ✅ When taxInPrice=false, display price (base price without tax)
+  const displayPrice = completeProduct.taxInPrice && completeProduct.finalPrice 
+    ? completeProduct.finalPrice 
+    : completeProduct.price || "";
+
   return {
     _id: completeProduct._id || "",
     itemcode: completeProduct.itemcode || "",
@@ -316,7 +368,7 @@ export const prepareProductForEdit = (completeProduct, activeCountryCode = "AE")
     maxStock: completeProduct.maxStock || 1000,
     reorderQuantity: completeProduct.reorderQuantity || 100,
     cost: completeProduct.cost || "",
-    price: completeProduct.price || "",
+    price: displayPrice,
     costIncludeVat: completeProduct.costIncludeVat || "",
     marginPercent: completeProduct.marginPercent || "",
     marginAmount: completeProduct.marginAmount || "",

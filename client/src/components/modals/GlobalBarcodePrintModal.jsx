@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from "react";
 import Modal from "../shared/Model";
-import { toast } from "react-hot-toast";
+import { showToast } from "../shared/AnimatedCenteredToast.jsx";
 import { Printer, Send, Loader } from "lucide-react";
 import axios from "axios";
 import { API_URL } from "../../config/config";
@@ -58,7 +58,7 @@ const GlobalBarcodePrintModal = ({ isOpen, onClose, products = [] }) => {
       }
     } catch (error) {
       console.error("Error fetching printer configurations:", error);
-      toast.error("Failed to load printer configurations", { duration: 3000 });
+      showToast('error', "Failed to load printer configurations");
     } finally {
       setIsFetching(false);
     }
@@ -91,17 +91,17 @@ const GlobalBarcodePrintModal = ({ isOpen, onClose, products = [] }) => {
   const handlePrint = async () => {
     try {
       if (!selectedConfig) {
-        toast.error("Please select a printer template", { duration: 3000 });
+        showToast('error', "Please select a printer template");
         return;
       }
 
       if (!products || products.length === 0) {
-        toast.error("No products to print", { duration: 3000 });
+        showToast('error', "No products to print");
         return;
       }
 
       if (quantity < 1 || !Number.isInteger(parseInt(quantity))) {
-        toast.error("Quantity must be a positive integer", { duration: 3000 });
+        showToast('error', "Quantity must be a positive integer");
         return;
       }
 
@@ -112,14 +112,12 @@ const GlobalBarcodePrintModal = ({ isOpen, onClose, products = [] }) => {
         await printProduct(product);
       }
 
-      toast.success(`Successfully sent print command for ${products.length} product(s)`, {
-        duration: 3000,
-      });
+      showToast('success', `Successfully sent print command for ${products.length} product(s)`);
 
       onClose();
     } catch (error) {
       console.error("Print error:", error);
-      toast.error(error.message || "Failed to print", { duration: 3000 });
+      showToast('error', error.message || "Failed to print");
     } finally {
       setLoading(false);
     }
@@ -162,7 +160,7 @@ const GlobalBarcodePrintModal = ({ isOpen, onClose, products = [] }) => {
       } else {
         console.warn("[PRINT] Electron not available, command prepared:");
         console.log(command);
-        toast.info("Electron not available. Command prepared in console.", { duration: 3000 });
+        showToast('info', "Electron not available. Command prepared in console.");
       }
     } catch (error) {
       console.error(`Error printing ${product.name}:`, error);

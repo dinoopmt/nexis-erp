@@ -60,7 +60,7 @@ export const useInfiniteScroll = (fetchFunction, itemsPerPage = 50) => {
       
       if (!result || !Array.isArray(result.products)) {
         console.error('Invalid response format:', result);
-        toast.error('Failed to fetch products');
+        showToast('error', 'Failed to fetch products');
         return;
       }
 
@@ -102,7 +102,7 @@ export const useInfiniteScroll = (fetchFunction, itemsPerPage = 50) => {
     } catch (err) {
       console.error(`❌ Error fetching page ${pageNum}:`, err.message);
       if (err.response?.status !== 304) {
-        toast.error(`Failed to load products: ${err.message}`);
+        showToast('error', `Failed to load products: ${err.message}`);
       }
     } finally {
       // Remove from fetching set and update loading state

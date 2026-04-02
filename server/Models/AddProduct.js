@@ -14,6 +14,10 @@ const packingUnitSchema = new mongoose.Schema({
     type: Number, 
     required: true
   },
+  finalPrice: { 
+    type: Number,
+    description: "Final price including tax (pre-calculated for performance)"
+  },
   taxAmount: { type: Number, default: 0 }, // ✅ Tax amount for this unit
   taxInPrice: { type: Boolean, default: false }, // ✅ Whether price includes tax (price include/exclude)
   conversionFactor: { type: Number, required: true, min: 1 }, // How many of previous unit
@@ -130,6 +134,10 @@ const productSchema = new mongoose.Schema({
   price: { 
     type: Number, 
     required: true
+  },
+  finalPrice: { 
+    type: Number,
+    description: "Final price including tax (pre-calculated for performance)"
   },
   barcode: { 
     type: String,
@@ -259,6 +267,17 @@ const productSchema = new mongoose.Schema({
 
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date, default: null },
+  
+  createdBy: { 
+    type: String, 
+    default: "System",
+    description: "Username of user who created the product"
+  },
+  updatedBy: { 
+    type: String, 
+    default: "System",
+    description: "Username of user who last updated the product"
+  },
 
   updateDate: { type: Date, default: Date.now },
   createdate: { type: Date, default: Date.now },

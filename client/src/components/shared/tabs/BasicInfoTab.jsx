@@ -14,6 +14,7 @@ const BasicInfoTab = forwardRef((
     newProduct,
     setNewProduct,
     errors,
+    setErrors,
     loading,
     isIndiaCompany,
     hsnCodes,
@@ -237,6 +238,10 @@ const BasicInfoTab = forwardRef((
       onPricingFieldChangeRef.current(index, "unit", unitId);
       // Factor is no longer auto-populated - user must manually change it
     }
+    // Clear unit error
+    if (errors.unit) {
+      setErrors((prev) => ({ ...prev, unit: undefined }));
+    }
   };
 
   // Helper function to allow only numbers and one decimal point
@@ -267,6 +272,10 @@ const BasicInfoTab = forwardRef((
     if (onPricingFieldChangeRef.current) {
       onPricingFieldChangeRef.current(index, "cost", decimalValue);
     }
+    // Clear cost error
+    if (errors.cost) {
+      setErrors((prev) => ({ ...prev, cost: undefined }));
+    }
   };
 
   // Update profit margin percentage for a pricing line
@@ -293,6 +302,10 @@ const BasicInfoTab = forwardRef((
     const decimalValue = sanitizeDecimalInput(priceValue);
     if (onPricingFieldChangeRef.current) {
       onPricingFieldChangeRef.current(index, "price", decimalValue);
+    }
+    // Clear price error
+    if (errors.price) {
+      setErrors((prev) => ({ ...prev, price: undefined }));
     }
   };
 
@@ -430,12 +443,22 @@ const BasicInfoTab = forwardRef((
                   errors.name ? "border-red-500 bg-red-50" : "border-gray-300"
                 }`}
                 value={newProduct.name || ""}
-                onChange={(e) =>
+                onChange={(e) => {
                   setNewProduct({
                     ...newProduct,
                     name: e.target.value,
-                  })
-                }
+                  });
+                  // Clear error on change
+                  if (errors.name) {
+                    setErrors((prev) => ({ ...prev, name: undefined }));
+                  }
+                }}
+                onFocus={() => {
+                  // Clear error on focus
+                  if (errors.name) {
+                    setErrors((prev) => ({ ...prev, name: undefined }));
+                  }
+                }}
                 onMouseDown={(e) => e.stopPropagation()}
                 disabled={loading}
               />
@@ -508,7 +531,10 @@ const BasicInfoTab = forwardRef((
                   }}
                   onFocus={() => {
                     setShowDeptDropdown(true);
-                    // Don't auto-clear - let user manually clear by backspacing if they want
+                    // Clear error when user focuses on the field
+                    if (errors.categoryId) {
+                      setErrors((prev) => ({ ...prev, categoryId: undefined }));
+                    }
                   }}
                   onBlur={() => {
                     setTimeout(() => setShowDeptDropdown(false), 200);
@@ -553,11 +579,6 @@ const BasicInfoTab = forwardRef((
                 ➕
               </button>
             </div>
-            {errors.categoryId && (
-              <p className="text-red-500 text-xs ml-20 -mt-1">
-                {errors.categoryId}
-              </p>
-            )}
 
             {/* Row 6: Sub-Department (hierarchical category L2, optional) - Inline Search */}
             <div className="flex items-center gap-2 h-9">
@@ -731,11 +752,18 @@ const BasicInfoTab = forwardRef((
                   onChange={(e) => {
                     const newValue = e.target.value;
                     setVendorSearch(newValue);
-                    setShowVendorDropdown(true); // Keep dropdown open while typing
+                    setShowVendorDropdown(true);
+                    // Clear error on change
+                    if (errors.vendor) {
+                      setErrors((prev) => ({ ...prev, vendor: undefined }));
+                    }
                   }}
                   onFocus={() => {
                     setShowVendorDropdown(true);
-                    // Don't auto-clear - let user manually clear by backspacing if they want
+                    // Clear error on focus
+                    if (errors.vendor) {
+                      setErrors((prev) => ({ ...prev, vendor: undefined }));
+                    }
                   }}
                   onBlur={() => {
                     setTimeout(() => setShowVendorDropdown(false), 200);
@@ -1635,6 +1663,10 @@ const BasicInfoTab = forwardRef((
                               e.target.value,
                             );
                           }
+                          // Clear barcode error
+                          if (errors.barcode) {
+                            setErrors((prev) => ({ ...prev, barcode: undefined }));
+                          }
                         }}
                         className="w-full border rounded px-1 py-1 text-center text-xs focus:outline-none border-blue-500 focus:ring-2 focus:ring-blue-400 disabled:bg-gray-200 disabled:cursor-not-allowed disabled:text-gray-500 disabled:border-gray-300"
                       />
@@ -1653,6 +1685,10 @@ const BasicInfoTab = forwardRef((
                               "barcode",
                               e.target.value,
                             );
+                          }
+                          // Clear barcode error
+                          if (errors.barcode) {
+                            setErrors((prev) => ({ ...prev, barcode: undefined }));
                           }
                         }}
                         className="w-full border rounded px-1 py-1 text-center text-xs focus:outline-none border-blue-500 focus:ring-2 focus:ring-blue-400 disabled:bg-gray-200 disabled:cursor-not-allowed disabled:text-gray-500 disabled:border-gray-300"

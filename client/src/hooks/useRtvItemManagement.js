@@ -3,19 +3,19 @@
  * Manages RTV item operations (add, update, remove, calculate totals)
  */
 import { useState, useCallback } from "react";
-import { toast } from "react-hot-toast";
+import { showToast } from "../components/shared/AnimatedCenteredToast.jsx";
 
 export const useRtvItemManagement = (formData, setFormData) => {
   // ✅ Add item to RTV (user selects from GRN items)
   const addItem = useCallback((item) => {
     if (!item.productId) {
-      toast.error("Product ID is required");
+      showToast('error', "Product ID is required");
       return;
     }
 
     // Check if item already added
     if (formData.items.some(i => i.productId === item.productId)) {
-      toast.error("Item already added to return");
+      showToast('error', "Item already added to return");
       return;
     }
 
@@ -30,7 +30,7 @@ export const useRtvItemManagement = (formData, setFormData) => {
       }]
     }));
 
-    toast.success("Item added to return");
+    showToast('success', "Item added to return");
   }, [formData.items, setFormData]);
 
   // ✅ Update item quantity
@@ -63,7 +63,7 @@ export const useRtvItemManagement = (formData, setFormData) => {
       ...prev,
       items: prev.items.filter(item => item.id !== itemId)
     }));
-    toast.success("Item removed from return");
+    showToast('success', "Item removed from return");
   }, [setFormData]);
 
   // ✅ Calculate RTV totals

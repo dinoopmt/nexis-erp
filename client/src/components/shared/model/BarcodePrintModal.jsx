@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Modal from "../../shared/Model";
-import { toast } from "react-hot-toast";
+import { showToast } from "../AnimatedCenteredToast.jsx";
 import { Printer } from "lucide-react";
 
 /**
@@ -73,10 +73,7 @@ const BarcodePrintModal = ({
 
   const handlePrint = () => {
     if (!selectedBarcode_value) {
-      toast.error("Please select a barcode to print", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "Please select a barcode to print");
       return;
     }
 
@@ -103,10 +100,7 @@ const BarcodePrintModal = ({
 
     console.log("🖨️ Printing barcode labels:", printData);
     
-    toast.success(
-      `🖨️ Sending ${settings.quantity} labels to ${settings.printerName}`,
-      { duration: 3000, position: "top-center" }
-    );
+    showToast('success', `🖨️ Sending ${settings.quantity} labels to ${settings.printerName}`);
     onClose();
   };
 

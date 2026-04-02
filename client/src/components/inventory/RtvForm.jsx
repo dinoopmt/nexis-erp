@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect } from "react";
 import { Plus, Download, Edit2, Trash2, X } from "lucide-react";
-import { toast } from "react-toastify";
+import { showToast } from "../shared/AnimatedCenteredToast.jsx";
 import RtvListTable from "./rtv/RtvListTable";
 import RtvFormHeader from "./rtv/RtvFormHeader";
 import RtvItemsTable from "./rtv/RtvItemsTable";
@@ -65,7 +65,7 @@ const RtvForm = ({ onNavigate }) => {
       });
       setRtvList(Array.isArray(response) ? response : response?.data || []);
     } catch (error) {
-      toast.error("Failed to load RTV list");
+      showToast('error', "Failed to load RTV list");
       setRtvList([]);
     } finally {
       setIsLoading(false);
@@ -86,7 +86,7 @@ const RtvForm = ({ onNavigate }) => {
       setEditingId(null);
       setShowNewRtvModal(true);
     } catch (error) {
-      toast.error("Failed to create new RTV");
+      showToast('error', "Failed to create new RTV");
     }
   };
 
@@ -100,7 +100,7 @@ const RtvForm = ({ onNavigate }) => {
       setEditingId(rtvId);
       setShowNewRtvModal(true);
     } catch (error) {
-      toast.error("Failed to load RTV");
+      showToast('error', "Failed to load RTV");
     } finally {
       setIsLoading(false);
     }
@@ -110,7 +110,7 @@ const RtvForm = ({ onNavigate }) => {
   const handleOpenGrnSelection = async () => {
     // Validate vendor is selected
     if (!formData.vendorId) {
-      toast.error("Please select a supplier first");
+      showToast('error', "Please select a supplier first");
       return;
     }
 
@@ -123,7 +123,7 @@ const RtvForm = ({ onNavigate }) => {
       setShowGrnSelectionModal(true);
     } catch (error) {
       console.error("Failed to fetch GRN list:", error);
-      toast.error("Failed to fetch GRN list");
+      showToast('error', "Failed to fetch GRN list");
     } finally {
       setIsLoading(false);
     }
@@ -132,11 +132,11 @@ const RtvForm = ({ onNavigate }) => {
   // Save RTV (new or update)
   const handleSaveRtv = async () => {
     if (!formData.vendorId) {
-      toast.error("Please select a vendor");
+      showToast('error', "Please select a vendor");
       return;
     }
     if (formData.items.length === 0) {
-      toast.error("Add at least one item to return");
+      showToast('error', "Add at least one item to return");
       return;
     }
 
@@ -168,19 +168,7 @@ const RtvForm = ({ onNavigate }) => {
     });
 
     if (stockErrors.length > 0) {
-      toast.error(
-        <>
-          <div className="font-semibold mb-2">❌ Return Quantity Exceeds Available Stock:</div>
-          {stockErrors.map((err, idx) => (
-            <div key={idx} className="text-sm mb-2 border-l-2 border-red-500 pl-2">
-              <strong>{err.itemCode}</strong> - {err.itemName}
-              <div className="text-xs text-gray-700 mt-0.5">
-                Requested: {formatNumber(err.requested)} | Available: {formatNumber(err.available)} | Already Returned: {formatNumber(err.alreadyReturned)}
-              </div>
-            </div>
-          ))}
-        </>
-      );
+      showToast('error', "Return Quantity Exceeds Available Stock - Check details above");
       return;
     }
 
@@ -188,10 +176,10 @@ const RtvForm = ({ onNavigate }) => {
       setIsLoading(true);
       if (editingId) {
         await api.updateRtv(editingId, formData);
-        toast.success("RTV updated successfully");
+        showToast('success', "RTV updated successfully");
       } else {
         await api.createRtv(formData);
-        toast.success("RTV created as draft");
+        showToast('success', "RTV created as draft");
       }
       setShowNewRtvModal(false);
       loadRtvList();
@@ -199,18 +187,9 @@ const RtvForm = ({ onNavigate }) => {
       // If backend returns stock validation errors, show them
       if (error.response?.data?.errors) {
         const errors = error.response.data.errors;
-        toast.error(
-          <>
-            <div className="font-semibold mb-2">Stock Validation Failed:</div>
-            {errors.map((err, idx) => (
-              <div key={idx} className="text-sm mb-1">
-                <strong>{err.itemCode}:</strong> {err.message}
-              </div>
-            ))}
-          </>
-        );
+        showToast('error', "Stock Validation Failed - " + errors.map(e => e.message).join(", "));
       } else {
-        toast.error(error.response?.data?.message || "Failed to save RTV");
+        showToast('error', error.response?.data?.message || "Failed to save RTV");
       }
     } finally {
       setIsLoading(false);
@@ -231,10 +210,10 @@ const RtvForm = ({ onNavigate }) => {
     try {
       setIsLoading(true);
       await api.deleteRtv(rtvId);
-      toast.success("RTV deleted successfully");
+      showToast('success', "RTV deleted successfully");
       loadRtvList();
     } catch (error) {
-      toast.error("Failed to delete RTV");
+      showToast('error', "Failed to delete RTV");
     } finally {
       setIsLoading(false);
     }
@@ -248,31 +227,31 @@ const RtvForm = ({ onNavigate }) => {
       switch(action) {
         case "submit":
           await api.submitRtv(rtvId);
-          toast.success("RTV submitted successfully");
+          showToast('success', "RTV submitted successfully");
           break;
         case "approve":
           await api.approveRtv(rtvId);
-          toast.success("RTV approved successfully");
+          showToast('success', "RTV approved successfully");
           break;
         case "post":
           if (!window.confirm("This will reverse stock and create journal entries. Proceed?")) {
             return;
           }
           await api.postRtv(rtvId);
-          toast.success("RTV posted - Stock and GL reversed successfully");
+          showToast('success', "RTV posted - Stock and GL reversed successfully");
           break;
         case "cancel":
           if (!window.confirm("This will cancel the RTV and reverse any posted entries. Proceed?")) {
             return;
           }
           await api.cancelRtv(rtvId);
-          toast.success("RTV cancelled successfully");
+          showToast('success', "RTV cancelled successfully");
           break;
       }
       
       loadRtvList();
     } catch (error) {
-      toast.error(`Failed to ${action} RTV`);
+      showToast('error', `Failed to ${action} RTV`);
     } finally {
       setIsLoading(false);
     }
@@ -424,7 +403,7 @@ const RtvForm = ({ onNavigate }) => {
                         const limitedQty = Math.min(qty, remainingQty);
                         
                         if (qty > remainingQty) {
-                          toast.warning(
+                          showToast('warning',
                             `⚠️ ${item.itemCode}: Cannot return ${formatNumber(qty)}. Max available: ${formatNumber(remainingQty)} (Already returned: ${formatNumber(item.rtvReturnedQuantity || item.returnedQuantity || 0)})`
                           );
                         }

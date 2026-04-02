@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, X } from "lucide-react";
-import { toast } from "react-toastify";
+import { showToast } from "../shared/AnimatedCenteredToast.jsx";
 import { useDecimalFormat } from "../../hooks/useDecimalFormat";
 
 const LpoForm = ({ onNavigate }) => {
@@ -65,7 +65,7 @@ const LpoForm = ({ onNavigate }) => {
       ];
       setLpoList(mockLpos);
     } catch (error) {
-      toast.error("Failed to load LPO list");
+      showToast('error', "Failed to load LPO list");
       setLpoList([]);
     } finally {
       setIsLoading(false);
@@ -106,32 +106,32 @@ const LpoForm = ({ onNavigate }) => {
   const handleDeleteLpo = async (lpoId) => {
     if (!window.confirm("Are you sure you want to delete this LPO?")) return;
     try {
-      toast.success("LPO deleted successfully");
+      showToast('success', "LPO deleted successfully");
       loadLpoList();
     } catch (error) {
-      toast.error("Failed to delete LPO");
+      showToast('error', "Failed to delete LPO");
     }
   };
 
   // Save LPO
   const handleSaveLpo = async () => {
     if (!formData.vendorId) {
-      toast.error("Please select a vendor");
+      showToast('error', "Please select a vendor");
       return;
     }
     if (formData.items.length === 0) {
-      toast.error("Add at least one item");
+      showToast('error', "Add at least one item");
       return;
     }
 
     try {
       setIsLoading(true);
       // Mock save - replace with actual API call
-      toast.success(editingId ? "LPO updated successfully" : "LPO created successfully");
+      showToast('success', editingId ? "LPO updated successfully" : "LPO created successfully");
       setShowNewLpoModal(false);
       loadLpoList();
     } catch (error) {
-      toast.error("Failed to save LPO");
+      showToast('error', "Failed to save LPO");
     } finally {
       setIsLoading(false);
     }

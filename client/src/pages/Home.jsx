@@ -576,12 +576,12 @@ function Home() {
           {/* Support Section - Bottom */}
           <div className="flex-shrink-0 border-t border-gray-700 p-3 space-y-2 flex flex-col justify-end">
             <div>
-              <h3 className="text-center text-sm font-semibold text-blue-400">
-                alarabcomputersllc.com
+              <h3 className="text-center text-xs font-semibold text-blue-400">
+                nexis-erp.com
               </h3>
 
               <p className="text-center text-xs text-blue-300 font-medium">
-                Support +971 55 450 7149
+                version 1.0.0
               </p>
             </div>
           </div>

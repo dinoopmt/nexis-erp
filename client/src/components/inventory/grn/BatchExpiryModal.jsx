@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { showToast } from "../../shared/AnimatedCenteredToast.jsx";
 
 const BatchExpiryModal = ({ isOpen, item, onClose, onSave }) => {
   const [batchNumber, setBatchNumber] = useState("");
@@ -21,13 +21,13 @@ const BatchExpiryModal = ({ isOpen, item, onClose, onSave }) => {
   const handleSave = () => {
     // ✅ Validate batch number
     if (!batchNumber.trim()) {
-      toast.error("Batch number is required");
+      showToast('error', "Batch number is required");
       return;
     }
 
     // ✅ Validate expiry date
     if (!expiryDate) {
-      toast.error("Expiry date is required");
+      showToast('error', "Expiry date is required");
       return;
     }
 
@@ -37,7 +37,7 @@ const BatchExpiryModal = ({ isOpen, item, onClose, onSave }) => {
     today.setHours(0, 0, 0, 0);
 
     if (selectedDate < today) {
-      toast.error("Expiry date must be in the future");
+      showToast('error', "Expiry date must be in the future");
       return;
     }
 

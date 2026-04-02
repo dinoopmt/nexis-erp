@@ -6,7 +6,7 @@
 
 import { useCallback } from "react";
 import axios from "axios";
-import toast from "react-hot-toast";
+import { showToast } from "../../shared/AnimatedCenteredToast.jsx";
 import { requestCache } from "../../../utils/requestCache";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
@@ -87,10 +87,7 @@ export const useProductAPI = () => {
       return requestCache.setPending(cacheKey, promise);
     } catch (err) {
       console.error("❌ Error fetching products:", err.message);
-      toast.error("Failed to fetch products. Please try again.", {
-        duration: 5000,
-        position: "top-center",
-      });
+      showToast('error', "Failed to fetch products. Please try again.");
       return { products: [], total: 0, page: 1, limit: 100, hasMore: false };
     }
   }, []);
@@ -248,10 +245,7 @@ export const useProductAPI = () => {
 
       // Show error only if it's not a field validation error (those are handled by client validation)
       if (!errorMsg.includes("❌")) {
-        toast.error(errorMsg, {
-          duration: 5000,
-          position: "top-center",
-        });
+        showToast('error', errorMsg);
       }
 
       return null;
@@ -280,25 +274,16 @@ export const useProductAPI = () => {
 
       if (result.success) {
         console.log(`✅ Product re-synced to Meilisearch:`, result.productName);
-        toast.success(`Product search index updated for ${result.productName}`, {
-          duration: 2000,
-          position: "top-right",
-        });
+        showToast('success', `Product search index updated for ${result.productName}`);
       } else {
         console.warn(`⚠️  Re-sync failed:`, result.error);
-        toast.error(`Failed to update search index: ${result.error}`, {
-          duration: 3000,
-          position: "top-right",
-        });
+        showToast('error', `Failed to update search index: ${result.error}`);
       }
 
       return result;
     } catch (err) {
       console.error('❌ Error re-syncing product:', err);
-      toast.error('Failed to re-sync product to search index', {
-        duration: 3000,
-        position: "top-right",
-      });
+      showToast('error', 'Failed to re-sync product to search index');
       return { success: false, error: err.message };
     }
   }, []);
@@ -311,18 +296,12 @@ export const useProductAPI = () => {
   const deleteProduct = useCallback(async (id) => {
     try {
       await axios.delete(`${API_URL}/products/deleteproduct/${id}`);
-      toast.success("Product deleted successfully!", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('success', "Product deleted successfully!");
       return true;
     } catch (err) {
       const errorMsg =
         err.response?.data?.message || "Failed to delete product";
-      toast.error(errorMsg, {
-        duration: 5000,
-        position: "top-center",
-      });
+      showToast('error', errorMsg);
       console.error(err);
       return false;
     }
@@ -357,17 +336,11 @@ export const useProductAPI = () => {
         `${API_URL}/vendors/addvendor`,
         vendorData
       );
-      toast.success("Vendor created successfully!", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('success', "Vendor created successfully!");
       return response.data.vendor;
     } catch (err) {
       const errorMsg = err.response?.data?.message || "Failed to create vendor";
-      toast.error(errorMsg, {
-        duration: 5000,
-        position: "top-center",
-      });
+      showToast('error', errorMsg);
       console.error("Error creating vendor:", err);
       return null;
     }
@@ -407,7 +380,7 @@ export const useProductAPI = () => {
       return requestCache.setPending(REQUEST_CACHE_KEY.UNITS, promise);
     } catch (err) {
       console.error("❌ Error fetching units:", err.message);
-      toast.error("Failed to load units", { duration: 3000 });
+      showToast('error', "Failed to load units");
       return [];
     }
   }, []);
@@ -446,7 +419,7 @@ export const useProductAPI = () => {
       return requestCache.setPending(REQUEST_CACHE_KEY.GROUPINGS, promise);
     } catch (err) {
       console.error("❌ Error fetching groupings:", err.message);
-      toast.error("Failed to load departments/groupings", { duration: 3000 });
+      showToast('error', "Failed to load departments/groupings");
       return [];
     }
   }, []);
@@ -469,10 +442,7 @@ export const useProductAPI = () => {
     } catch (err) {
       const errorMsg =
         err.response?.data?.message || "Failed to create grouping";
-      toast.error(errorMsg, {
-        duration: 5000,
-        position: "top-center",
-      });
+      showToast('error', errorMsg);
       console.error("Error creating grouping:", err);
       return null;
     }
@@ -538,7 +508,7 @@ export const useProductAPI = () => {
       return requestCache.setPending(cacheKey, promise);
     } catch (err) {
       console.error("❌ Error fetching all tax masters:", err.message);
-      toast.error("Failed to load tax rates", { duration: 3000 });
+      showToast('error', "Failed to load tax rates");
       return [];
     }
   }, []);
@@ -614,7 +584,7 @@ export const useProductAPI = () => {
     } catch (err) {
       console.error("🔴 Error generating barcode on server:", err.response?.data || err);
       const errorMessage = err.response?.data?.message || "Failed to generate barcode on server";
-      toast.error(errorMessage, { duration: 4000 });
+      showToast('error', errorMessage);
       throw err;
     }
   }, []);

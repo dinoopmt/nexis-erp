@@ -1,5 +1,6 @@
 import React, { createContext, useState, useCallback, useEffect } from 'react'
 import axios from 'axios'
+import { showToast } from '../components/shared/AnimatedCenteredToast.jsx'
 import { API_URL } from '../config/config'
 
 // Create the context
@@ -50,6 +51,7 @@ export const CompanyProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Error fetching company data:', err)
+      showToast('error', 'Failed to load company settings')
       setError(err.message)
     } finally {
       setLoading(false)
@@ -72,6 +74,7 @@ export const CompanyProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Error fetching tax master:', err)
+      showToast('error', 'Failed to load tax information')
       setError(err.message)
     }
   }, [])
@@ -93,6 +96,7 @@ export const CompanyProvider = ({ children }) => {
       return data
     } catch (err) {
       console.error('Error updating company:', err)
+      showToast('error', 'Failed to update company settings')
       setError(err.message)
       throw err
     } finally {

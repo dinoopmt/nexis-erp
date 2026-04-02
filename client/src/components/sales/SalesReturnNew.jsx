@@ -767,31 +767,31 @@ const SalesReturn = () => {
 
   const handleSaveReturn = async () => {
     if (!returnData.partyName?.trim()) {
-      showToast("Please select a customer", "error", 3000);
+      showToast("error", "Please select a customer");
       return false;
     }
     if (!returnData.paymentType?.trim()) {
-      showToast("Please select a payment type", "error", 3000);
+      showToast("error", "Please select a payment type");
       return false;
     }
     if (selectedCustomerDetails?.paymentType === "Credit Sale" && !returnData.paymentTerms?.trim()) {
-      showToast("Please select payment terms for credit sale customers", "error", 3000);
+      showToast("error", "Please select payment terms for credit sale customers");
       return false;
     }
     if (returnData.items.length === 0) {
-      showToast("Add at least one item to the return", "error", 3000);
+      showToast("error", "Add at least one item to the return");
       return false;
     }
     if (returnData.items.some((item) => !item.itemName?.trim())) {
-      showToast("All items must have a name", "error", 3000);
+      showToast("error", "All items must have a name");
       return false;
     }
     if (returnData.items.some((item) => item.qty <= 0)) {
-      showToast("All items must have quantity greater than 0", "error", 3000);
+      showToast("error", "All items must have quantity greater than 0");
       return false;
     }
     if (returnData.items.some((item) => item.rate <= 0)) {
-      showToast("All items must have a price greater than 0", "error", 3000);
+      showToast("error", "All items must have a price greater than 0");
       return false;
     }
 
@@ -959,11 +959,11 @@ const SalesReturn = () => {
       setError(null);
       setEditId(null);
       await resetForm();
-      showToast("Return saved successfully", "success", 3000);
+      showToast("success", "Return saved successfully");
       return true;
     } catch (err) {
       setError("Failed to save return");
-      showToast("Failed to save return. Please try again.", "error", 3000);
+      showToast("error", "Failed to save return. Please try again.");
       return false;
     } finally {
       setLoading(false);

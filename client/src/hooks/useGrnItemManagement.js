@@ -3,7 +3,7 @@
  * Manages item CRUD operations and calculations
  */
 import { useCallback } from "react";
-import { toast } from "react-toastify";
+import { showToast } from "../components/shared/AnimatedCenteredToast.jsx";
 import { calculateItemCost, mapProductToGrnItem } from "../utils/grnCalculations";
 
 export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null) => {
@@ -67,7 +67,7 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
         }
 
         console.log("📊 GRN items updated - Total items:", updatedItems.length);
-        toast.success(message);
+        showToast('success', message);
         
         return {
           ...prev,
@@ -111,7 +111,7 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
         console.log("🗑️ Item removed. Remaining items:", updatedItems.length);
         return { ...prev, items: updatedItems };
       });
-      toast.success("Item removed from GRN");
+      showToast('success', "Item removed from GRN");
     },
     [setFormData],
   );

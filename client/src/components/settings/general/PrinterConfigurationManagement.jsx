@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Copy, Power } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { showToast } from '../../shared/AnimatedCenteredToast.jsx';
 import axios from 'axios';
 import { API_URL } from '../../../config/config';
 import PrinterConfigurationForm from './PrinterConfigurationForm';
@@ -26,7 +26,7 @@ const PrinterConfigurationManagement = () => {
       }
     } catch (error) {
       console.error('Error fetching configurations:', error);
-      toast.error('Failed to load printer configurations');
+      showToast('error', 'Failed to load printer configurations');
     } finally {
       setLoading(false);
     }
@@ -52,11 +52,11 @@ const PrinterConfigurationManagement = () => {
       
       if (response.data.success) {
         setConfigs(configs.filter((c) => c._id !== configId));
-        toast.success('Printer configuration deleted successfully');
+        showToast('success', 'Printer configuration deleted successfully');
       }
     } catch (error) {
       console.error('Error deleting configuration:', error);
-      toast.error('Failed to delete printer configuration');
+      showToast('error', 'Failed to delete printer configuration');
     }
   };
 
@@ -73,11 +73,11 @@ const PrinterConfigurationManagement = () => {
             c._id === configId ? { ...c, isActive: !currentStatus } : c
           )
         );
-        toast.success(`Printer configuration ${!currentStatus ? 'activated' : 'deactivated'}`);
+        showToast('success', `Printer configuration ${!currentStatus ? 'activated' : 'deactivated'}`);
       }
     } catch (error) {
       console.error('Error toggling configuration status:', error);
-      toast.error('Failed to update printer configuration');
+      showToast('error', 'Failed to update printer configuration');
     }
   };
 
@@ -97,11 +97,11 @@ const PrinterConfigurationManagement = () => {
 
       if (response.data.success) {
         setConfigs([...configs, response.data.data]);
-        toast.success('Printer configuration duplicated successfully');
+        showToast('success', 'Printer configuration duplicated successfully');
       }
     } catch (error) {
       console.error('Error duplicating configuration:', error);
-      toast.error('Failed to duplicate printer configuration');
+      showToast('error', 'Failed to duplicate printer configuration');
     }
   };
 
@@ -124,16 +124,16 @@ const PrinterConfigurationManagement = () => {
       if (response.data.success) {
         if (editingConfig) {
           setConfigs(configs.map((c) => (c._id === editingConfig._id ? response.data.data : c)));
-          toast.success('Printer configuration updated successfully');
+          showToast('success', 'Printer configuration updated successfully');
         } else {
           setConfigs([...configs, response.data.data]);
-          toast.success('Printer configuration created successfully');
+          showToast('success', 'Printer configuration created successfully');
         }
         setShowForm(false);
       }
     } catch (error) {
       console.error('Error saving configuration:', error);
-      toast.error(error.response?.data?.message || 'Failed to save printer configuration');
+      showToast('error', error.response?.data?.message || 'Failed to save printer configuration');
     }
   };
 

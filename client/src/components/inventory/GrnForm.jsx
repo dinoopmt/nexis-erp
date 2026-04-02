@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useContext, useMemo } from "react";
 import { Plus, X, Search } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { showToast } from "../shared/AnimatedCenteredToast.jsx";
 import axios from "axios";
 
 // Custom Hooks
@@ -277,7 +277,7 @@ const GrnForm = () => {
    */
   const handleCreateProduct = useCallback(() => {
     if (!openProductForm) {
-      toast.error('Product form not available. Please refresh the page.');
+      showToast('error', 'Product form not available. Please refresh the page.');
       return;
     }
     openProductForm({
@@ -320,7 +320,7 @@ const GrnForm = () => {
       return { ...prev, items: updatedItems };
     });
 
-    toast.success("Batch & expiry details saved");
+    showToast('success', "Batch & expiry details saved");
   }, [setFormData]);
 
   // API Management
@@ -368,7 +368,7 @@ const GrnForm = () => {
       const product = response.data;
       
       if (!openProductForm) {
-        toast.error('Product form not available');
+        showToast('error', 'Product form not available');
         return;
       }
       
@@ -379,12 +379,12 @@ const GrnForm = () => {
         onSave: (updatedProduct) => {
           // After saving, the product is updated and event is dispatched
           // GrnForm already listens to productUpdated event
-          toast.success('Product updated successfully');
+          showToast('success', 'Product updated successfully');
         },
       });
     } catch (error) {
       console.error('Error fetching product:', error);
-      toast.error('Failed to load product for editing');
+      showToast('error', 'Failed to load product for editing');
     }
   }, [openProductForm]);
 
@@ -443,7 +443,7 @@ const GrnForm = () => {
       console.log("✅ Fresh GRN number generated:", grnNumber);
     } catch (error) {
       console.error("Error generating GRN number:", error);
-      toast.error("Failed to generate GRN number");
+      showToast('error', "Failed to generate GRN number");
       return;
     }
 
@@ -454,7 +454,7 @@ const GrnForm = () => {
       const currentUserId = currentUser?._id || null;
       
       if (!currentUserId) {
-        toast.error("User information not found. Please login again.");
+        showToast('error', "User information not found. Please login again.");
         return;
       }
 
@@ -773,7 +773,7 @@ const GrnForm = () => {
         });
 
         if (duplicateInvoice) {
-          toast.error(
+          showToast('error',
             `⚠️ Invoice number "${submitData.invoiceNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateInvoice.grnNumber})`
           );
           return;
@@ -805,7 +805,7 @@ const GrnForm = () => {
         });
 
         if (duplicateLpo) {
-          toast.error(
+          showToast('error',
             `⚠️ LPO number "${submitData.lpoNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateLpo.grnNumber})`
           );
           return;
@@ -879,7 +879,7 @@ const GrnForm = () => {
         }
 
         console.log(`📢 Showing combined toast: ${toastMessage}`);
-        toast.success(toastMessage);
+        showToast('success', toastMessage);
 
         // ✅ Clear product search cache to ensure fresh costs display in dropdown
         clearAllCache();
@@ -938,7 +938,7 @@ const GrnForm = () => {
       // ✅ Clear GRN number on error so next submit gets a fresh one
       setFormData(prev => ({ ...prev, grnNo: "" }));
       
-      toast.error(errorMessage + " (Try submitting again for a fresh GRN number)");
+      showToast('error', errorMessage + " (Try submitting again for a fresh GRN number)");
     }
   };
 
@@ -1146,7 +1146,7 @@ const GrnForm = () => {
               });
               if (response.ok) {
                 setGrnList((prev) => prev.filter((g) => g._id !== id));
-                toast.success("GRN deleted successfully");
+                showToast('success', "GRN deleted successfully");
               }
             } catch (error) {
               console.error("Error deleting GRN:", error);
@@ -1248,7 +1248,7 @@ const GrnForm = () => {
                         setBarcodeValue("");
                         barcodeInputRef.current?.focus();
                       } else {
-                        toast.error(`Product not found for barcode: ${barcode}`);
+                        showToast('error', `Product not found for barcode: ${barcode}`);
                         setBarcodeValue("");
                         barcodeInputRef.current?.select();
                       }
@@ -1497,19 +1497,19 @@ const GrnForm = () => {
                     console.log("📋 Save Draft Validation:", { vendorId, invoiceNo, taxType, itemsCount });
 
                     if (!vendorId) {
-                      toast.error("Please select a vendor");
+                      showToast('error', "Please select a vendor");
                       return;
                     }
                     if (!invoiceNo) {
-                      toast.error("Please enter invoice number");
+                      showToast('error', "Please enter invoice number");
                       return;
                     }
                     if (!taxType) {
-                      toast.error("Please select a tax type (Exclusive, Inclusive, or No Tax)");
+                      showToast('error', "Please select a tax type (Exclusive, Inclusive, or No Tax)");
                       return;
                     }
                     if (itemsCount === 0) {
-                      toast.error("Please add at least one item");
+                      showToast('error', "Please add at least one item");
                       return;
                     }
 
@@ -1519,7 +1519,7 @@ const GrnForm = () => {
                     );
                     if (itemsWithZeroCost.length > 0) {
                       const itemNames = itemsWithZeroCost.map(i => i.productName).join(", ");
-                      toast.error(`Cost cannot be 0 for non-FOC items: ${itemNames}`);
+                      showToast('error', `Cost cannot be 0 for non-FOC items: ${itemNames}`);
                       return;
                     }
 
@@ -1541,19 +1541,19 @@ const GrnForm = () => {
                     console.log("📋 Post GRN Validation:", { vendorId, invoiceNo, taxType, itemsCount });
 
                     if (!vendorId) {
-                      toast.error("Please select a vendor");
+                      showToast('error', "Please select a vendor");
                       return;
                     }
                     if (!invoiceNo) {
-                      toast.error("Please enter invoice number");
+                      showToast('error', "Please enter invoice number");
                       return;
                     }
                     if (!taxType) {
-                      toast.error("Please select a tax type (Exclusive, Inclusive, or No Tax)");
+                      showToast('error', "Please select a tax type (Exclusive, Inclusive, or No Tax)");
                       return;
                     }
                     if (itemsCount === 0) {
-                      toast.error("Please add at least one item");
+                      showToast('error', "Please add at least one item");
                       return;
                     }
 
@@ -1563,7 +1563,7 @@ const GrnForm = () => {
                     );
                     if (itemsWithZeroCost.length > 0) {
                       const itemNames = itemsWithZeroCost.map(i => i.productName).join(", ");
-                      toast.error(`Cost cannot be 0 for non-FOC items: ${itemNames}`);
+                      showToast('error', `Cost cannot be 0 for non-FOC items: ${itemNames}`);
                       return;
                     }
 

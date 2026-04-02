@@ -81,14 +81,14 @@ const VirtualizedProductTable = ({
         style={{ height: rowHeight }}
       >
         <div className="w-[5%] flex justify-end font-mono text-sm pb font-semibold truncate">{product?.itemcode || '-'}</div>
-        <div className="w-[40%] flex justify-start truncate text-sm">{product?.name || '-'}</div>
-        <div className="w-[15%] flex justify-start text-sm text-gray-600 truncate">
+        <div className="w-[32%] flex justify-start truncate text-sm">{product?.name || '-'}</div>
+        <div className="w-[12%] flex justify-start text-sm text-gray-600 truncate">
           {typeof product?.categoryId === 'object' ? product.categoryId?.name || '-' : '-'}
         </div>
-        <div className="w-[15%] flex justify-start text-sm text-gray-600 truncate">
+        <div className="w-[12%] flex justify-start text-sm text-gray-600 truncate">
           {typeof product?.vendor === 'object' ? product.vendor?.name || '-' : '-'}
         </div>
-        <div className="w-[10%] flex justify-end font-sm font-semibold text-xs text-gray-500">{product?.barcode?.slice(0, 8) || '-'}</div>
+        <div className="w-[26%] flex justify-end font-sm font-semibold text-xs text-gray-500" title={product?.barcode || '-'}>{product?.barcode || '-'}</div>
         <div className="w-[5%] flex justify-end text-sm">{parseFloat(product?.cost || 0).toFixed(2)}</div>
         <div className="w-[5%] flex justify-end text-sm font-semibold text-green-600">{parseFloat(product?.price || 0).toFixed(2)}</div>
         <div className="w-[5%] flex justify-end text-sm font-semibold" title={`Total: ${product?.currentStock?.totalQuantity || 0}, Available: ${product?.currentStock?.availableQuantity || 0}`}>{product?.currentStock?.availableQuantity || 0}</div>

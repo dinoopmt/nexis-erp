@@ -115,6 +115,8 @@ export const addProduct = async (req, res) => {
       taxInPrice, trackExpiry, manufacturingDate, expiryDate, shelfLifeDays, expiryAlertDays, // ✅ Tax & Expiry
       country, minStock, maxStock, reorderQuantity, shortName, localName, // ✅ Product info
       openingPrice, allowOpenPrice, enablePromotion, fastMovingItem, isScaleItem, scaleUnitType, itemHold, brandId, // ✅ Additional features
+      finalPrice,  // ✅ Final price including tax
+      createdBy, updatedBy, // ✅ Audit fields
       image // ✅ Product image (base64)
     } = req.body;
 
@@ -359,6 +361,17 @@ export const addProduct = async (req, res) => {
       image: image || null,
     });
 
+    // ✅ Assign finalPrice, createdBy, updatedBy fields
+    if (finalPrice !== undefined) {
+      product.finalPrice = finalPrice ? parseFloat(finalPrice) : 0;
+    }
+    if (createdBy !== undefined) {
+      product.createdBy = createdBy || "System";
+    }
+    if (updatedBy !== undefined) {
+      product.updatedBy = updatedBy || "System";
+    }
+
     await product.save();
     
     // ✅ Fire-and-forget Meilisearch sync (non-blocking)
@@ -584,6 +597,8 @@ export const updateProduct = async (req, res) => {
       taxInPrice, trackExpiry, manufacturingDate, expiryDate, shelfLifeDays, expiryAlertDays, // ✅ Tax & Expiry
       country, minStock, maxStock, reorderQuantity, shortName, localName, // ✅ Product info
       openingPrice, allowOpenPrice, enablePromotion, fastMovingItem, isScaleItem, scaleUnitType, itemHold, brandId, // ✅ Additional features
+      finalPrice,  // ✅ Final price including tax
+      createdBy, updatedBy, // ✅ Audit fields
       image // ✅ Product image (base64)
     } = req.body;
 
@@ -753,6 +768,18 @@ export const updateProduct = async (req, res) => {
     }
     if (image !== undefined) {
       product.image = image || null;
+    }
+    
+    // ✅ Add finalPrice, createdBy, updatedBy if provided
+    if (finalPrice !== undefined) {
+      product.finalPrice = finalPrice ? parseFloat(finalPrice) : 0;
+    }
+    if (updatedBy !== undefined) {
+      product.updatedBy = updatedBy || "System";
+    }
+    // ✅ createdBy should never change after creation - only set if product is new
+    if (createdBy !== undefined && !product.createdBy) {
+      product.createdBy = createdBy || "System";
     }
     
     if (categoryId !== undefined) {

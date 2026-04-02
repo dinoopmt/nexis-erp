@@ -3,7 +3,7 @@
  * Manages API calls for GRN and vendor data
  */
 import { useEffect, useCallback } from "react";
-import { toast } from "react-toastify";
+import { showToast } from "../components/shared/AnimatedCenteredToast.jsx";
 import axios from "axios";
 import { API_URL } from "../config/config";
 
@@ -25,7 +25,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
       setVendors(vendorData);
     } catch (error) {
       console.error("❌ Error fetching vendors:", error);
-      toast.error("Failed to load vendors");
+      showToast('error', "Failed to load vendors");
     }
   }, [setVendors]);
 
@@ -57,7 +57,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
         });
 
         if (response.status === 200 || response.status === 201) {
-          toast.success(
+          showToast('success',
             editingId ? "GRN updated successfully" : "GRN created successfully",
           );
           await fetchGrns();
@@ -65,7 +65,7 @@ export const useGrnApi = (setVendors, setGrnList) => {
         }
       } catch (error) {
         console.error("Error saving GRN:", error);
-        toast.error("Error saving GRN");
+        showToast('error', "Error saving GRN");
         return false;
       }
     },
@@ -82,12 +82,12 @@ export const useGrnApi = (setVendors, setGrnList) => {
 
         if (response.status === 200) {
           setGrnList((prev) => prev.filter((g) => g._id !== id));
-          toast.success("GRN deleted successfully");
+          showToast('success', "GRN deleted successfully");
           return true;
         }
       } catch (error) {
         setGrnList((prev) => prev.filter((g) => g._id !== id));
-        toast.success("GRN deleted (local storage)");
+        showToast('success', "GRN deleted (local storage)");
         console.error("Error deleting GRN:", error);
         return false;
       }

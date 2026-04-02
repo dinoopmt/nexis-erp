@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { RefreshCw, Download, AlertCircle, CheckCircle, BarChart3 } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { showToast } from '../../shared/AnimatedCenteredToast.jsx'
 
 const StockReconciliation = () => {
   const [loading, setLoading] = useState(false)
@@ -28,12 +28,12 @@ const StockReconciliation = () => {
       setShowResults(true)
 
       if (type === 'check') {
-        toast.success(`Reconciliation complete: ${data.summary.discrepancies} discrepancies found`)
+        showToast('success', `Reconciliation complete: ${data.summary.discrepancies} discrepancies found`)
       } else if (type === 'heal') {
-        toast.success(`Reconciliation complete: ${data.healed} products healed`)
+        showToast('success', `Reconciliation complete: ${data.healed} products healed`)
       }
     } catch (error) {
-      toast.error(error.message || 'Failed to run reconciliation')
+      showToast('error', error.message || 'Failed to run reconciliation')
       console.error('Reconciliation error:', error)
     } finally {
       setLoading(false)
@@ -74,7 +74,7 @@ ${report.discrepancies?.map(d =>
     a.download = `reconciliation-${new Date().getTime()}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
-    toast.success('Report exported successfully')
+    showToast('success', 'Report exported successfully')
   }
 
   return (

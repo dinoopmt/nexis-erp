@@ -107,10 +107,10 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
         if (product) {
           addItemFromSearch(product);
         } else {
-          showToast("Product not found", "warning");
+          showToast('warning', "Product not found");
         }
       } catch (error) {
-        showToast("Error scanning product", "error");
+        showToast('error', "Error scanning product");
       }
     },
     [addItemFromSearch, showToast]
@@ -131,7 +131,7 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
         );
 
         if (!validation.isValid) {
-          showToast(validation.error, "error", 3000);
+          showToast('error', validation.error);
           return false;
         }
 
@@ -196,10 +196,10 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
         let result;
         if (state.editId) {
           result = await SalesInvoiceService.updateInvoice(state.editId, payload);
-          showToast("Invoice updated successfully", "success");
+          showToast('success', "Invoice updated successfully");
         } else {
           result = await SalesInvoiceService.createInvoice(payload);
-          showToast("Invoice saved successfully", "success");
+          showToast('success', "Invoice saved successfully");
         }
 
         actions.setLoading(false);
@@ -207,7 +207,7 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
         return result;
       } catch (error) {
         actions.setLoading(false);
-        showToast("Error saving invoice: " + error.message, "error");
+        showToast('error', "Error saving invoice: " + error.message);
         return false;
       }
     },
@@ -238,9 +238,9 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
     try {
       const nextNo = await SalesInvoiceService.getNextInvoiceNumber("2025-26");
       actions.resetForm(nextNo);
-      showToast("Form reset for new invoice", "info");
+      showToast('info', "Form reset for new invoice");
     } catch (error) {
-      showToast("Error resetting form", "error");
+      showToast('error', "Error resetting form");
     }
   }, [actions, showToast]);
 
@@ -258,10 +258,10 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
         // Additional logic to populate items, customer, etc.
         
         actions.setLoading(false);
-        showToast("Invoice loaded for editing", "info");
+        showToast('info', "Invoice loaded for editing");
       } catch (error) {
         actions.setLoading(false);
-        showToast("Error loading invoice", "error");
+        showToast('error', "Error loading invoice");
       }
     },
     [actions, showToast]
@@ -277,13 +277,13 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
           actions.setLoading(true);
           await SalesInvoiceService.deleteInvoice(invoiceId);
           actions.setLoading(false);
-          showToast("Invoice deleted successfully", "success");
+          showToast('success', "Invoice deleted successfully");
           // Refresh list
           return true;
         }
       } catch (error) {
         actions.setLoading(false);
-        showToast("Error deleting invoice", "error");
+        showToast('error', "Error deleting invoice");
       }
     },
     [actions, showToast]

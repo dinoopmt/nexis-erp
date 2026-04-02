@@ -3,16 +3,16 @@ import {
   Routes as Routers,
   Route,
 } from "react-router-dom";
-import { Toaster } from "react-hot-toast";
 import { Home, Login } from "./pages";
 import { ProductFormProvider } from "./context/ProductFormContext";
 import GlobalProductFormModal from "./components/shared/GlobalProductFormModal";
+import { AnimatedCenteredToast } from "./components/shared/AnimatedCenteredToast.jsx";
 
 function App() {
   return (
     <ProductFormProvider>
       <>
-        <Toaster position="top-center" reverseOrder={false} />
+        <AnimatedCenteredToast />
         <Router>
           <Routers>
             <Route path="/*" element={<Home />} />

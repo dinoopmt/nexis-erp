@@ -1,10 +1,8 @@
 
 import React, { useEffect, useState, useRef, useCallback, useContext } from "react";
-import { toast } from "react-hot-toast";
-import { X, AlertCircle } from "lucide-react";
+import toast from "react-hot-toast"; // ✅ Import to dismiss toasts on modal close
 import Modal from "./Model";
-import axios from "axios";
-import { API_URL } from "../../config/config";
+import { showToast } from "./AnimatedCenteredToast.jsx";
 import useDecimalFormat from "../../hooks/useDecimalFormat";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
 import { clearQueryCache } from "../../utils/searchCache";  // ✅ ADDED - Auto-clear search cache on product update
@@ -42,7 +40,6 @@ const GlobalProductFormModal = () => {
     closeProductForm,
     updateMode,
     hasOnSaveCallback,
-    notifyProductSaved,
     onSaveCallback, // ✅ Callback function to call directly
     products = [], // ✅ Optional: products list from Product.jsx
     filteredProducts = [], // ✅ Optional: filtered products from Product.jsx
@@ -66,11 +63,8 @@ const GlobalProductFormModal = () => {
   // Modal UI Control
   const [activeTab, setActiveTab] = useState("basic");
   const [loading, setLoading] = useState(false);
+  const [loadingReferenceData, setLoadingReferenceData] = useState(false); // ✅ Track reference data loading state
   const [errors, setErrors] = useState({});
-  
-  // ✅ Validation error modal state
-  const [validationErrorModal, setValidationErrorModal] = useState(false);
-  const [validationErrorList, setValidationErrorList] = useState("");
   
   // ✅ Track last saved product to prevent duplicate messages
   const lastSavedProductRef = useRef(null);
@@ -116,7 +110,12 @@ const GlobalProductFormModal = () => {
   // Refs
   const basicInfoTabRef = useRef(null);
   const tabContentRef = useRef(null);
-  const prevTaxInPriceRef = useRef(false);
+
+  // ✅ Wrapper function to close modal and dismiss all toasts
+  const handleCloseModal = useCallback(() => {
+    toast.dismiss(); // Clear all validation error toasts
+    closeProductForm(); // Close the modal
+  }, [closeProductForm]);
 
   // Country Detection
   const isIndiaCompany = activeCountryCode === "IN";
@@ -132,6 +131,7 @@ const GlobalProductFormModal = () => {
   // Load reference data on mount
   useEffect(() => {
     const loadReferenceData = async () => {
+      setLoadingReferenceData(true); // ✅ Show loading state while fetching
       try {
         const [fetchedGroupings, fetchedVendors, fetchedUnits, fetchedTaxes, fetchedHSNCodes] = 
           await Promise.all([
@@ -163,8 +163,10 @@ const GlobalProductFormModal = () => {
           }));
         }
       } catch (error) {
-        toast.error("Failed to load reference data");
+        showToast('error', "Failed to load reference data");
         console.error("Error loading data:", error);
+      } finally {
+        setLoadingReferenceData(false); // ✅ Hide loading state after fetch completes
       }
     };
 
@@ -178,9 +180,11 @@ const GlobalProductFormModal = () => {
     if (isOpen) {
       lastSavedProductRef.current = null;
       setSkipProductDataRestore(false); // Reset flag for new open
+      setErrors({}); // ✅ Clear all validation errors when modal opens
     } else {
       lastSavedProductRef.current = null;
       setSkipProductDataRestore(false); // Reset flag when closing
+      setErrors({}); // ✅ Clear all validation errors when modal closes
     }
   }, [isOpen]);
 
@@ -360,7 +364,7 @@ const GlobalProductFormModal = () => {
 
       // Validate: Cost field must be filled (can be 0)
       if (!hasCost) {
-        toast.error("⚠️ Please enter Cost first before setting Selling Price");
+        showToast('error', "Please enter Cost first before setting Selling Price");
         line.price = price;
         setPricingLines(updated);
 
@@ -633,7 +637,7 @@ const GlobalProductFormModal = () => {
   const handleTaxSelectionAndRecalculation = useCallback((taxId, newTaxPercent) => {
     const selectedTax = filteredTaxes.find((t) => t._id === taxId);
     if (!selectedTax) {
-      toast.error("Tax not found");
+      showToast('error', "Tax not found");
       return;
     }
 
@@ -693,7 +697,7 @@ const GlobalProductFormModal = () => {
         : newProduct.categoryId;
       
       if (!deptId) {
-        toast.error("Select department before generating barcode");
+        showToast('error', "Select department before generating barcode");
         return;
       }
 
@@ -722,9 +726,9 @@ const GlobalProductFormModal = () => {
         return updated;
       });
 
-      toast.success(`Barcode generated: ${generatedBarcode}`, { duration: 3000 });
+      showToast('success', `Barcode generated: ${generatedBarcode}`);
     } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to generate barcode on server");
+      showToast('error', error.response?.data?.message || "Failed to generate barcode on server");
     }
   }, [newProduct, departments, pricingLines, productAPI]);
 
@@ -735,7 +739,7 @@ const GlobalProductFormModal = () => {
     const hasBarcodeInPricingLines = pricingLines.some((line) => line?.barcode);
     
     if (!hasBarcodeInProduct && !hasBarcodeInPricingLines) {
-      toast.error("Please enter or generate a barcode first");
+      showToast('error', "Please enter or generate a barcode first");
       return;
     }
     setShowBarcodePrintPopup(true);
@@ -796,13 +800,13 @@ const GlobalProductFormModal = () => {
   // Add barcode for selected unit
   const addBarcodeForSelectedUnit = (unitId, barcode) => {
     if (!barcode.trim()) {
-      toast.error("Please enter a barcode");
+      showToast('error', "Please enter a barcode");
       return;
     }
 
     const barcodeExists = barcodeVariants.some(v => v.barcode.trim() === barcode.trim());
     if (barcodeExists) {
-      toast.error("This barcode already exists in another unit variant. Barcodes must be unique per product");
+      showToast('error', "This barcode already exists in another unit variant. Barcodes must be unique per product");
       return;
     }
 
@@ -813,7 +817,7 @@ const GlobalProductFormModal = () => {
     };
 
     setBarcodeVariants([...barcodeVariants, newVariant]);
-    toast.success("Barcode added successfully", { duration: 2000 });
+    showToast('success', "Barcode added successfully");
   };
 
   // Handle HSN Selection (India-specific)
@@ -960,13 +964,13 @@ const GlobalProductFormModal = () => {
   const openPricingLevelModal = (index) => {
     const selectedUnit = pricingLines[index];
     if (!selectedUnit || !selectedUnit.unit) {
-      toast.error("Please select a unit first", { duration: 3000 });
+      showToast('error', "Please select a unit first");
       return;
     }
 
     const unitObj = units.find((u) => String(u._id) === String(selectedUnit.unit));
     if (!unitObj) {
-      toast.error("Unit not found", { duration: 3000 });
+      showToast('error', "Unit not found");
       return;
     }
 
@@ -1070,16 +1074,13 @@ const GlobalProductFormModal = () => {
       const errorList = Object.entries(validationErrors)
         .map(([field, msg]) => `• ${msg}`)
         .join("\n");
-      setValidationErrorList(errorList);
-      setValidationErrorModal(true);
+      showToast('error', errorList);
       return;
     }
 
     setLoading(true);
 
     try {
-      // ✅ Close validation error modal if open (so it doesn't block interactions)
-      setValidationErrorModal(false);
       
       // ✅ Backend handles all uniqueness validation (itemcode + barcodes in single query)
       // Frontend only does basic structural validation (done in validateProduct())
@@ -1154,10 +1155,7 @@ const GlobalProductFormModal = () => {
 
       if (!savedProduct) {
         // Something went wrong with the save
-        toast.error("Product save failed: No data returned from server", { 
-          duration: 3000, 
-          position: "top-center" 
-        });
+        showToast('error', "Product save failed: No data returned from server");
         setLoading(false);
         return;
       }
@@ -1186,7 +1184,6 @@ const GlobalProductFormModal = () => {
       // ✅ Auto-retry Meilisearch sync if update failed (only for edit mode)
       if (mode === 'edit' && meilisearchSync && !meilisearchSync.success) {
         console.warn('⚠️  Meilisearch sync failed on update, attempting auto-retry...');
-        toast.loading('Retrying search index update...', { duration: 1500 });
         
         // Wait a moment for any pending operations to complete
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -1223,15 +1220,9 @@ const GlobalProductFormModal = () => {
               }
 
               // ✅ DEBUG: Log what we got back from API
-              console.log("🔍 Fetched Product - itemcode from API:", completeProduct.itemcode);
-              console.log("🔍 Saved Product - itemcode from save response:", savedProduct.itemcode);
-              console.log("🔍 Full Fetched Product:", completeProduct);
-              console.log("🔍 Full Saved Product:", savedProduct);
+             
 
-              toast.success("Product created successfully! ✅ Now in edit mode for further updates.\n(Search index syncing in background...)", { 
-                duration: 2500, 
-                position: "top-center" 
-              });
+              showToast('success', "Product created successfully .");
               
               // ✅ Build complete product data with all fields and defaults (EXACT same as handleEdit)
               const productToEdit = {
@@ -1314,19 +1305,13 @@ const GlobalProductFormModal = () => {
               lastSavedProductRef.current = null;
           } catch (fetchErr) {
               console.error("Error fetching complete product data after save:", fetchErr);
-              toast.error("Product created but failed to reload complete data. Please refresh.", {
-                duration: 3000,
-                position: "top-center"
-              });
+              showToast('error', "Product created but failed to reload complete data. Please refresh.");
               // Still switch to edit mode with what we have
               updateMode('edit');
           }
         } else {
           // ✅ EDIT MODE: Keep modal OPEN after save (user will close manually)
-            toast.success("Product updated successfully! ✅ (Search index syncing in background...)", { 
-              duration: 2000, 
-              position: "top-center" 
-            });
+            showToast('success', "Product updated successfully!");
             
             // Update form with latest data but keep modal open
             setNewProduct(savedProduct);
@@ -1336,6 +1321,9 @@ const GlobalProductFormModal = () => {
           if (hasOnSaveCallback) {
             onSaveCallback(savedProduct);
           }
+          
+          // ✅ CRITICAL: Reset ref so next save attempt is properly processed
+          lastSavedProductRef.current = null;
         }
       } else {
         // Product already saved, silently update state
@@ -1343,9 +1331,8 @@ const GlobalProductFormModal = () => {
       }
     } catch (err) {
       console.error("Error saving product:", err);
-      toast.error(
-        err.response?.data?.message || "Failed to save product. Please try again.",
-        { duration: 5000, position: "top-center" },
+      showToast('error',
+        err.response?.data?.message || "Failed to save product. Please try again."
       );
     } finally {
       setLoading(false);
@@ -1356,10 +1343,10 @@ const GlobalProductFormModal = () => {
   const handleDeleteProduct = () => {
     setLoading(true);
     try {
-      toast.success("Product deleted successfully!");
-      closeProductForm();
+      showToast('success', "Product deleted successfully!");
+      handleCloseModal();
     } catch (error) {
-      toast.error("Failed to delete product");
+      showToast('error', "Failed to delete product");
     } finally {
       setLoading(false);
     }
@@ -1448,8 +1435,6 @@ const GlobalProductFormModal = () => {
       setModalSearchQuery("");
       setModalSearchResults([]);
       setShowModalSearchResults(false);
-      setValidationErrorModal(false);
-      setValidationErrorList("");
 
       // 6. Reset refs to ensure no stale data
       lastSavedProductRef.current = null;
@@ -1469,10 +1454,10 @@ const GlobalProductFormModal = () => {
       // ✅ DEBUG: Log what we're doing
       console.log("🧹 Cleared all form state for new product");
       
-      toast.success("Ready to create new product", { duration: 1500 });
+      showToast('success', "Ready to create new product");
     } catch (err) {
       console.error("Error preparing new product form:", err);
-      toast.error("Failed to prepare new product form");
+      showToast('error', "Failed to prepare new product form");
     }
   };
 
@@ -1556,12 +1541,21 @@ const GlobalProductFormModal = () => {
   return (
     <Modal
       isOpen={isOpen}
-      onClose={closeProductForm}
+      onClose={handleCloseModal}
       width="max-w-5xl lg:max-w-6xl"
       draggable={true}
       zIndex={60}
     >
-      <div className="bg-white w-full h-[630px] rounded-lg flex flex-col overflow-hidden">
+      {/* ✅ Loading Overlay while Reference Data is Fetching */}
+      {loadingReferenceData && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center rounded-lg z-50">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="text-gray-700 font-semibold">Loading tax & vendor data...</p>
+          </div>
+        </div>
+      )}
+      <div className="bg-white w-full h-[630px] rounded-lg flex flex-col overflow-hidden" style={{ opacity: loadingReferenceData ? 0.5 : 1, pointerEvents: loadingReferenceData ? 'none' : 'auto' }}>
         {/* ✅ Complete Header with Title, Search & Navigation in Drag Handle */}
         <div className="modal-drag-handle flex items-center gap-2 pb-2 border-b border-gray-200 pr-10 cursor-move select-none flex-shrink-0">
           {/* Left: Title */}
@@ -1705,6 +1699,7 @@ const GlobalProductFormModal = () => {
               newProduct={newProduct}
               setNewProduct={setNewProduct}
               errors={errors}
+              setErrors={setErrors}
               loading={loading}
               isIndiaCompany={isIndiaCompany}
               hsnCodes={hsnCodes}
@@ -2188,10 +2183,7 @@ const GlobalProductFormModal = () => {
                   !pricingLevels.level4 &&
                   !pricingLevels.level5
                 ) {
-                  toast.error("Please enter at least one pricing level", {
-                    duration: 3000,
-                    position: "top-center",
-                  });
+                  showToast('error', "Please enter at least one pricing level");
                   return;
                 }
 
@@ -2216,7 +2208,7 @@ const GlobalProductFormModal = () => {
                   level4: "",
                   level5: "",
                 });
-                toast.success("Pricing levels saved", { duration: 2000 });
+                showToast('success', "Pricing levels saved");
               }}
               className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-3 py-2 rounded-lg hover:from-green-700 hover:to-green-800 font-semibold text-xs shadow-lg hover:shadow-xl transition"
             >
@@ -2242,29 +2234,6 @@ const GlobalProductFormModal = () => {
           </div>
         </div>
       </Modal>
-
-      {/* ✅ Validation Error Modal */}
-      {validationErrorModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-[100]">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-            <div className="flex items-center gap-2 p-4 border-b border-gray-200">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-              <h3 className="text-lg font-semibold text-gray-900">Validation Errors</h3>
-            </div>
-            <div className="p-4 max-h-64 overflow-auto whitespace-pre-wrap text-sm text-gray-700">
-              {validationErrorList}
-            </div>
-            <div className="flex justify-end gap-2 p-4 border-t border-gray-200">
-              <button
-                onClick={() => setValidationErrorModal(false)}
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </Modal>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { toast } from 'react-hot-toast';
+import { showToast } from "../AnimatedCenteredToast.jsx";
 
 /**
  * ImageTab Component
@@ -62,34 +62,22 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      toast.error('Please select a valid image file', {
-        duration: 3000,
-        position: 'top-center',
-      });
+      showToast('error', 'Please select a valid image file');
       return;
     }
 
     // Validate file size (max 10MB before resize)
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image size must be less than 10MB', {
-        duration: 3000,
-        position: 'top-center',
-      });
+      showToast('error', 'Image size must be less than 10MB');
       return;
     }
 
     try {
       const resizedImage = await resizeImage(file);
       setNewProduct({ ...newProduct, image: resizedImage });
-      toast.success(`Image uploaded and resized (max ${MAX_WIDTH}x${MAX_HEIGHT})`, {
-        duration: 2000,
-        position: 'top-center',
-      });
+      showToast('success', `Image uploaded and resized (max ${MAX_WIDTH}x${MAX_HEIGHT})`);
     } catch (error) {
-      toast.error('Failed to process image: ' + error.message, {
-        duration: 3000,
-        position: 'top-center',
-      });
+      showToast('error', 'Failed to process image: ' + error.message);
     }
   };
 
@@ -129,10 +117,7 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
    */
   const handleRemoveImage = () => {
     setNewProduct({ ...newProduct, image: null });
-    toast.success('Image removed', {
-      duration: 2000,
-      position: 'top-center',
-    });
+    showToast('success', 'Image removed');
   };
 
   return (

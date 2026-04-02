@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { toast } from 'react-hot-toast';
+import { showToast } from "../AnimatedCenteredToast.jsx";
 
 /**
  * MoreInfoTab Component
@@ -31,15 +31,12 @@ const MoreInfoTab = ({
     const totalBarcodes = levels.reduce((sum, levelBarcodes) => sum + (levelBarcodes?.length || 0), 0);
     
     if (totalBarcodes > 9) {
-      toast.error('Maximum 10 variant barcodes allowed (Row 0 is main product barcode = 11 total). Delete existing barcodes to add new ones', { 
-        duration: 4000, 
-        position: 'top-center' 
-      });
+      showToast('error', 'Maximum 10 variant barcodes allowed (Row 0 is main product barcode = 11 total). Delete existing barcodes to add new ones');
       return;
     }
     
     if (!barcodeValue) {
-      toast.error('Please enter a barcode value', { duration: 3000, position: 'top-center' });
+      showToast('error', 'Please enter a barcode value');
       return;
     }
 
@@ -49,10 +46,7 @@ const MoreInfoTab = ({
     );
     
     if (barcodeExistsAnywhere) {
-      toast.error('This barcode already exists in another unit variant. Barcodes must be unique per product', { 
-        duration: 4000, 
-        position: 'top-center' 
-      });
+      showToast('error', 'This barcode already exists in another unit variant. Barcodes must be unique per product');
       return;
     }
 
@@ -60,7 +54,7 @@ const MoreInfoTab = ({
     const unitId = pricingLines[levelIdx]?.unit;
     
     if (!unitId) {
-      toast.error('Please select a unit for this level first', { duration: 3000, position: 'top-center' });
+      showToast('error', 'Please select a unit for this level first');
       return;
     }
 

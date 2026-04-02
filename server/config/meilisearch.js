@@ -63,6 +63,7 @@ const searchProducts = async (query, options = {}) => {
         'itemcode',
         'barcode',
         'price',
+        'finalPrice',  // ✅ ADDED - Final price including tax
         'cost',
         'stock',
         'tax',
@@ -121,6 +122,7 @@ const indexProduct = async (product) => {
       itemcode: product.itemcode,
       barcode: product.barcode || '',
       price: parseFloat(product.price) || 0,
+      finalPrice: parseFloat(product.finalPrice) || 0,  // ✅ ADDED - Final price including tax
       cost: parseFloat(product.cost) || 0,
       stock: product.stock || 0,
       tax: product.tax || 0,

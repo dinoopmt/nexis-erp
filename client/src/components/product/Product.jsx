@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useContext } from "react";
-import { toast, Toaster } from "react-hot-toast";
 
 import Modal from "../shared/Model";
+import { AnimatedCenteredToast, showToast } from "../shared/AnimatedCenteredToast.jsx";
 import {
   Search,
   Plus,
@@ -214,12 +214,10 @@ const Product = () => {
   });
 
   // ✅ Debounced modal search (for product lookup in modal)
-  const modalSearchDebounceRef = useRef(null);
+  // ✅ modalSearchDebounceRef removed - modal search moved to GlobalProductFormModal
   const [debouncedModalSearch, setDebouncedModalSearch] = useState("");
 
-  // Validation error modal state
-  const [validationErrorModal, setValidationErrorModal] = useState(false);
-  const [validationErrorList, setValidationErrorList] = useState("");
+
 
   // Track last saved product to prevent duplicate success messages
   const lastSavedProductRef = useRef(null);
@@ -235,9 +233,7 @@ const Product = () => {
   const tabContentRef = useRef(null);
 
   // Product Lookup in Modal
-  const [modalSearchQuery, setModalSearchQuery] = useState("");
-  const [modalSearchResults, setModalSearchResults] = useState([]);
-  const [showModalSearchResults, setShowModalSearchResults] = useState(false);
+  // ✅ Modal search state removed - moved to GlobalProductFormModal
 
   // Vendor Lookup
   const [vendors, setVendors] = useState([]);
@@ -304,66 +300,13 @@ const Product = () => {
   const dataInitializedRef = useRef(false);
 
   // Barcode Generation Algorithm:
-  // Format: [ItemCode-4digits][DeptCode-2digits][RowIndex-2digits][UnitCode-3digits][Padding-1digit] = 11 total digits
-  // Example: \"1234\" + \"01\" + \"00\" + \"001\" + \"0\" = \"12340100010\"
-  // This ensures barcodes are unique per unit variant and traceable
-  // Row 0 = base unit, Rows 1-3 = variants
-  // Prerequisites: Department and unit must be selected
-  const handleGenerateBarcode = useCallback(
-    (index) => {
-      try {
-        // Validate department and unit
-        const deptId =
-          newProduct.categoryId && typeof newProduct.categoryId === "object" && newProduct.categoryId !== null
-            ? newProduct.categoryId._id
-            : newProduct.categoryId;
-        const unit = pricingLines[index]?.unit;
-        if (!deptId || !unit) {
-          toast.error("Select department and unit before generating barcode");
-          return;
-        }
-        // Generate barcode using itemcode, department, unit, and row index (11 digits)
-        const itemCodeStr = newProduct.itemcode || "0000";
-        const numericItemCode = String(itemCodeStr).replace(/[^0-9]/g, "");
-        const itemDigits = numericItemCode.slice(0, 4).padStart(4, "0");
-        const deptIndex = departments.findIndex((d) => d._id === deptId);
-        const deptCode = String(Math.max(deptIndex + 1, 1)).padStart(2, "0");
-        const rowIndex = String(index).padStart(2, "0");
-        const unitDigits = String(unit)
-          .replace(/[^0-9]/g, "")
-          .slice(0, 3)
-          .padStart(3, "0");
-        const padding = "0";
-        // 4 (item) + 2 (dept) + 2 (row) + 3 (unit) = 11 digits
-        let barcode = (itemDigits + deptCode + rowIndex + unitDigits + padding)
-          .slice(0, 11)
-          .padEnd(11, "0")
-          .replace(/[^0-9]/g, "");
-        setNewProduct({ ...newProduct, barcode });
-        setPricingLines((prev) => {
-          const updated = [...prev];
-          if (updated[index]) {
-            updated[index].barcode = barcode;
-          }
-
-          return updated;
-        });
-        debugLogger.success("Product", "Barcode generated", { barcode });
-      } catch (error) {
-        debugLogger.error("Product", "Failed to generate barcode", error);
-        toast.error("Failed to generate barcode");
-      }
-    },
-    [newProduct, departments, pricingLines],
-  );
+  // ✅ REMOVED: handleGenerateBarcode (OLD client-side barcode generation) 
+  // Replaced by handleGenerateBarcodeOnServer (server-side, FIFO-safe generation)
 
   // ✅ Generate Barcode on Server (Department + Pricing Level + Random - No Item Code Required)
   const handleGenerateBarcodeOnServer = useCallback(
     async (index) => {
       try {
-        // Close validation error modal if open (so it doesn't block interactions)
-        setValidationErrorModal(false);
-        
         // Validate department (item code NOT required anymore)
         const deptId =
           newProduct.categoryId && typeof newProduct.categoryId === "object" && newProduct.categoryId !== null
@@ -371,7 +314,7 @@ const Product = () => {
             : newProduct.categoryId;
         
         if (!deptId) {
-          toast.error("Select department before generating barcode");
+          showToast('error', "Select department before generating barcode");
           return;
         }
 
@@ -427,10 +370,10 @@ const Product = () => {
           pricingLevelIndex,
         });
 
-        toast.success(`Barcode generated: ${generatedBarcode}`, { duration: 3000 });
+        showToast('success', `Barcode generated: ${generatedBarcode}`);
       } catch (error) {
         debugLogger.error("Product", "Failed to generate barcode on server", error);
-        toast.error(error.response?.data?.message || "Failed to generate barcode on server");
+        showToast('error', error.response?.data?.message || "Failed to generate barcode on server");
       }
     },
     [newProduct, departments, pricingLines, productAPI],
@@ -439,30 +382,11 @@ const Product = () => {
   // ✅ Open Barcode Print Modal
   const handleBarcodePrint = useCallback(() => {
     if (!newProduct.barcode) {
-      toast.error("Please enter or generate a barcode first", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "Please enter or generate a barcode first");
       return;
     }
     setShowBarcodePrintPopup(true);
   }, [newProduct.barcode]);
-
-  // ✅ Add New Price Line
-  const handleAddPriceLine = useCallback(() => {
-    try {
-      const newLine = createEmptyPricingLine();
-      setPricingLines([...pricingLines, newLine]);
-      setNewProduct({
-        ...newProduct,
-        unitVariants: [...newProduct.unitVariants, newLine],
-      });
-      debugLogger.success("Product", "Pricing line added");
-    } catch (error) {
-      debugLogger.error("Product", "Failed to add pricing line", error);
-      toast.error("Failed to add pricing line");
-    }
-  }, [pricingLines, newProduct]);
 
   // ✅ Update Price Line
   const updatePriceLine = (index, field, value) => {
@@ -629,10 +553,7 @@ const Product = () => {
 
       // Validate: Cost field must be filled (can be 0)
       if (!hasCost) {
-        toast.error("⚠️ Please enter Cost first before setting Selling Price", {
-          duration: 3000,
-          position: "top-center",
-        });
+        showToast('error', "Please enter Cost first before setting Selling Price");
         line.price = price;
         setPricingLines(updated);
 
@@ -906,10 +827,7 @@ const Product = () => {
   const generateUnitBarcode = (lineIndex) => {
     const line = pricingLines[lineIndex];
     if (!line.unit) {
-      toast.error("Please select a unit first", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "Please select a unit first");
       return;
     }
 
@@ -1125,7 +1043,7 @@ const Product = () => {
         // Item code will be auto-generated by server when product is saved
       } catch (err) {
         console.error("❌ Error initializing data:", err);
-        toast.error("Failed to load product data");
+        showToast('error', "Failed to load product data");
       } finally {
         setLoading(false);
       }
@@ -1149,7 +1067,7 @@ const Product = () => {
         }
       } catch (err) {
         console.error("❌ Error fetching taxes:", err);
-        toast.error("Failed to load tax rates");
+        showToast('error', "Failed to load tax rates");
         setAvailableTaxes([]);
       }
     };
@@ -1222,7 +1140,7 @@ const Product = () => {
     const selectedTax = filteredTaxes.find((t) => t._id === taxId);
 
     if (!selectedTax) {
-      toast.error("Tax not found");
+      showToast('error', "Tax not found");
       return;
     }
 
@@ -1310,10 +1228,7 @@ const Product = () => {
       console.log(`✅ Loaded ${fetchedProducts.length} products from database`);
       setProducts(fetchedProducts);
     } catch (err) {
-      toast.error("Failed to fetch products. Please try again.", {
-        duration: 5000,
-        position: "top-center",
-      });
+      showToast('error', "Failed to fetch products. Please try again.");
       console.error("❌ Error fetching products:", err);
     } finally {
       setLoading(false);
@@ -1479,20 +1394,14 @@ const Product = () => {
   // ✅ Add barcode for specific unit from pricing line
   const addBarcodeForSelectedUnit = (unitId, barcode) => {
     if (!barcode.trim()) {
-      toast.error("Please enter a barcode", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "Please enter a barcode");
       return;
     }
 
     // Check if this barcode already exists in any unit variant (product-wide uniqueness)
     const barcodeExists = barcodeVariants.some(v => v.barcode.trim() === barcode.trim());
     if (barcodeExists) {
-      toast.error("This barcode already exists in another unit variant. Barcodes must be unique per product", {
-        duration: 4000,
-        position: "top-center",
-      });
+      showToast('error', "This barcode already exists in another unit variant. Barcodes must be unique per product");
       return;
     }
 
@@ -1503,10 +1412,7 @@ const Product = () => {
     };
 
     setBarcodeVariants([...barcodeVariants, newVariant]);
-    toast.success("Barcode added successfully", { 
-      duration: 2000, 
-      position: "top-center" 
-    });
+    showToast('success', "Barcode added successfully");
   };
 
   // ✅ Get barcodes organized by pricing line level (for table display)
@@ -1635,7 +1541,7 @@ const Product = () => {
             debugLogger.success("Product", "Barcode generated", { barcode });
           } catch (error) {
             debugLogger.error("Product", "Failed to generate barcode", error);
-            toast.error("Failed to generate barcode");
+            showToast('error', "Failed to generate barcode");
           }
 
           // Clear brands when sub-department changes
@@ -1725,14 +1631,14 @@ const Product = () => {
     // Get the unit for the selected pricing line
     const selectedUnit = pricingLines[index];
     if (!selectedUnit || !selectedUnit.unit) {
-      toast.error("Please select a unit first", { duration: 3000 });
+      showToast('error', "Please select a unit first");
       return;
     }
 
     // Find the unit object from the units array to get unitName
     const unitObj = units.find((u) => String(u._id) === String(selectedUnit.unit));
     if (!unitObj) {
-      toast.error("Unit not found", { duration: 3000 });
+      showToast('error', "Unit not found");
       return;
     }
 
@@ -1992,9 +1898,6 @@ const Product = () => {
     setIsEdit(false);
     setEditId(null);
     setErrors({});
-    setModalSearchQuery("");
-    setModalSearchResults([]);
-    setShowModalSearchResults(false);
     setActiveTab("basic"); // Reset to basic tab
     lastSavedProductRef.current = null; // ✅ Reset ref when closing
     setNewProduct({
@@ -2086,9 +1989,6 @@ const Product = () => {
     setIsEdit(false);
     setEditId(null);
     setErrors({});
-    setModalSearchQuery("");
-    setModalSearchResults([]);
-    setShowModalSearchResults(false);
     setActiveTab("basic"); // Reset to basic tab
     lastSavedProductRef.current = null; // ✅ Reset ref for next product
     
@@ -2181,12 +2081,8 @@ const Product = () => {
   // Step 1: Validate all fields (required fields, format, etc.)
   // Step 2: If creating new product, check if item code already exists
   // Step 3: Validate all barcodes are unique across database
-  // ✅ Save Product - Now uses the master hook (extracted from Product.jsx)
+  // ✅ DEPRECATED: handleSaveProduct moved to GlobalProductFormModal
   // The hook's handleSaveProduct is invoked directly from GlobalProductFormModal
-  // This wrapper is kept for reference but no longer called from Product.jsx
-  const handleSaveProduct = async () => {
-    console.warn("⚠️ handleSaveProduct in Product.jsx is deprecated - use GlobalProductFormModal instead");
-  };
 
   // ✅ Edit - Now uses the master hook (extracted from Product.jsx)
   const handleEdit = async (prod) => {
@@ -2194,96 +2090,13 @@ const Product = () => {
     await _hookEdit(prod);
   };
 
-  // ✅ Navigate to Next Product in Modal
-  const handleNextProduct = () => {
-    if (editIndex >= 0 && editIndex < filteredProducts.length - 1) {
-      const nextProd = filteredProducts[editIndex + 1];
-      handleEdit(nextProd);
-    } else if (editIndex === filteredProducts.length - 1) {
-      // If at last product, create new product with next item code
-      const currentItemCode = parseInt(newProduct.itemcode.replace(/\D/g, ""));
-      const nextItemCode = String(currentItemCode + 1);
-      setIsEdit(false);
-      setEditId(null);
-      setEditIndex(-1);
-      setNewProduct({
-        itemcode: "", // Auto-generated by server
-        hsn: "",
-        barcode: "",
-        name: "",
-        vendor: "",
-        cost: "",
-        price: "",
-        stock: "",
-        categoryId: "",
-        groupingId: "",
-        packingUnits: [],
-      });
-      setErrors({});
-    }
-  };
+  // ✅ DEPRECATED: handleNextProduct and handlePrevProduct moved to GlobalProductFormModal
+  // Navigation is now handled by the GlobalProductFormModal component
 
-  // ✅ Navigate to Previous Product in Modal
-  const handlePrevProduct = () => {
-    if (editIndex > 0) {
-      const prevProd = filteredProducts[editIndex - 1];
-      handleEdit(prevProd);
-    }
-  };
+  // ✅ DEPRECATED: handleModalSearch moved to GlobalProductFormModal
+  // Modal search functionality is now in GlobalProductFormModal component
 
-  // ✅ Search Product by Barcode or Item Code in Modal
-  // Uses debounced search to prevent UI freeze during rapid typing
-  const handleModalSearch = (query) => {
-    setModalSearchQuery(query);
-
-    if (query.trim() === "") {
-      setModalSearchResults([]);
-      setShowModalSearchResults(false);
-      return;
-    }
-
-    // Debounce search to prevent rapid API calls
-    if (modalSearchDebounceRef.current) {
-      clearTimeout(modalSearchDebounceRef.current);
-    }
-
-    modalSearchDebounceRef.current = setTimeout(() => {
-      const results = products.filter(
-        (p) =>
-          p.barcode?.toString().includes(query) ||
-          p.itemcode?.toString().includes(query) ||
-          p.name?.toLowerCase().includes(query.toLowerCase()),
-      );
-
-      setModalSearchResults(results);
-      setShowModalSearchResults(true);
-    }, 300); // Debounce for 300ms
-  };
-
-  // ✅ Populate Modal Form with Selected Product
-  const handleSelectProductFromSearch = (prod) => {
-    setNewProduct({
-      ...prod,
-      categoryId: (prod.categoryId?._id || prod.categoryId)
-        ? { _id: typeof prod.categoryId === 'object' ? prod.categoryId._id : prod.categoryId, name: getCategoryName(prod.categoryId) }
-        : "",
-      groupingId: (prod.groupingId?._id || prod.groupingId)
-        ? { _id: prod.groupingId?._id, name: prod.groupingId?.name }
-        : "",
-    });
-    setModalSearchQuery("");
-    setModalSearchResults([]);
-    setShowModalSearchResults(false);
-
-    // Load subdepartments for the product's category
-    if (prod.categoryId?._id) {
-      setSelectedCategoryId(prod.categoryId._id);
-      const subs = groupings.filter(
-        (g) => g.parentId?._id === prod.categoryId._id,
-      );
-      setSubdepartments(subs);
-    }
-  };
+  // ✅ DEPRECATED: handleSelectProductFromSearch moved to GlobalProductFormModal
 
   // ✅ Delete
   const handleDelete = async (id) => {
@@ -2318,10 +2131,7 @@ const Product = () => {
       : baseData;
 
     if (dataToExport.length === 0) {
-      toast.error("No products to export", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "No products to export");
       return;
     }
 
@@ -2372,10 +2182,7 @@ const Product = () => {
         : filteredProducts;
 
     if (productsToPrint.length === 0) {
-      toast.error("No products selected for printing", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "No products selected for printing");
       return;
     }
 
@@ -2450,10 +2257,7 @@ const Product = () => {
         : filteredProducts;
 
     if (productsToPrint.length === 0) {
-      toast.error("No products selected for printing", {
-        duration: 3000,
-        position: "top-center",
-      });
+      showToast('error', "No products selected for printing");
       return;
     }
 
@@ -2849,49 +2653,21 @@ const Product = () => {
             <div className="relative w-48 flex-shrink-0 pointer-events-auto">
               <input
                 type="text"
-                placeholder="🔍 Barcode or Item Code..."
-                className="w-full border border-blue-300 p-1.5 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50"
-                value={modalSearchQuery}
-                onChange={(e) => handleModalSearch(e.target.value)}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-
-              {/* Search Results Dropdown */}
-              {showModalSearchResults && modalSearchResults.length > 0 && (
-                <div
-                  className="absolute top-full left-0 right-0 mt-1 border border-gray-300 bg-white rounded shadow-lg z-50 max-h-40 overflow-y-auto pointer-events-auto"
+                  placeholder="🔍 (Deprecated - use modal search instead)"
+                  disabled={true}
                   onMouseDown={(e) => e.stopPropagation()}
-                >
-                  {modalSearchResults.map((prod) => (
-                    <button
-                      key={prod._id}
-                      onClick={() => handleSelectProductFromSearch(prod)}
-                      className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b last:border-b-0 text-xs"
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <div className="font-semibold text-gray-800">
-                        {prod.name}
-                      </div>
-                      <div className="text-gray-600 text-xs">
-                        Code: {prod.itemcode} | Barcode: {prod.barcode}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
+                  className="w-full border border-gray-300 p-1.5 rounded text-xs focus:outline-none bg-gray-100 text-gray-400 cursor-not-allowed"
+              />
+              {/* Search Results Dropdown - Removed (functionality moved to GlobalProductFormModal) */}
             </div>
 
             {/* Right: Navigation */}
             {filteredProducts.length > 0 && (
               <div className="flex gap-1 items-center border-l border-gray-300 pl-2 flex-shrink-0 pointer-events-auto bg-gray-50 rounded">
                 <button
-                  onClick={handlePrevProduct}
-                  className={`px-2 py-0.5 border rounded text-xs cursor-pointer
-        ${
-          editIndex <= 0
-            ? "bg-gray-200 text-gray-400 border-gray-300"
-            : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
-        }`}
+                  disabled={true}
+                  title="Navigation handled by GlobalProductFormModal"
+                  className="px-2 py-0.5 border rounded text-xs cursor-not-allowed bg-gray-200 text-gray-400 border-gray-300"
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   ← Prev
@@ -2903,13 +2679,9 @@ const Product = () => {
                 </span>
 
                 <button
-                  onClick={handleNextProduct}
-                  className={`px-2 py-0.5 border rounded text-xs cursor-pointer
-        ${
-          editIndex >= filteredProducts.length - 1
-            ? "bg-gray-200 text-gray-400 border-gray-300"
-            : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
-        }`}
+                  disabled={true}
+                  title="Navigation handled by GlobalProductFormModal"
+                  className="px-2 py-0.5 border rounded text-xs cursor-not-allowed bg-gray-200 text-gray-400 border-gray-300"
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   Next →
@@ -3076,9 +2848,10 @@ const Product = () => {
               </button>
 
               <button
-                onClick={handleSaveProduct}
-                disabled={loading}
-                className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700 transition font-medium flex-shrink-0"
+                onClick={() => {}} // ✅ Deprecated - Save handled by GlobalProductFormModal
+                disabled={true}
+                title="Product save is handled by GlobalProductFormModal component"
+                className="flex items-center gap-1 bg-gray-400 text-white px-2 py-1 rounded text-xs cursor-not-allowed font-medium flex-shrink-0"
               >
                 {loading
                   ? "Processing..."
@@ -3461,10 +3234,7 @@ const Product = () => {
                   !pricingLevels.level4 &&
                   !pricingLevels.level5
                 ) {
-                  toast.error("Please enter at least one pricing level", {
-                    duration: 3000,
-                    position: "top-center",
-                  });
+                  showToast('error', "Please enter at least one pricing level");
                   return;
                 }
 
@@ -3489,7 +3259,7 @@ const Product = () => {
                   level4: "",
                   level5: "",
                 });
-                toast.success("Pricing levels saved", { duration: 2000 });
+                showToast('success', "Pricing levels saved");
               }}
               className="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white px-3 py-2 rounded-lg hover:from-green-700 hover:to-green-800 font-semibold text-xs shadow-lg hover:shadow-xl transition"
             >
@@ -3548,36 +3318,7 @@ const Product = () => {
         }
       />
 
-      {/* Validation Error Modal - Centered on Screen */}
-      {validationErrorModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={() => setValidationErrorModal(false)}
-        >
-          <div 
-            className="bg-white rounded-lg p-6 max-w-md w-96 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start gap-3 mb-4">
-              <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">⚠️ Validation Error</h2>
-                <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{validationErrorList}</p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <button
-                onClick={() => setValidationErrorModal(false)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <Toaster position="top-right" />
+      <AnimatedCenteredToast />
     </div>
   );
 };

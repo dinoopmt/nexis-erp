@@ -3,7 +3,7 @@
  * Handles API calls for RTV operations
  */
 import axios from "axios";
-import { toast } from "react-hot-toast";
+import { showToast } from "../components/shared/AnimatedCenteredToast.jsx";
 import { API_URL } from "../config/config";
 
 export const useRtvApi = () => {
@@ -14,7 +14,7 @@ export const useRtvApi = () => {
       return response.data?.data || response.data || [];
     } catch (error) {
       console.error("Error fetching RTV list:", error);
-      toast.error("Failed to fetch RTV list");
+      showToast('error', "Failed to fetch RTV list");
       return [];
     }
   };
@@ -26,7 +26,7 @@ export const useRtvApi = () => {
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error fetching RTV:", error);
-      toast.error("Failed to fetch RTV details");
+      showToast('error', "Failed to fetch RTV details");
       return null;
     }
   };
@@ -35,11 +35,11 @@ export const useRtvApi = () => {
   const createRtv = async (rtvData) => {
     try {
       const response = await axios.post(`${API_URL}/rtv`, rtvData);
-      toast.success("RTV created successfully");
+      showToast('success', "RTV created successfully");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error creating RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to create RTV");
+      showToast('error', error.response?.data?.message || "Failed to create RTV");
       throw error;
     }
   };
@@ -48,11 +48,11 @@ export const useRtvApi = () => {
   const updateRtv = async (rtvId, rtvData) => {
     try {
       const response = await axios.put(`${API_URL}/rtv/${rtvId}`, rtvData);
-      toast.success("RTV updated successfully");
+      showToast('success', "RTV updated successfully");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error updating RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to update RTV");
+      showToast('error', error.response?.data?.message || "Failed to update RTV");
       throw error;
     }
   };
@@ -64,11 +64,11 @@ export const useRtvApi = () => {
         `${API_URL}/rtv/${rtvId}/submit`,
         {}
       );
-      toast.success("RTV submitted successfully");
+      showToast('success', "RTV submitted successfully");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error submitting RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to submit RTV");
+      showToast('error', error.response?.data?.message || "Failed to submit RTV");
       throw error;
     }
   };
@@ -80,11 +80,11 @@ export const useRtvApi = () => {
         `${API_URL}/rtv/${rtvId}/approve`,
         {}
       );
-      toast.success("RTV approved successfully");
+      showToast('success', "RTV approved successfully");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error approving RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to approve RTV");
+      showToast('error', error.response?.data?.message || "Failed to approve RTV");
       throw error;
     }
   };
@@ -96,11 +96,11 @@ export const useRtvApi = () => {
         `${API_URL}/rtv/${rtvId}/post`,
         {}
       );
-      toast.success("RTV posted successfully - Stock and GL entries reversed");
+      showToast('success', "RTV posted successfully - Stock and GL entries reversed");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error posting RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to post RTV");
+      showToast('error', error.response?.data?.message || "Failed to post RTV");
       throw error;
     }
   };
@@ -112,11 +112,11 @@ export const useRtvApi = () => {
         `${API_URL}/rtv/${rtvId}/cancel`,
         { reason }
       );
-      toast.success("RTV cancelled successfully");
+      showToast('success', "RTV cancelled successfully");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error cancelling RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to cancel RTV");
+      showToast('error', error.response?.data?.message || "Failed to cancel RTV");
       throw error;
     }
   };
@@ -125,10 +125,10 @@ export const useRtvApi = () => {
   const deleteRtv = async (rtvId) => {
     try {
       await axios.delete(`${API_URL}/rtv/${rtvId}`);
-      toast.success("RTV deleted successfully");
+      showToast('success', "RTV deleted successfully");
     } catch (error) {
       console.error("Error deleting RTV:", error);
-      toast.error(error.response?.data?.message || "Failed to delete RTV");
+      showToast('error', error.response?.data?.message || "Failed to delete RTV");
       throw error;
     }
   };
@@ -171,7 +171,7 @@ export const useRtvApi = () => {
       return grnList;
     } catch (error) {
       console.error("Error fetching GRN list:", error);
-      toast.error("Failed to fetch GRN list: " + (error.response?.data?.message || error.message));
+      showToast('error', "Failed to fetch GRN list: " + (error.response?.data?.message || error.message));
       return [];
     }
   };
@@ -185,7 +185,7 @@ export const useRtvApi = () => {
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error fetching GRN:", error);
-      toast.error("GRN not found");
+      showToast('error', "GRN not found");
       return null;
     }
   };
@@ -197,11 +197,11 @@ export const useRtvApi = () => {
         `${API_URL}/rtv/${rtvId}/credit-note`,
         {}
       );
-      toast.success("Credit note generated successfully");
+      showToast('success', "Credit note generated successfully");
       return response.data?.data || response.data;
     } catch (error) {
       console.error("Error generating credit note:", error);
-      toast.error(error.response?.data?.message || "Failed to generate credit note");
+      showToast('error', error.response?.data?.message || "Failed to generate credit note");
       throw error;
     }
   };
