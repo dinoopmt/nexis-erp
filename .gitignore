@@ -3,6 +3,7 @@
 # Node / frontend / build files
 node_modules/
 dist/
+dist-electron/
 build/
 .next/
 .turbo/
