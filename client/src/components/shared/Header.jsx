@@ -65,7 +65,7 @@ export default function Header() {
             <h1 className="text-sm lg:text-base text-[#f5f5f5] font-semibold">
               {user?.username || "User"}
             </h1>
-            <p className="text-xs text-[#ababab]">{user?.role || "User"}</p>
+            <p className="text-xs text-[#ababab]">{user?.role?.name || "User"}</p>
           </div>
           
           {/* Logout Button */}
