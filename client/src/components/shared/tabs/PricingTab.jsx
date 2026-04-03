@@ -30,7 +30,7 @@ const PricingTab = ({
               <th className="p-1 border border-gray-300 font-semibold text-xs text-right w-20">Margin %</th>
               <th className="p-1 border border-gray-300 font-semibold text-xs text-right w-20">Margin Amt</th>
               <th className="p-1 border border-gray-300 font-semibold text-xs text-right w-20">Tax Amt</th>
-              <th className="p-1 border border-gray-300 font-semibold text-xs text-center w-24">Barcode</th>
+              <th className="p-1 border border-gray-300 font-semibold text-xs text-center w-24">Barcode </th>
               <th className="p-1 border border-gray-300 font-semibold text-xs text-center w-12">Del</th>
             </tr>
           </thead>

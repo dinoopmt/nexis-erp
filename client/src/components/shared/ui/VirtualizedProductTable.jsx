@@ -81,16 +81,16 @@ const VirtualizedProductTable = ({
         style={{ height: rowHeight }}
       >
         <div className="w-[5%] flex justify-end font-mono text-sm pb font-semibold truncate">{product?.itemcode || '-'}</div>
-        <div className="w-[32%] flex justify-start truncate text-sm">{product?.name || '-'}</div>
-        <div className="w-[12%] flex justify-start text-sm text-gray-600 truncate">
+        <div className="w-[35%] flex justify-start truncate text-sm">{product?.name || '-'}</div>
+        <div className="w-[14%] flex justify-start text-sm text-gray-600 truncate">
           {typeof product?.categoryId === 'object' ? product.categoryId?.name || '-' : '-'}
         </div>
-        <div className="w-[12%] flex justify-start text-sm text-gray-600 truncate">
+        <div className="w-[20%] flex justify-start text-sm text-gray-600 truncate">
           {typeof product?.vendor === 'object' ? product.vendor?.name || '-' : '-'}
         </div>
-        <div className="w-[26%] flex justify-end font-sm font-semibold text-xs text-gray-500" title={product?.barcode || '-'}>{product?.barcode || '-'}</div>
+        <div className="w-[12%] flex justify-center font-sm font-semibold text-xs text-gray-500" title={product?.barcode || '-'}>{product?.barcode || '-'}</div>
         <div className="w-[5%] flex justify-end text-sm">{parseFloat(product?.cost || 0).toFixed(2)}</div>
-        <div className="w-[5%] flex justify-end text-sm font-semibold text-green-600">{parseFloat(product?.price || 0).toFixed(2)}</div>
+        <div className="w-[5%] flex justify-end text-sm  font-semibold text-green-600">{parseFloat(product?.price || 0).toFixed(2)}</div>
         <div className="w-[5%] flex justify-end text-sm font-semibold" title={`Total: ${product?.currentStock?.totalQuantity || 0}, Available: ${product?.currentStock?.availableQuantity || 0}`}>{product?.currentStock?.availableQuantity || 0}</div>
         <div className="w-[5%] flex gap-1 justify-end">
           <button onClick={() => onEdit(product)} className="p-1 hover:bg-blue-100 rounded transition" title="Edit">
@@ -113,14 +113,15 @@ const VirtualizedProductTable = ({
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-1 bg-gray-100 border-b font-semibold sticky top-0 z-10 text-sm bg-gray-200">
         <div className="w-[5%] flex justify-end">Code</div>
-        <div className="w-[37%] flex justify-start">Product Name</div>
+        <div className="w-[35%] flex justify-start">Product Name</div>
         <div className="w-[14%] flex justify-start">Department</div>
-        <div className="w-[14%] flex justify-start">Vendor</div>
-        <div className="w-[10%] flex justify-end">Barcode</div>
+        <div className="w-[20%] flex justify-start">Vendor</div>
+        <div className="w-[12%] flex  justify-center">Barcode</div>
         <div className="w-[5%] flex justify-center">Cost</div>
         <div className="w-[5%] flex justify-center">Price</div>
         <div className="w-[5%] flex justify-center">Stock</div>
-        <div className="w-[5%] flex justify-center">Actions</div>
+        <div className="w-[6%] flex justify-center">Actions</div>
+        
       </div>
 
       {/* Virtualized Container */}

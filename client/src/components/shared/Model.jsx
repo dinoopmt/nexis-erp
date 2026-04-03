@@ -67,7 +67,7 @@ const Modal = ({ isOpen, onClose, children, title, width = "max-w-md lg:max-w-lg
   }
 
   const centerX = typeof window !== 'undefined' ? Math.max(0, (window.innerWidth - defaultWidth) / 2) : 100;
-  const centerY = typeof window !== 'undefined' ? Math.max(40, isSubModal ? (window.innerHeight - 400) / 2 : 100) : 100;
+  const centerY = typeof window !== 'undefined' ? Math.max(40, (window.innerHeight - 630) / 2) : 100;
 
   return (
     <div 

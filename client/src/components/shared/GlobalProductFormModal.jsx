@@ -110,6 +110,21 @@ const GlobalProductFormModal = () => {
   // Refs
   const basicInfoTabRef = useRef(null);
   const tabContentRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // ✅ Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchInputRef.current && !searchInputRef.current.contains(e.target)) {
+        setShowModalSearchResults(false);
+      }
+    };
+
+    if (showModalSearchResults) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showModalSearchResults]);
 
   // ✅ Wrapper function to close modal and dismiss all toasts
   const handleCloseModal = useCallback(() => {
@@ -1465,6 +1480,7 @@ const GlobalProductFormModal = () => {
   // Uses debounced search to prevent UI freeze during rapid typing
   const handleModalSearch = (query) => {
     setModalSearchQuery(query);
+    setShowModalSearchResults(true); // Show dropdown immediately
 
     if (query.trim() === "") {
       setModalSearchResults([]);
@@ -1478,40 +1494,107 @@ const GlobalProductFormModal = () => {
     }
 
     // Debounce modal search (150ms for faster response)
-    modalSearchDebounceRef.current = setTimeout(() => {
-      // Search in filtered products if available (from Product.jsx), otherwise use full products list
-      const searchList = filteredProducts.length > 0 ? filteredProducts : products;
-      const results = searchList.filter(
-        (prod) =>
-          prod.name?.toLowerCase().includes(query.toLowerCase()) ||
-          prod.barcode?.toLowerCase().includes(query.toLowerCase()) ||
-          prod.itemcode?.toLowerCase().includes(query.toLowerCase())
-      );
+    modalSearchDebounceRef.current = setTimeout(async () => {
+      // Try local search first - ensure arrays exist
+      const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+      const productsArray = Array.isArray(products) ? products : [];
+      const searchList = filteredArray.length > 0 ? filteredArray : productsArray;
+      const lowerQuery = query.toLowerCase();
+      
+      let results = [];
+      if (Array.isArray(searchList) && searchList.length > 0) {
+        results = searchList.filter(
+          (prod) =>
+            prod?.name?.toLowerCase().includes(lowerQuery) ||
+            prod?.barcode?.toLowerCase().includes(lowerQuery) ||
+            prod?.itemcode?.toLowerCase().includes(lowerQuery)
+        );
+      }
+
+      console.log(`🔍 Search Results (local): ${results.length} items from searchList(${searchList.length})`);
+
+      // If no local results and no products loaded, try API search
+      if (results.length === 0 && searchList.length === 0) {
+        try {
+          console.log(`🔍 No local results, fetching from API...`);
+          const response = await productAPI.fetchProducts(1, 100);
+          if (response && response.products && Array.isArray(response.products) && response.products.length > 0) {
+            results = response.products.filter(
+              (prod) =>
+                prod?.name?.toLowerCase().includes(lowerQuery) ||
+                prod?.barcode?.toLowerCase().includes(lowerQuery) ||
+                prod?.itemcode?.toLowerCase().includes(lowerQuery)
+            );
+            console.log(`🔍 Search Results (API): ${results.length} items`);
+          }
+        } catch (err) {
+          console.error("❌ Search API error:", err);
+        }
+      }
 
       setModalSearchResults(results);
-      setShowModalSearchResults(results.length > 0);
     }, 150);
   };
 
   // ✅ Populate Modal Form with Selected Product
-  const handleSelectProductFromSearch = (prod) => {
-    setNewProduct(prod);
-    setModalSearchQuery("");
-    setModalSearchResults([]);
-    setShowModalSearchResults(false);
-    updateMode('edit');
-    
-    // Find and set the index of the selected product
-    const productsList = filteredProducts.length > 0 ? filteredProducts : products;
-    const foundIndex = productsList.findIndex(p => p._id === prod._id);
-    if (foundIndex >= 0 && setEditIndex) {
-      setEditIndex(foundIndex);
+  const handleSelectProductFromSearch = async (prod) => {
+    setLoading(true);
+    try {
+      // Fetch complete product data (search results may have partial data)
+      const completeProduct = await productAPI.fetchProductById(prod._id);
+      
+      if (!completeProduct) {
+        showToast('error', "Failed to load product details");
+        setLoading(false);
+        return;
+      }
+
+      // Clear any previous validation errors
+      setErrors({});
+      
+      // Reset to basic info tab
+      setActiveTab("basic");
+      
+      // Set the complete product data
+      setNewProduct(completeProduct);
+      
+      // Build pricing lines from complete product
+      buildPricingLinesFromProduct(completeProduct);
+      
+      setModalSearchQuery("");
+      setModalSearchResults([]);
+      setShowModalSearchResults(false);
+      updateMode('edit');
+      
+      // Find and set the index of the selected product
+      const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+      const productsArray = Array.isArray(products) ? products : [];
+      const productsList = filteredArray.length > 0 ? filteredArray : productsArray;
+      
+      if (Array.isArray(productsList) && productsList.length > 0) {
+        const foundIndex = productsList.findIndex(p => p._id === prod._id);
+        if (foundIndex >= 0 && setEditIndex) {
+          setEditIndex(foundIndex);
+        }
+      }
+      
+      console.log(`✅ Selected product from search: ${completeProduct.name}`);
+    } catch (err) {
+      console.error("❌ Error selecting product:", err);
+      showToast('error', "Failed to load product");
+    } finally {
+      setLoading(false);
     }
   };
 
   // ✅ Navigate to Next Product in Modal (Product.jsx integration)
   const handleNextProduct = () => {
-    const productsList = filteredProducts.length > 0 ? filteredProducts : products;
+    const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+    const productsArray = Array.isArray(products) ? products : [];
+    const productsList = filteredArray.length > 0 ? filteredArray : productsArray;
+    
+    if (!Array.isArray(productsList) || productsList.length === 0) return;
+    
     if (editIndex >= 0 && editIndex < productsList.length - 1) {
       const nextProd = productsList[editIndex + 1];
       setNewProduct(nextProd);
@@ -1526,7 +1609,12 @@ const GlobalProductFormModal = () => {
 
   // ✅ Navigate to Previous Product in Modal (Product.jsx integration)
   const handlePrevProduct = () => {
-    const productsList = filteredProducts.length > 0 ? filteredProducts : products;
+    const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+    const productsArray = Array.isArray(products) ? products : [];
+    const productsList = filteredArray.length > 0 ? filteredArray : productsArray;
+    
+    if (!Array.isArray(productsList) || productsList.length === 0) return;
+    
     if (editIndex > 0) {
       const prevProd = productsList[editIndex - 1];
       setNewProduct(prevProd);
@@ -1555,7 +1643,7 @@ const GlobalProductFormModal = () => {
           </div>
         </div>
       )}
-      <div className="bg-white w-full h-[630px] rounded-lg flex flex-col overflow-hidden" style={{ opacity: loadingReferenceData ? 0.5 : 1, pointerEvents: loadingReferenceData ? 'none' : 'auto' }}>
+      <div className="bg-white w-full h-[610px] rounded-lg flex flex-col overflow-hidden" style={{ opacity: loadingReferenceData ? 0.5 : 1, pointerEvents: loadingReferenceData ? 'none' : 'auto' }}>
         {/* ✅ Complete Header with Title, Search & Navigation in Drag Handle */}
         <div className="modal-drag-handle flex items-center gap-2 pb-2 border-b border-gray-200 pr-10 cursor-move select-none flex-shrink-0">
           {/* Left: Title */}
@@ -1567,36 +1655,40 @@ const GlobalProductFormModal = () => {
           <div className="flex-1"></div>
 
           {/* Right: Quick Search */}
-          <div className="relative w-48 flex-shrink-0 pointer-events-auto">
+          <div className="relative pt-1  w-72 flex-shrink-0 pointer-events-auto" ref={searchInputRef}>
             <input
               type="text"
               placeholder="🔍 Name, Code or Barcode..."
-              className="w-full border border-blue-300 p-1.5 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50"
+              className="w-full border  border-blue-300 p-1.5 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50"
               value={modalSearchQuery}
               onChange={(e) => handleModalSearch(e.target.value)}
-              onBlur={() => setShowModalSearchResults(false)}
+              onFocus={() => setShowModalSearchResults(true)}
               onMouseDown={(e) => e.stopPropagation()}
             />
 
             {/* Search Results Dropdown */}
-            {showModalSearchResults && modalSearchResults.length > 0 && (
+            {showModalSearchResults && modalSearchQuery && (
               <div
                 className="absolute top-full left-0 right-0 mt-1 border border-gray-300 bg-white rounded shadow-lg z-50 max-h-40 overflow-y-auto pointer-events-auto"
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                {modalSearchResults.map((prod) => (
-                  <button
-                    key={prod._id}
-                    onClick={() => handleSelectProductFromSearch(prod)}
-                    className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b last:border-b-0 text-xs"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <div className="font-semibold text-gray-800">{prod.name}</div>
-                    <div className="text-gray-600 text-xs">
-                      Code: {prod.itemcode} | Barcode: {prod.barcode}
-                    </div>
-                  </button>
-                ))}
+                {modalSearchResults.length > 0 ? (
+                  modalSearchResults.map((prod) => (
+                    <button
+                      key={prod._id}
+                      onClick={() => handleSelectProductFromSearch(prod)}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b last:border-b-0 text-xs"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div className="font-semibold text-gray-800">{prod.name}</div>
+                      <div className="text-gray-600 text-xs">
+                        Code: {prod.itemcode} | Barcode: {prod.barcode}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-gray-500 text-center">No products found</div>
+                )}
               </div>
             )}
           </div>
@@ -1617,19 +1709,37 @@ const GlobalProductFormModal = () => {
               ← Prev
             </button>
 
-            <span className="text-xs text-gray-700 px-2 py-0.5 bg-gray-200 rounded whitespace-nowrap">
-              {editIndex >= 0 ? editIndex + 1 : 0} / {(filteredProducts.length > 0 ? filteredProducts : products).length}
-            </span>
+            {(() => {
+              const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+              const productsArray = Array.isArray(products) ? products : [];
+              const productsList = filteredArray.length > 0 ? filteredArray : productsArray;
+              const totalCount = Array.isArray(productsList) ? productsList.length : 0;
+              return (
+                <span className="text-xs text-gray-700 px-2 py-0.5 bg-gray-200 rounded whitespace-nowrap">
+                  {editIndex >= 0 ? editIndex + 1 : 0} / {totalCount}
+                </span>
+              );
+            })()}
 
             <button
               onClick={handleNextProduct}
               className={`px-2 py-0.5 border rounded text-xs cursor-pointer font-medium ${
-                editIndex >= (filteredProducts.length > 0 ? filteredProducts : products).length - 1
+                (() => {
+                  const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+                  const productsArray = Array.isArray(products) ? products : [];
+                  const productsList = filteredArray.length > 0 ? filteredArray : productsArray;
+                  return editIndex >= (Array.isArray(productsList) ? productsList.length - 1 : 0);
+                })()
                   ? "bg-gray-200 text-gray-400 border-gray-300"
                   : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
               }`}
               onMouseDown={(e) => e.stopPropagation()}
-              disabled={editIndex >= (filteredProducts.length > 0 ? filteredProducts : products).length - 1}
+              disabled={(() => {
+                const filteredArray = Array.isArray(filteredProducts) ? filteredProducts : [];
+                const productsArray = Array.isArray(products) ? products : [];
+                const productsList = filteredArray.length > 0 ? filteredArray : productsArray;
+                return editIndex >= (Array.isArray(productsList) ? productsList.length - 1 : 0);
+              })()}
               title="Next product"
             >
               Next →
@@ -2098,10 +2208,10 @@ const GlobalProductFormModal = () => {
                               <span className="font-mono text-blue-700 font-bold text-xs">
                                 {line.barcode ? (
                                   <>
-                                    {line.barcode.substring(0, 10)}
-                                    {line.barcode.length > 10 && (
+                                    {line.barcode.substring(0, 14)}
+                                    {line.barcode.length > 14 && (
                                       <div className="text-xs text-gray-600">
-                                        {line.barcode.substring(10)}
+                                        {line.barcode.substring(14)}
                                       </div>
                                     )}
                                   </>
