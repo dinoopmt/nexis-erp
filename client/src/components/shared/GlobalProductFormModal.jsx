@@ -5,6 +5,7 @@ import Modal from "./Model";
 import { showToast } from "./AnimatedCenteredToast.jsx";
 import useDecimalFormat from "../../hooks/useDecimalFormat";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
+import useProductNamingValidation from "../../hooks/useProductNamingValidation";
 import { clearQueryCache } from "../../utils/searchCache";  // ✅ ADDED - Auto-clear search cache on product update
 import {
   buildPricingLinesFromProduct as sharedBuildPricingLines,
@@ -53,6 +54,9 @@ const GlobalProductFormModal = () => {
 
   // Get company info to determine region (matches Product.jsx pattern)
   const { company, taxes: allTaxes, loading: loadingTaxes } = useTaxMaster();
+  
+  // ✅ Product naming validation hook
+  const namingValidation = useProductNamingValidation(productData?._id);
   
   // Determine country from company - same logic as Product.jsx
   const activeCountryCode = company?.countryCode || "AE";
@@ -910,6 +914,9 @@ const GlobalProductFormModal = () => {
             basicInfoTabRef.current.setSubdepartmentSearchValue(createdGrouping.name);
           }
           
+          // ✅ Update subdepartments list with the newly created subdepartment
+          setSubdepartments((prev) => [...prev, createdGrouping]);
+          
           const parentId = createdGrouping.parentId?._id;
           const filteredBrands = groupings.filter((g) => g.parentId?._id === parentId);
           setBrands(filteredBrands);
@@ -1097,6 +1104,27 @@ const GlobalProductFormModal = () => {
 
     try {
       
+      // ✅ PRODUCT NAME VALIDATION & AUTO-CAPITALIZATION
+      const nameValidationResult = await namingValidation.validateAndPrepareForSave(newProduct.name);
+      
+      if (!nameValidationResult.isValid) {
+        setErrors((prev) => ({ ...prev, name: nameValidationResult.error }));
+        showToast('error', nameValidationResult.error);
+        setLoading(false);
+        return;
+      }
+
+      // ✅ Show warning if exists (but still proceed)
+      if (nameValidationResult.warning) {
+        console.warn('⚠️ Name warning:', nameValidationResult.warning);
+      }
+
+      // ✅ Update product name with processed version (auto-capitalized)
+      const processedProduct = {
+        ...newProduct,
+        name: nameValidationResult.processedName,
+      };
+      
       // ✅ Backend handles all uniqueness validation (itemcode + barcodes in single query)
       // Frontend only does basic structural validation (done in validateProduct())
       
@@ -1143,7 +1171,7 @@ const GlobalProductFormModal = () => {
 
       // ✅ Build product data using shared utility
       const productData = buildProductForSave(
-        newProduct,
+        processedProduct,
         pricingLines,
         selectedPricingLines,
         {

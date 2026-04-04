@@ -66,6 +66,12 @@ const BasicInfoTab = forwardRef((
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
   const [showVendorDropdown, setShowVendorDropdown] = useState(false);
 
+  // ✅ Keyboard navigation: Track highlighted item index in each dropdown
+  const [highlightedDeptIndex, setHighlightedDeptIndex] = useState(-1);
+  const [highlightedSubdeptIndex, setHighlightedSubdeptIndex] = useState(-1);
+  const [highlightedBrandIndex, setHighlightedBrandIndex] = useState(-1);
+  const [highlightedVendorIndex, setHighlightedVendorIndex] = useState(-1);
+
 
   
 
@@ -343,6 +349,121 @@ const BasicInfoTab = forwardRef((
     v.name.toLowerCase().includes(vendorSearch.toLowerCase())
   );
 
+  // ✅ KEYBOARD NAVIGATION HANDLERS
+  
+  // Generic keyboard handler factory for dropdowns
+  const createDropdownKeyHandler = (filterList, highlightedIndex, setHighlightedIndex, showDropdown, setShowDropdown, onSelect) => {
+    return (e) => {
+      if (!showDropdown || filterList.length === 0) {
+        // If not showing dropdown or no items, only handle Enter to show/open
+        if (e.key === 'Enter' && !showDropdown) {
+          e.preventDefault();
+          setShowDropdown(true);
+        }
+        return;
+      }
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          setHighlightedIndex((prev) => {
+            const nextIndex = prev + 1 >= filterList.length ? 0 : prev + 1;
+            return nextIndex;
+          });
+          break;
+        
+        case 'ArrowUp':
+          e.preventDefault();
+          setHighlightedIndex((prev) => {
+            const nextIndex = prev - 1 < 0 ? filterList.length - 1 : prev - 1;
+            return nextIndex;
+          });
+          break;
+        
+        case 'Enter':
+          e.preventDefault();
+          if (highlightedIndex >= 0 && highlightedIndex < filterList.length) {
+            onSelect(filterList[highlightedIndex]);
+            setHighlightedIndex(-1);
+          }
+          break;
+        
+        case 'Escape':
+          e.preventDefault();
+          setShowDropdown(false);
+          setHighlightedIndex(-1);
+          break;
+        
+        default:
+          // Reset highlight when user types
+          setHighlightedIndex(-1);
+          break;
+      }
+    };
+  };
+
+  // Department dropdown keyboard handler
+  const handleDepartmentKeyDown = createDropdownKeyHandler(
+    filteredDepartments,
+    highlightedDeptIndex,
+    setHighlightedDeptIndex,
+    showDeptDropdown,
+    setShowDeptDropdown,
+    (dept) => {
+      setDepartmentSearch(dept.name);
+      onCategoryChange(dept._id);
+      setShowDeptDropdown(false);
+    }
+  );
+
+  // Sub-department dropdown keyboard handler
+  const handleSubdeptKeyDown = createDropdownKeyHandler(
+    filteredSubdepartments,
+    highlightedSubdeptIndex,
+    setHighlightedSubdeptIndex,
+    showSubdeptDropdown,
+    setShowSubdeptDropdown,
+    (subdept) => {
+      setSubdepartmentSearch(subdept.name);
+      onSubdepartmentChange(subdept._id);
+      setShowSubdeptDropdown(false);
+    }
+  );
+
+  // Brand dropdown keyboard handler
+  const handleBrandKeyDown = createDropdownKeyHandler(
+    filteredBrands,
+    highlightedBrandIndex,
+    setHighlightedBrandIndex,
+    showBrandDropdown,
+    setShowBrandDropdown,
+    (brand) => {
+      setBrandSearch(brand.name);
+      setNewProduct({
+        ...newProduct,
+        brandId: brand._id,
+      });
+      setShowBrandDropdown(false);
+    }
+  );
+
+  // Vendor dropdown keyboard handler
+  const handleVendorKeyDown = createDropdownKeyHandler(
+    filteredVendors,
+    highlightedVendorIndex,
+    setHighlightedVendorIndex,
+    showVendorDropdown,
+    setShowVendorDropdown,
+    (vendor) => {
+      setVendorSearch(vendor.name);
+      setNewProduct({
+        ...newProduct,
+        vendor: vendor._id,
+      });
+      setShowVendorDropdown(false);
+    }
+  );
+
   // Calculate available stock for a specific pricing line (unit variant)
   // Returns calculated stock only if a unit variant is selected and stock exceeds the factor
   // This ensures we only show variant stock when: (1) unit is selected, (2) stock > factor
@@ -444,10 +565,33 @@ const BasicInfoTab = forwardRef((
                 }`}
                 value={newProduct.name || ""}
                 onChange={(e) => {
-                  setNewProduct({
+                  const newName = e.target.value;
+                  
+                  // ✅ Auto-fill short name with ENTIRE item name (like a mirror)
+                  let updatedProduct = {
                     ...newProduct,
-                    name: e.target.value,
-                  });
+                    name: newName,
+                  };
+                  
+                  // Generate auto-fill suggestion (entire name, max 50 chars)
+                  const generateShortName = (name) => {
+                    if (!name || name.trim().length === 0) return '';
+                    return name.trim().substring(0, 50);  // Full name up to 50 chars
+                  };
+                  
+                  const autoFillSuggestion = generateShortName(newName);
+                  
+                  // Only auto-fill if:
+                  // 1. Short name is empty, OR
+                  // 2. Short name still matches the previous auto-fill (user hasn't manually edited)
+                  const previousAutoFill = generateShortName(newProduct.name);
+                  
+                  if (!newProduct.shortName || newProduct.shortName === previousAutoFill) {
+                    updatedProduct.shortName = autoFillSuggestion;
+                  }
+                  
+                  setNewProduct(updatedProduct);
+                  
                   // Clear error on change
                   if (errors.name) {
                     setErrors((prev) => ({ ...prev, name: undefined }));
@@ -464,14 +608,14 @@ const BasicInfoTab = forwardRef((
               />
             </div>
 
-            {/* Row 3: Short Name (abbreviated product name) */}
+            {/* Row 3: Short Name (abbreviated product name) - Auto-filled but editable */}
             <div className="flex items-center gap-2 h-9">
               <label className="text-xs font-semibold text-gray-700 w-20 flex-shrink-0">
                 Short Name
               </label>
               <input
                 type="text"
-                placeholder="Short name"
+                placeholder="Auto-filled from item name (edit as needed)"
                 autoComplete="off"
                 className="border border-gray-300 rounded px-1 py-1 text-xs flex-1"
                 value={newProduct.shortName || ""}
@@ -483,6 +627,7 @@ const BasicInfoTab = forwardRef((
                 }
                 onMouseDown={(e) => e.stopPropagation()}
                 disabled={loading}
+                title="Automatically filled with Item Name. You can trim or adjust this field."
               />
             </div>
 
@@ -527,11 +672,11 @@ const BasicInfoTab = forwardRef((
                   onChange={(e) => {
                     const newValue = e.target.value;
                     setDepartmentSearch(newValue);
-                    setShowDeptDropdown(true); // Keep dropdown open while typing
+                    setShowDeptDropdown(true);
+                    setHighlightedDeptIndex(-1); // Reset highlight when typing
                   }}
                   onFocus={() => {
                     setShowDeptDropdown(true);
-                    // Clear error when user focuses on the field
                     if (errors.categoryId) {
                       setErrors((prev) => ({ ...prev, categoryId: undefined }));
                     }
@@ -539,14 +684,14 @@ const BasicInfoTab = forwardRef((
                   onBlur={() => {
                     setTimeout(() => setShowDeptDropdown(false), 200);
                   }}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyDown={handleDepartmentKeyDown}
                   onMouseDown={(e) => e.stopPropagation()}
                   disabled={loading}
                 />
                 {showDeptDropdown && (
                   <div className="absolute top-full left-0 right-0 mt-1 border border-gray-300 bg-white rounded shadow-lg z-20 max-h-48 overflow-y-auto">
                     {filteredDepartments.length > 0 ? (
-                      filteredDepartments.map((d) => (
+                      filteredDepartments.map((d, index) => (
                         <button
                           key={d._id}
                           type="button"
@@ -556,8 +701,13 @@ const BasicInfoTab = forwardRef((
                             onCategoryChange(d._id);
                             setShowDeptDropdown(false);
                           }}
+                          onMouseEnter={() => setHighlightedDeptIndex(index)}
                           onKeyDown={(e) => e.stopPropagation()}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-100 border-b last:border-b-0 truncate"
+                          className={`w-full text-left px-3 py-2 text-xs border-b last:border-b-0 truncate transition ${
+                            highlightedDeptIndex === index
+                              ? "bg-blue-500 text-white font-semibold"
+                              : "hover:bg-blue-100 border-gray-200"
+                          }`}
                         >
                           {d.name}
                         </button>
@@ -599,25 +749,25 @@ const BasicInfoTab = forwardRef((
                   onChange={(e) => {
                     const newValue = e.target.value;
                     setSubdepartmentSearch(newValue);
-                    setShowSubdeptDropdown(true); // Keep dropdown open while typing
+                    setShowSubdeptDropdown(true);
+                    setHighlightedSubdeptIndex(-1); // Reset highlight when typing
                   }}
                   onFocus={() => {
                     if (newProduct.categoryId) {
                       setShowSubdeptDropdown(true);
-                      // Don't auto-clear - let user manually clear by backspacing if they want
                     }
                   }}
                   onBlur={() => {
                     setTimeout(() => setShowSubdeptDropdown(false), 200);
                   }}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyDown={handleSubdeptKeyDown}
                   onMouseDown={(e) => e.stopPropagation()}
                   disabled={loading || !newProduct.categoryId}
                 />
                 {showSubdeptDropdown && (
                   <div className="absolute top-full left-0 right-0 mt-1 border border-gray-300 bg-white rounded shadow-lg z-20 max-h-48 overflow-y-auto" onMouseDown={(e) => e.stopPropagation()}>
                     {filteredSubdepartments.length > 0 ? (
-                      filteredSubdepartments.map((sd) => (
+                      filteredSubdepartments.map((sd, index) => (
                         <button
                           key={sd._id}
                           type="button"
@@ -627,8 +777,13 @@ const BasicInfoTab = forwardRef((
                             onSubdepartmentChange(sd._id);
                             setShowSubdeptDropdown(false);
                           }}
+                          onMouseEnter={() => setHighlightedSubdeptIndex(index)}
                           onKeyDown={(e) => e.stopPropagation()}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-100 border-b last:border-b-0 truncate"
+                          className={`w-full text-left px-3 py-2 text-xs border-b last:border-b-0 truncate transition ${
+                            highlightedSubdeptIndex === index
+                              ? "bg-blue-500 text-white font-semibold"
+                              : "hover:bg-blue-100 border-gray-200"
+                          }`}
                         >
                           {sd.name}
                         </button>
@@ -674,25 +829,25 @@ const BasicInfoTab = forwardRef((
                   onChange={(e) => {
                     const newValue = e.target.value;
                     setBrandSearch(newValue);
-                    setShowBrandDropdown(true); // Keep dropdown open while typing
+                    setShowBrandDropdown(true);
+                    setHighlightedBrandIndex(-1); // Reset highlight when typing
                   }}
                   onFocus={() => {
                     if (newProduct.groupingId) {
                       setShowBrandDropdown(true);
-                      // Don't auto-clear - let user manually clear by backspacing if they want
                     }
                   }}
                   onBlur={() => {
                     setTimeout(() => setShowBrandDropdown(false), 200);
                   }}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyDown={handleBrandKeyDown}
                   onMouseDown={(e) => e.stopPropagation()}
                   disabled={loading || !newProduct.groupingId}
                 />
                 {showBrandDropdown && (
                   <div className="absolute top-full left-0 right-0 mt-1 border border-gray-300 bg-white rounded shadow-lg z-20 max-h-48 overflow-y-auto" onMouseDown={(e) => e.stopPropagation()}>
                     {filteredBrands.length > 0 ? (
-                      filteredBrands.map((b) => (
+                      filteredBrands.map((b, index) => (
                         <button
                           key={b._id}
                           type="button"
@@ -705,8 +860,13 @@ const BasicInfoTab = forwardRef((
                             });
                             setShowBrandDropdown(false);
                           }}
+                          onMouseEnter={() => setHighlightedBrandIndex(index)}
                           onKeyDown={(e) => e.stopPropagation()}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-100 border-b last:border-b-0 truncate"
+                          className={`w-full text-left px-3 py-2 text-xs border-b last:border-b-0 truncate transition ${
+                            highlightedBrandIndex === index
+                              ? "bg-blue-500 text-white font-semibold"
+                              : "hover:bg-blue-100 border-gray-200"
+                          }`}
                         >
                           {b.name}
                         </button>
@@ -753,14 +913,13 @@ const BasicInfoTab = forwardRef((
                     const newValue = e.target.value;
                     setVendorSearch(newValue);
                     setShowVendorDropdown(true);
-                    // Clear error on change
+                    setHighlightedVendorIndex(-1); // Reset highlight when typing
                     if (errors.vendor) {
                       setErrors((prev) => ({ ...prev, vendor: undefined }));
                     }
                   }}
                   onFocus={() => {
                     setShowVendorDropdown(true);
-                    // Clear error on focus
                     if (errors.vendor) {
                       setErrors((prev) => ({ ...prev, vendor: undefined }));
                     }
@@ -768,14 +927,14 @@ const BasicInfoTab = forwardRef((
                   onBlur={() => {
                     setTimeout(() => setShowVendorDropdown(false), 200);
                   }}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onKeyDown={handleVendorKeyDown}
                   onMouseDown={(e) => e.stopPropagation()}
                   disabled={loading}
                 />
                 {showVendorDropdown && (
                   <div className="absolute top-full left-0 right-0 mt-1 border border-gray-300 bg-white rounded shadow-lg z-20 max-h-48 overflow-y-auto" onMouseDown={(e) => e.stopPropagation()}>
                     {filteredVendors.length > 0 ? (
-                      filteredVendors.map((v) => (
+                      filteredVendors.map((v, index) => (
                         <button
                           key={v._id}
                           type="button"
@@ -788,8 +947,13 @@ const BasicInfoTab = forwardRef((
                             });
                             setShowVendorDropdown(false);
                           }}
+                          onMouseEnter={() => setHighlightedVendorIndex(index)}
                           onKeyDown={(e) => e.stopPropagation()}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-blue-100 border-b last:border-b-0 truncate"
+                          className={`w-full text-left px-3 py-2 text-xs border-b last:border-b-0 truncate transition ${
+                            highlightedVendorIndex === index
+                              ? "bg-blue-500 text-white font-semibold"
+                              : "hover:bg-blue-100 border-gray-200"
+                          }`}
                         >
                           {v.name}
                         </button>

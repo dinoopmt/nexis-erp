@@ -11,6 +11,7 @@ import {
   getProductStats,
   checkBarcodeExists,
   checkItemcodeExists,
+  checkDuplicateProductName,
   getNextItemCode,
   generateBarcode,
   assignBarcodeToProduct,
@@ -67,6 +68,10 @@ router.post("/checkbarcode", checkBarcodeExists);
 
 // ================= CHECK IF ITEM CODE EXISTS =================
 router.post("/checkitemcode", checkItemcodeExists);
+
+// ================= CHECK IF PRODUCT NAME ALREADY EXISTS (Duplicate Prevention) =================
+// ✅ GET /products/check-duplicate-name?name=ProductName&excludeId=productId
+router.get("/check-duplicate-name", checkDuplicateProductName);
 
 // ================= GET NEXT ITEM CODE (Peek - without incrementing) =================
 router.get("/nexitemcode", getNextItemCode);

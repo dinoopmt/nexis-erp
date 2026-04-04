@@ -1318,6 +1318,85 @@ export const checkItemcodeExists = async (req, res) => {
   }
 };
 
+// ================= CHECK IF PRODUCT NAME ALREADY EXISTS (Duplicate Prevention) =================
+// ✅ Prevents saving duplicate product names
+// Used by ProductNameInput for real-time validation on blur
+export const checkDuplicateProductName = async (req, res) => {
+  try {
+    const { name, excludeId } = req.query;
+
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return res.status(400).json({
+        isDuplicate: false,
+        similarProducts: [],
+        message: "Product name is required",
+      });
+    }
+
+    // Trim and normalize name for comparison
+    const normalizedName = name.trim();
+
+    try {
+      // ✅ STEP 1: Search for exact name match (case-insensitive)
+      const query = {
+        isDeleted: { $ne: true },
+        name: { $regex: `^${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
+      };
+
+      // Exclude current product if editing
+      if (excludeId && typeof excludeId === 'string' && excludeId.length > 0 && excludeId !== 'null') {
+        query._id = { $ne: excludeId };
+      }
+
+      console.log("🔍 Checking duplicate for name:", normalizedName);
+      const existingProduct = await Product.findOne(query).select('_id name itemcode barcode').lean();
+
+      if (existingProduct) {
+        console.log("⚠️  Duplicate found:", existingProduct.name, "- Item Code:", existingProduct.itemcode);
+      }
+
+      res.json({
+        isDuplicate: !!existingProduct,
+        duplicateProduct: existingProduct || null,
+        similarProducts: [],
+        message: existingProduct 
+          ? `Product name "${normalizedName}" already exists (Item Code: ${existingProduct.itemcode})`
+          : "Product name is unique",
+      });
+    } catch (mongoErr) {
+      console.error("❌ MongoDB query error:", mongoErr.message);
+      // If regex query fails, try simple exact match
+      const simpleQuery = {
+        isDeleted: { $ne: true },
+        name: normalizedName
+      };
+
+      if (excludeId && typeof excludeId === 'string' && excludeId.length > 0 && excludeId !== 'null') {
+        simpleQuery._id = { $ne: excludeId };
+      }
+
+      const existingProduct = await Product.findOne(simpleQuery).select('_id name itemcode barcode').lean();
+
+      res.json({
+        isDuplicate: !!existingProduct,
+        duplicateProduct: existingProduct || null,
+        similarProducts: [],
+        message: existingProduct 
+          ? `Product name "${normalizedName}" already exists (Item Code: ${existingProduct.itemcode})`
+          : "Product name is unique",
+      });
+    }
+  } catch (err) {
+    console.error("❌ Unexpected error in checkDuplicateProductName:", err.message, err.stack);
+    res.status(500).json({
+      isDuplicate: false,
+      similarProducts: [],
+      message: "Error checking product name: " + err.message,
+      error: err.message,
+    });
+  }
+};
+
 // ================= BULK IMPORT PRODUCTS FROM EXCEL =================
 export const bulkImportProducts = async (req, res) => {
   const startTime = Date.now(); // ✅ Track import duration

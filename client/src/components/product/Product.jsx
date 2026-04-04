@@ -1548,10 +1548,19 @@ const Product = () => {
           setBrands([]);
         } else if (groupingModalLevel === "2") {
           // Sub-department level - auto-select and update brands
-          // ✅ NEW: Clear subdepartment search filter
+          // ✅ Auto-select the newly created subdepartment
+          setNewProduct((prev) => ({
+            ...prev,
+            groupingId: createdGrouping._id,
+          }));
+          
+          // ✅ Update subdepartment search filter to show newly created item
           if (basicInfoTabRef.current) {
             basicInfoTabRef.current.setSubdepartmentSearchValue(createdGrouping.name);
           }
+          
+          // ✅ Update subdepartments list with the newly created subdepartment
+          setSubdepartments((prev) => [...prev, createdGrouping]);
           
           const parentId = createdGrouping.parentId?._id;
           const filteredBrands = groupings.filter(
