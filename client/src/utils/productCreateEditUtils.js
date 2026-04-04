@@ -398,6 +398,8 @@ export const prepareProductForEdit = (completeProduct, activeCountryCode = "AE")
     image: completeProduct.image || null,
     createdBy: completeProduct.createdBy || "",
     updatedBy: completeProduct.updatedBy || "",
+    createdate: completeProduct.createdate || null,
+    updateDate: completeProduct.updateDate || null,
     packingUnits: Array.isArray(completeProduct.packingUnits) ? completeProduct.packingUnits : [],
     unitVariants: Array.isArray(completeProduct.unitVariants) ? completeProduct.unitVariants : [],
     pricingLevels: completeProduct.pricingLevels && typeof completeProduct.pricingLevels === "object" ? completeProduct.pricingLevels : {},

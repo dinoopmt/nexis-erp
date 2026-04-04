@@ -1819,6 +1819,15 @@ const Product = () => {
     };
   });
 
+  // ✅ Convert search results array to sparse map format for VirtualizedProductTable
+  // This allows the table to render search results using the same virtualization logic
+  const searchResultsMap = {};
+  if (search.trim() && enrichedApiSearchResults.length > 0) {
+    enrichedApiSearchResults.forEach((product, index) => {
+      searchResultsMap[index] = product;
+    });
+  }
+
   // ✅ Advanced Search Filter - Define BEFORE using it
   const applyAdvancedFilters = (products = []) => {
     // Ensure products is an array
@@ -2612,10 +2621,10 @@ const Product = () => {
           <div className="flex-1 bg-white rounded-lg shadow-sm border flex flex-col min-h-0 overflow-hidden">
             <div className="flex-1 overflow-hidden">
               <VirtualizedProductTable
-                productsMap={infiniteProductsMap}
-                totalProducts={totalInfiniteProducts}
-                isLoading={isLoadingInfinite}
-                onPageChange={fetchNextPageInfinite}
+                productsMap={search.trim() ? searchResultsMap : infiniteProductsMap}
+                totalProducts={search.trim() ? enrichedApiSearchResults.length : totalInfiniteProducts}
+                isLoading={search.trim() ? searchLoading : isLoadingInfinite}
+                onPageChange={search.trim() ? () => {} : fetchNextPageInfinite}
                 onEdit={(product) => handleEdit(product)}
                 onDelete={(productId) => handleDelete(productId)}
                 onDownload={(product) => console.log('Download:', product)}
@@ -2627,10 +2636,10 @@ const Product = () => {
             {/* Footer - Total Product Count */}
             <div className="flex-shrink-0 bg-gradient-to-r from-blue-50 to-blue-100 border-t-2 border-blue-300 px-4 py-2 flex items-center justify-end shadow-md gap-4">
               <div className="text-xs">
-                <span className="font-semibold text-blue-900">Total Products:</span> <span className="font-bold text-blue-600">{totalInfiniteProducts.toLocaleString()}</span>
+                <span className="font-semibold text-blue-900">{search.trim() ? 'Search Results:' : 'Total Products:'}</span> <span className="font-bold text-blue-600">{(search.trim() ? enrichedApiSearchResults.length : totalInfiniteProducts).toLocaleString()}</span>
               </div>
               <div className="text-xs text-blue-500">
-                {isLoadingInfinite && <span className="font-semibold">Loading...</span>}
+                {(search.trim() ? searchLoading : isLoadingInfinite) && <span className="font-semibold">Loading...</span>}
               </div>
             </div>
           </div>
