@@ -40,10 +40,10 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
             {
               style: {
                 display: 'flex',
-                gap: '3px',
+                gap: '2px',
                 alignItems: 'center',
                 justifyContent: 'flex-start',
-                paddingLeft: '8px',
+                paddingLeft: '4px',
                 width: '100%',
               },
             },
@@ -52,7 +52,7 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
               'span',
               {
                 style: {
-                  fontSize: '12px',
+                  fontSize: '11px',
                   color: '#374151',
                   minWidth: '16px',
                   textAlign: 'center',
@@ -111,9 +111,9 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         field: "qty",
         flex: 0.7,
         minWidth: 40,
-        cellStyle: { textAlign: "right", fontSize: '13px',fontWeight: 'bold' },
+        cellStyle: { textAlign: "right", fontSize: '11px',fontWeight: 'bold' },
         headerClass: "ag-right-aligned-header" ,
-        headerStyle: { fontSize: '13px' }, // ✅ correct
+        headerStyle: { fontSize: '11px' },
         editable: true,
       },
       {
@@ -196,9 +196,9 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         field: "finalCost",
         flex: 0.8,
         minWidth: 65,
-        cellStyle: { textAlign: "right", fontSize: '13px', fontWeight: 'bold' },
+        cellStyle: { textAlign: "right", fontSize: '11px', fontWeight: 'bold' },
         headerClass: "ag-right-aligned-header",
-        headerStyle: { fontSize: '14px', fontWeight: 'bold' },
+        headerStyle: { fontSize: '12px', fontWeight: 'bold' },
         valueFormatter: (params) => formatNumber(params.value || 0),  // ✅ Uses global formatter
       },
       {
@@ -303,8 +303,8 @@ export const useGrnGridConfig = (removeItemFromGrn, taxType = 'exclusive', onEdi
         sortable: false,
         filter: false,
       },
-      rowHeight: 36,
-      headerHeight: 44,
+      rowHeight: 32,
+      headerHeight: 36,
       suppressMenuHide: true,
       stopEditingWhenCellsLoseFocus: true,
     };

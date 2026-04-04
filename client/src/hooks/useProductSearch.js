@@ -446,10 +446,14 @@ export const useProductSearch = (
   };
 
   /**
-   * Clear cache for current or specific query
+   * Clear cache for current or specific query, or all cache if empty string passed
    */
   const clearCache = (query = searchQuery) => {
-    if (query && query.trim()) {
+    if (query === '') {
+      // Clear ALL cache when empty string is passed
+      clearAllCache();
+      console.log(`🗑️ Cleared ALL product search cache`);
+    } else if (query && query.trim()) {
       clearQueryCache(query);
       console.log(`🗑️ Cleared cache for: "${query}"`);
     }

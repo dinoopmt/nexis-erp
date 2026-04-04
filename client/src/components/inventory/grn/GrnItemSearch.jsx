@@ -91,7 +91,7 @@ const GrnItemSearch = ({ itemSearch, searchResults, searchLoading, onSearch, onS
               >
                 <div className="font-semibold text-sm mb-1">{displayName}</div>
 
-                <div className="grid grid-cols-4 gap-2 text-xs">
+                <div className="grid grid-cols-5 gap-2 text-xs">
                   <div>
                     <span className="text-gray-500 text-[10px]">Code</span>
                     <div className="text-gray-800 font-medium">{displayCode}</div>
@@ -107,6 +107,12 @@ const GrnItemSearch = ({ itemSearch, searchResults, searchLoading, onSearch, onS
                   <div>
                     <span className="text-gray-500 text-[10px]">Price</span>
                     <div className="text-gray-800 font-medium">{displayPrice}</div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 text-[10px]">Stock</span>
+                    <div className={`font-medium ${product.currentStock > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {product.currentStock !== undefined ? product.currentStock : product.stock !== undefined ? product.stock : '-'}
+                    </div>
                   </div>
                 </div>
 

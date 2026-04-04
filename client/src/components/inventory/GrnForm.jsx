@@ -85,12 +85,79 @@ const GrnForm = () => {
   const { gridContainerRef, gridHeight } = useGrnGridDimensions(showNewGrnModal);
 
   // Product Search Hook - Centralized with Meilisearch + fallback
+  // Product Search Hook - Centralized with Meilisearch + fallback
   const {
     results: searchResults,
     loading: searchLoading,
     error: searchError,
     clearCache,
   } = useProductSearch(itemSearch, 150, 1, 50, true);
+
+  // ✅ Track updated products with TTL (Time To Live) to prevent memory leaks
+  // Auto-expires entries after 30 seconds to prevent stale data in multi-user scenarios
+  const [updatedProductsMap, setUpdatedProductsMap] = useState({});
+
+  // ✅ Merge updated products into search results for immediate UI update
+  // Only includes entries that haven't expired
+  const mergedSearchResults = searchResults.map(item => {
+    const updated = updatedProductsMap[item._id];
+    // Only merge if entry exists AND is still valid (less than 30s old)
+    if (updated && updated.timestamp && Date.now() - updated.timestamp < 30000) {
+      return { ...item, ...updated.product }; // Merge the product data only, not the timestamp
+    }
+    return item;
+  });
+
+  // ✅ DIRECT DROPDOWN UPDATE: Merge updated product into search results immediately
+  useEffect(() => {
+    const handleProductUpdatedDirect = (event) => {
+      const { product } = event.detail || {};
+      
+      if (!product?._id) {
+        return;
+      }
+      
+      // Store updated product with timestamp for TTL tracking
+      setUpdatedProductsMap((prev) => {
+        const updated = { ...prev };
+        updated[product._id] = {
+          product: product, // Store product data
+          timestamp: Date.now() // Track when this update happened
+        };
+        console.log(`✅ [DROPDOWN-SYNC] ${product.name} - Price: ${product.price}`);
+        return updated;
+      });
+    };
+
+    window.addEventListener('productUpdated', handleProductUpdatedDirect);
+    return () => window.removeEventListener('productUpdated', handleProductUpdatedDirect);
+  }, []);
+
+  // ✅ Auto-cleanup: Remove expired entries from merge map every 30 seconds
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      setUpdatedProductsMap((prev) => {
+        const cleaned = {};
+        const now = Date.now();
+        
+        // Keep only entries that are still valid (< 30s old)
+        Object.entries(prev).forEach(([id, entry]) => {
+          if (entry.timestamp && now - entry.timestamp < 30000) {
+            cleaned[id] = entry;
+          }
+        });
+        
+        const removedCount = Object.keys(prev).length - Object.keys(cleaned).length;
+        if (removedCount > 0) {
+          console.log(`🧹 [AUTO-CLEANUP] Removed ${removedCount} expired product entries`);
+        }
+        
+        return cleaned;
+      });
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   // 🔴 P3: Listen for product updates from Product modal and refresh search results AND items in form
   useEffect(() => {
@@ -137,13 +204,11 @@ const GrnForm = () => {
         console.warn(`⚠️ [EMPTY] formData.items is empty or undefined`);
       }
       
-      // ✅ ASYNC: Clear search cache in background (non-blocking)
+      // ✅ SYNC: Only update form items, don't mess with search refresh
+      // (search dropdown is handled by the first listener via merge)
+      // Just log for debugging
       if (itemSearch && itemSearch.trim()) {
-        Promise.resolve().then(() => {
-          clearCache();
-          const elapsed = (performance.now() - syncStartTime).toFixed(1);
-          console.log(`🔄 [SYNC-BG] Cache cleared in ${elapsed}ms`);
-        });
+        console.log(`✅ [FORM-UPDATE] Product updated, items synced in form`);
       }
     };
 
@@ -945,13 +1010,13 @@ const GrnForm = () => {
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* HEADER - Fixed at top */}
-      <div className="flex-shrink-0 bg-white text-gray-900 px-6 py-4 shadow-lg z-10">
+      <div className="flex-shrink-0 bg-white text-gray-900 px-3 py-2 shadow-md z-10">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-lg font-bold text-gray-900">
               📦 Good Receipt Note (GRN)
             </h1>
-            <p className="text-sm text-gray-600 mt-0.5">
+            <p className="text-xs text-gray-600 mt-0.5">
               Manage purchase receipts and inventory inbound
             </p>
           </div>
@@ -960,20 +1025,20 @@ const GrnForm = () => {
               resetForm();
               setShowNewGrnModal(true);
             }}
-            className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition font-medium text-sm"
+            className="flex items-center gap-1 bg-green-600 text-white px-2 py-1 rounded text-sm hover:bg-green-700 transition font-medium"
           >
-            <Plus size={16} /> New GRN
+            <Plus size={12} /> New GRN
           </button>
         </div>
       </div>
 
       {/* CONTENT - Scrollable */}
-      <div className="flex-1 flex flex-col p-4 min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col p-2 min-h-0 overflow-hidden">
         {/* Search & Filters Bar */}
-        <div className="flex-shrink-0 flex flex-col lg:flex-row gap-2 mb-2 items-stretch lg:items-center lg:justify-between">
+        <div className="flex-shrink-0 flex flex-col lg:flex-row gap-1.5 mb-1.5 items-stretch lg:items-center lg:justify-between">
           {/* Search Input */}
-          <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-2 bg-white h-8 w-64">
-            <Search size={14} className="flex-shrink-0 text-gray-500" />
+          <div className="flex items-center gap-1 border border-gray-300 rounded px-1.5 bg-white h-7 w-64">
+            <Search size={12} className="flex-shrink-0 text-gray-500" />
             <input
               type="text"
               placeholder="Search GRN, invoice, vendor..."
@@ -984,7 +1049,7 @@ const GrnForm = () => {
             {grnSearch && (
               <button
                 onClick={() => setGrnSearch("")}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 hover:text-gray-700 text-xs"
               >
                 ✕
               </button>
@@ -993,7 +1058,7 @@ const GrnForm = () => {
 
           {/* Status Filter */}
           <select
-            className="border border-gray-300 rounded-lg px-3 text-xs bg-white flex-shrink-0 h-9"
+            className="border border-gray-300 rounded px-2 text-xs bg-white flex-shrink-0 h-7"
             value={grnStatusFilter}
             onChange={(e) => setGrnStatusFilter(e.target.value)}
           >
@@ -1219,11 +1284,11 @@ const GrnForm = () => {
 
               {/* Item Search & Barcode Section - Hidden in View Mode */}
               {!isViewMode && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-shrink-0 pb-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 flex-shrink-0 pb-1.5">
                 {/* Item Search */}
                 <GrnItemSearch
                   itemSearch={itemSearch}
-                  searchResults={searchResults}
+                  searchResults={mergedSearchResults}
                   searchLoading={searchLoading}
                   onSearch={setItemSearch}
                   onSelectItem={handleItemSelected}
@@ -1293,23 +1358,23 @@ const GrnForm = () => {
             </div>
 
             {/* Footer - Fixed at Bottom */}
-            <div className="flex flex-col gap-1 p-2 border-t bg-gray-50 flex-shrink-0">
+            <div className="flex flex-col gap-0.5 p-1.5 border-t bg-gray-50 flex-shrink-0">
               {/* Summary Row 1 - Qty through Net Total */}
-              <div className="flex items-center justify-between pr-3 gap-5 text-sm">
+              <div className="flex items-center justify-between pr-2 gap-2 text-xs">
                 {/* 1. Total Qty */}
-                <div className="flex items-center justify-between gap-0.5 w-32 bg-white px-1.5 py-0.5 rounded border border-gray-200">
-                  <span className="font-semibold">Qty:</span>
-                  <span className="font-bold text-blue-600 ">{grnTotals.totalQty}</span>
+                <div className="flex items-center justify-between gap-0.5 w-24 bg-white px-1 py-0.5 rounded border border-gray-200">
+                  <span className="font-semibold text-xs">Qty:</span>
+                  <span className="font-bold text-blue-600 text-xs">{grnTotals.totalQty}</span>
                 </div>
 
                 {/* 2. Sub Total */}
-                <div className="flex items-center justify-between w-40  gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                <div className="flex items-center justify-between w-32 gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
                   <span className="font-semibold">Subtotal:</span>
                   <span className="font-bold text-blue-600">{formatNumber(grnTotals.totalSubtotal || 0)}</span>
                 </div>
 
                 {/* 3. Discount Amount */}
-                <div className="flex items-center w-64 justify-between gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                <div className="flex items-center w-56 justify-between gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
                   <span className="font-semibold">Disc Amt :</span>
                   <input
                     type="number"
@@ -1326,12 +1391,12 @@ const GrnForm = () => {
                       }));
                     }}
                     placeholder="0.00"
-                    className="w-20 px-0.5 py-0.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                    className="w-16 px-0.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
                   />
                 </div>
 
                 {/* 4. Discount Percentage */}
-                <div className="flex items-center w-40 justify-between gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                <div className="flex items-center w-32 justify-between gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
                   <span className="font-semibold">Disc % :</span>
                   <input
                     type="number"
@@ -1374,16 +1439,11 @@ const GrnForm = () => {
 
               {/* Shipper Selection - Right Aligned */}
 
-              {/* Summary Row 2 - Shipping, Final Total, Shipper Selection */}
-              <div className="flex  grid grid-cols-3 gap-1.5 text-sm">
-
-
-                <div>
-
-
-
-                   {vendors && vendors.length > 0 && (
-                  <div className="flex items-center gap-1 ml-auto">
+              {/* Summary Row 2 - Shipping, FOC Items, Final Total */}
+              <div className="flex items-center justify-between pr-2 gap-2 text-xs">
+                {/* 1. Shipper Selection */}
+                {vendors && vendors.length > 0 && (
+                  <div className="flex items-center gap-1">
                     <select
                       value={formData?.shipperId || ""}
                       onChange={(e) => {
@@ -1394,7 +1454,7 @@ const GrnForm = () => {
                           shipperName: selectedShipper?.name || ""
                         }));
                       }}
-                      className="px-1 py-0.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="h-6 px-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">📦 Shipper</option>
                       {vendors.filter(v => v.isShipper === true).map(vendor => (
@@ -1402,31 +1462,14 @@ const GrnForm = () => {
                       ))}
                     </select>
                     {formData.shipperName && (
-                      <span className="text-sm bg-blue-100 px-1.5 py-0.5 rounded font-semibold">✓ {formData.shipperName}</span>
+                      <span className="text-xs bg-blue-100 px-1 py-0.5 rounded font-semibold">✓ {formData.shipperName}</span>
                     )}
                   </div>
                 )}
 
-
-
-                </div>
-        
-
-
-                 
-
-
-                   <div  className="flex justify-between gap-1.5    ">
-
-
-
-
-
-
-                    {/* 8. Shipping Amount */}
-                <div className="flex items-center   justify-between gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
-                 <div>
- <span className="font-semibold">Shipping Cost :</span>
+                {/* 2. Shipping Cost */}
+                <div className="flex items-center w-40 justify-between gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
+                  <span className="font-semibold">Shipping:</span>
                   <input
                     type="number"
                     min="0"
@@ -1438,53 +1481,27 @@ const GrnForm = () => {
                         shippingCost: parseFloat(e.target.value) || 0,
                       }))
                     }
-                    className="w-20 px-0.5 py-0.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                    className="w-16 px-0.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
                   />
-
-                 </div>
-                  <div>
-
-{/* FOC Items Count Badge */}
-                  {getTotalFocItems() > 0 && (
-                    <div className="flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      <span className="text-xs font-semibold text-blue-700">💙 {getTotalFocItems()} FOC Items</span>
-                    </div>
-                  )}
-
-                  </div>
                 </div>
 
-                
-
-
-
-
-
-
-
-                   </div>
-
-
-
-
-
-
-                <div className="flex  gap-1.5 justify-end items-center">
-                  
-
-                  <div className="flex  gap-1.5 justify-end pr-3">
-                    {/* 9. Final Total (Grand Total) */}
-                    <div className="flex items-center w-48 justify-between gap-0.5 bg-green-200 px-2 py-0.5 rounded border border-green-400">
-                      <span className="font-semibold">Final Total:</span>
-                      <span className="font-bold text-green-700 text-sm">{formatNumber(getFinalTotal())}</span>
-                    </div>
+                {/* 3. FOC Items Count Badge */}
+                {getTotalFocItems() > 0 && (
+                  <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 text-xs">
+                    <span className="font-semibold text-blue-700">💙 {getTotalFocItems()} FOC Items</span>
                   </div>
+                )}
+
+                {/* 4. Final Total (Grand Total) */}
+                <div className="flex-1 flex items-center justify-end gap-0.5 bg-green-200 px-1 py-0.5 rounded border border-green-400 text-xs">
+                  <span className="font-semibold">Final Total:</span>
+                  <span className="font-bold text-green-700 text-sm">{formatNumber(getFinalTotal())}</span>
                 </div>
               </div>
               
               {/* Action Buttons Row - Hidden in View Mode */}
               {!isViewMode && (
-              <div className="flex gap-3 justify-end pr-3">
+              <div className="flex gap-2 justify-end pr-2 pb-1">
                 
                 <button
                   onClick={() => {
@@ -1528,7 +1545,7 @@ const GrnForm = () => {
                   }}
                   className="px-2 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 font-semibold transition"
                 >
-                  💾   Save Draft 
+                  💾 Draft
                 </button>
                 <button
                   onClick={() => {
@@ -1572,16 +1589,16 @@ const GrnForm = () => {
                   }}
                   className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 font-semibold transition"
                 >
-                  ✓ Post GRN
+                  ✓ Post
                 </button>
               </div>
               )}
 
               {/* View Mode Info */}
               {isViewMode && (
-                <div className="flex gap-3 justify-end pr-3">
-                  <div className="px-3 py-2 bg-blue-50 border border-blue-300 rounded text-xs text-blue-700 font-medium">
-                    📖 Viewing GRN in read-only mode
+                <div className="flex gap-1.5 justify-end pr-2 pb-1">
+                  <div className="px-2 py-1 bg-blue-50 border border-blue-300 rounded text-xs text-blue-700 font-medium">
+                    📖 View Mode
                   </div>
                   <button
                     onClick={async () => {
@@ -1589,7 +1606,7 @@ const GrnForm = () => {
                       setIsViewMode(false);
                       await resetForm();
                     }}
-                    className="px-3 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 font-semibold transition"
+                    className="px-2 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600 font-semibold transition"
                   >
                     Close
                   </button>

@@ -3,7 +3,6 @@
  * Manages item CRUD operations and calculations
  */
 import { useCallback } from "react";
-import { showToast } from "../components/shared/AnimatedCenteredToast.jsx";
 import { calculateItemCost, mapProductToGrnItem } from "../utils/grnCalculations";
 
 export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null) => {
@@ -41,7 +40,6 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
         );
 
         let updatedItems;
-        let message;
 
         if (existingItemIndex !== -1) {
           // ✅ Product exists - increase quantity instead of adding duplicate
@@ -57,17 +55,14 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
             }
             return item;
           });
-          message = `Quantity increased for ${newItem.productName}`;
           console.log("📈 Quantity increased for existing item:", newItem.productName);
         } else {
           // ✅ New product - add as new line
           updatedItems = [...prev.items, newItem];
-          message = `${newItem.productName} added to GRN`;
           console.log("✨ New item added to GRN:", newItem.productName);
         }
 
         console.log("📊 GRN items updated - Total items:", updatedItems.length);
-        showToast('success', message);
         
         return {
           ...prev,
@@ -111,7 +106,6 @@ export const useGrnItemManagement = (formData, setFormData, unitTypesMap = null)
         console.log("🗑️ Item removed. Remaining items:", updatedItems.length);
         return { ...prev, items: updatedItems };
       });
-      showToast('success', "Item removed from GRN");
     },
     [setFormData],
   );

@@ -221,17 +221,17 @@ const Grouping = () => {
   );
 
   return (
-    <div className="p-4 lg:p-6 w-full flex flex-col min-h-[calc(100vh-120px)] pb-6">
+    <div className="p-2 lg:p-3 w-full flex flex-col min-h-[calc(100vh-120px)] pb-3">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 gap-4">
-        <h1 className="text-2xl lg:text-3xl font-bold">Product Grouping</h1>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-3 gap-2">
+        <h1 className="text-lg lg:text-xl font-bold">Product Grouping</h1>
 
         <button
           onClick={openAddModal}
           disabled={loading}
-          className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition w-full lg:w-auto justify-center lg:justify-start disabled:opacity-50"
+          className="flex items-center gap-2 bg-gray-900 text-white px-3 py-1.5 rounded text-sm hover:bg-gray-800 transition w-full lg:w-auto justify-center lg:justify-start disabled:opacity-50"
         >
-          <Plus size={18} /> Add Grouping
+          <Plus size={14} /> Add Grouping
         </button>
       </div>
 
@@ -247,12 +247,12 @@ const Grouping = () => {
       )}
 
       {/* Search */}
-      <div className="flex items-center gap-3 mb-6 border rounded-lg px-3 py-2">
-        <Search size={18} className="flex-shrink-0" />
+      <div className="flex items-center gap-2 mb-3 border rounded px-2 py-1">
+        <Search size={14} className="flex-shrink-0" />
         <input
           type="text"
           placeholder="Search grouping name or description..."
-          className="border-0 p-0 outline-none w-full text-sm"
+          className="border-0 p-0 outline-none w-full text-xs"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -267,8 +267,8 @@ const Grouping = () => {
 
       {/* Hierarchical View */}
       {!loading || groupings.length > 0 ? (
-        <div className="border border-gray-200 rounded-lg overflow-hidden flex-grow flex flex-col">
-          <div className="overflow-y-auto p-4">
+        <div className="border border-gray-200 rounded overflow-hidden flex-grow flex flex-col">
+          <div className="overflow-y-auto p-2">
             {departments.length === 0 ? (
               <p className="text-gray-500 text-center py-8">
                 No groupings found. Create a new one to get started!
@@ -280,15 +280,15 @@ const Grouping = () => {
                     filteredGroupings.some((fg) => fg._id === d._id)
                   )
                   .map((dept) => (
-                    <div key={dept._id} className="border rounded-lg overflow-hidden">
+                    <div key={dept._id} className="border rounded overflow-hidden">
                       {/* Department */}
-                      <div className="bg-gray-50 p-4 flex items-center justify-between hover:bg-gray-100 transition">
+                      <div className="bg-gray-50 p-2 flex items-center justify-between hover:bg-gray-100 transition">
                         <div
-                          className="flex items-center gap-2 flex-grow cursor-pointer"
+                          className="flex items-center gap-1 flex-grow cursor-pointer"
                           onClick={() => toggleDepartment(dept._id)}
                         >
                           <ChevronRight
-                            size={18}
+                            size={14}
                             className={`transform transition ${
                               expandedDepartments.has(dept._id)
                                 ? "rotate-90"
@@ -296,7 +296,7 @@ const Grouping = () => {
                             }`}
                           />
                           <div>
-                            <p className="font-semibold text-gray-900">
+                            <p className="font-semibold text-gray-900 text-xs">
                               {dept.name}
                             </p>
                             {dept.description && (
@@ -308,22 +308,22 @@ const Grouping = () => {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex gap-2 ml-4">
+                        <div className="flex gap-1 ml-2">
                           <button
                             onClick={() => handleEdit(dept)}
                             disabled={loading}
-                            className="text-blue-600 hover:bg-blue-50 p-2 rounded disabled:opacity-50"
+                            className="text-blue-600 hover:bg-blue-50 p-1 rounded disabled:opacity-50"
                             title="Edit"
                           >
-                            <Edit2 size={16} />
+                            <Edit2 size={12} />
                           </button>
                           <button
                             onClick={() => handleDelete(dept._id)}
                             disabled={loading}
-                            className="text-red-600 hover:bg-red-50 p-2 rounded disabled:opacity-50"
+                            className="text-red-600 hover:bg-red-50 p-1 rounded disabled:opacity-50"
                             title="Delete"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={12} />
                           </button>
                         </div>
                       </div>
@@ -332,7 +332,7 @@ const Grouping = () => {
                       {expandedDepartments.has(dept._id) && (
                         <div className="bg-white border-t">
                           {getSubDepartmentsForParent(dept._id).length === 0 ? (
-                            <p className="p-4 text-gray-500 text-sm italic">
+                            <p className="p-2 text-gray-500 text-xs italic">
                               No subdepartments
                             </p>
                           ) : (
@@ -348,8 +348,8 @@ const Grouping = () => {
                                   return (
                                     <div key={subDept._id}>
                                       {/* Subdepartment Row */}
-                                      <div className="p-4 flex items-center justify-between hover:bg-gray-50 transition">
-                                        <div className="flex items-center gap-2 flex-grow">
+                                      <div className="p-2 flex items-center justify-between hover:bg-gray-50 transition">
+                                        <div className="flex items-center gap-1 flex-grow">
                                           {brands.length > 0 && (
                                             <button
                                               onClick={() => toggleSubdepartment(subDept._id)}
@@ -357,7 +357,7 @@ const Grouping = () => {
                                               title="Toggle brands"
                                             >
                                               <ChevronRight
-                                                size={16}
+                                                size={12}
                                                 className={`transform transition ${
                                                   expandedSubdepartments.has(subDept._id)
                                                     ? "rotate-90"
@@ -366,9 +366,9 @@ const Grouping = () => {
                                               />
                                             </button>
                                           )}
-                                          {brands.length === 0 && <div className="w-4" />}
-                                          <div className="ml-4">
-                                            <p className="font-medium text-gray-800">
+                                          {brands.length === 0 && <div className="w-3" />}
+                                          <div className="ml-2">
+                                            <p className="font-medium text-gray-800 text-xs">
                                               → {subDept.name}
                                             </p>
                                             {subDept.description && (
@@ -380,36 +380,36 @@ const Grouping = () => {
                                         </div>
 
                                         {/* Actions */}
-                                        <div className="flex gap-2">
+                                        <div className="flex gap-1">
                                           <button
                                             onClick={() => handleEdit(subDept)}
                                             disabled={loading}
-                                            className="text-blue-600 hover:bg-blue-50 p-2 rounded disabled:opacity-50"
+                                            className="text-blue-600 hover:bg-blue-50 p-1 rounded disabled:opacity-50"
                                             title="Edit"
                                           >
-                                            <Edit2 size={16} />
+                                            <Edit2 size={12} />
                                           </button>
                                           <button
                                             onClick={() => handleDelete(subDept._id)}
                                             disabled={loading}
-                                            className="text-red-600 hover:bg-red-50 p-2 rounded disabled:opacity-50"
+                                            className="text-red-600 hover:bg-red-50 p-1 rounded disabled:opacity-50"
                                             title="Delete"
                                           >
-                                            <Trash2 size={16} />
+                                            <Trash2 size={12} />
                                           </button>
                                         </div>
                                       </div>
 
                                       {/* Brands */}
                                       {expandedSubdepartments.has(subDept._id) && brands.length > 0 && (
-                                        <div className="bg-gray-50 border-t divide-y">
+                                        <div className="bg-gray-50 border-t divide-y text-xs">
                                           {brands.map((brand) => (
                                             <div
                                               key={brand._id}
-                                              className="p-4 flex items-center justify-between hover:bg-gray-100 transition"
+                                              className="p-2 flex items-center justify-between hover:bg-gray-100 transition"
                                             >
-                                              <div className="ml-16">
-                                                <p className="font-medium text-gray-700">
+                                              <div className="ml-8">
+                                                <p className="font-medium text-gray-700 text-xs">
                                                   ├─ {brand.name}
                                                 </p>
                                                 {brand.description && (
@@ -420,22 +420,22 @@ const Grouping = () => {
                                               </div>
 
                                               {/* Actions */}
-                                              <div className="flex gap-2">
+                                              <div className="flex gap-1">
                                                 <button
                                                   onClick={() => handleEdit(brand)}
                                                   disabled={loading}
-                                                  className="text-blue-600 hover:bg-blue-50 p-2 rounded disabled:opacity-50"
+                                                  className="text-blue-600 hover:bg-blue-50 p-1 rounded disabled:opacity-50"
                                                   title="Edit"
                                                 >
-                                                  <Edit2 size={16} />
+                                                  <Edit2 size={12} />
                                                 </button>
                                                 <button
                                                   onClick={() => handleDelete(brand._id)}
                                                   disabled={loading}
-                                                  className="text-red-600 hover:bg-red-50 p-2 rounded disabled:opacity-50"
+                                                  className="text-red-600 hover:bg-red-50 p-1 rounded disabled:opacity-50"
                                                   title="Delete"
                                                 >
-                                                  <Trash2 size={16} />
+                                                  <Trash2 size={12} />
                                                 </button>
                                               </div>
                                             </div>
@@ -459,20 +459,20 @@ const Grouping = () => {
 
       {/* Modal */}
       <Modal isOpen={isModalOpen} onClose={closeModal} draggable={true}>
-        <h2 className="text-lg lg:text-xl font-semibold mb-4">
+        <h2 className="text-sm lg:text-base font-semibold mb-3">
           {isEdit ? "Edit Grouping" : "Add New Grouping"}
         </h2>
 
-        <div className="flex flex-col gap-4 max-h-96 overflow-y-auto">
+        <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
           {/* Name */}
           <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">
+            <label className="text-xs font-medium text-gray-700 block mb-0.5">
               Name *
             </label>
             <input
               type="text"
               placeholder="Enter grouping name (e.g., Electronics, Clothing)"
-              className={`w-full border p-2 rounded text-sm ${
+              className={`w-full border p-1.5 rounded text-xs ${
                 errors.name ? "border-red-500 bg-red-50" : ""
               }`}
               value={newGrouping.name}
@@ -491,13 +491,13 @@ const Grouping = () => {
 
           {/* Description */}
           <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">
+            <label className="text-xs font-medium text-gray-700 block mb-0.5">
               Description
             </label>
             <textarea
               placeholder="Enter description..."
-              className="w-full border p-2 rounded text-sm resize-none"
-              rows="3"
+              className="w-full border p-1.5 rounded text-xs resize-none"
+              rows="2"
               value={newGrouping.description}
               onChange={(e) =>
                 setNewGrouping({
@@ -511,11 +511,11 @@ const Grouping = () => {
 
           {/* Parent (Optional) - Backend auto-calculates level based on parentId */}
           <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">
+            <label className="text-xs font-medium text-gray-700 block mb-0.5">
               Parent Grouping (Optional)
             </label>
             <select
-              className={`w-full border p-2 rounded text-sm ${
+              className={`w-full border p-1.5 rounded text-xs ${
                 errors.parentId ? "border-red-500 bg-red-50" : ""
               }`}
               value={newGrouping.parentId}
@@ -545,18 +545,18 @@ const Grouping = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-2 mt-2">
             <button
               onClick={handleSaveGrouping}
               disabled={loading}
-              className="flex-1 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm lg:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Processing..." : isEdit ? "Update Grouping" : "Save Grouping"}
             </button>
             <button
               onClick={closeModal}
               disabled={loading}
-              className="flex-1 bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 text-sm lg:text-base disabled:opacity-50"
+              className="flex-1 bg-gray-300 text-gray-800 px-2 py-1 rounded hover:bg-gray-400 text-xs disabled:opacity-50"
             >
               Cancel
             </button>
