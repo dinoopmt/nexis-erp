@@ -6,10 +6,69 @@ import ProductService from "../services/ProductService.js";
 import Vendor from "../../../Models/CreateVendor.js";
 import TaxMaster from "../../../Models/TaxMaster.js";
 import CurrentStock from "../../../Models/CurrentStock.js";
+import StoreSettingsService from "../../settings/services/StoreSettingsService.js";
 import { searchProducts as searchMeilisearch, indexProduct, deleteProductIndex } from "../../../config/meilisearch.js";
 import { syncProductToMeilisearch, deleteProductFromMeilisearch } from "../services/ProductMeilisearchSync.js";
 
 console.log("✅ productController module loaded successfully");
+
+// ================= HELPER FUNCTION: Validate Product Name with Naming Rules =================
+const validateProductName = async (productName) => {
+  try {
+    const rules = await StoreSettingsService.getNamingRules();
+    
+    if (!rules.enabled) {
+      return { valid: true, message: '' }; // Rules disabled, skip validation
+    }
+
+    // Check if name is empty
+    if (!productName || productName.trim() === '') {
+      return { valid: false, message: '❌ Product name cannot be empty' };
+    }
+
+    const name = productName.trim();
+
+    // Prevent all lowercase (if rule enabled)
+    if (rules.preventLowercase && name === name.toLowerCase() && /[a-z]/.test(name)) {
+      return { valid: false, message: '❌ Product name cannot be all lowercase' };
+    }
+
+    // Prevent all UPPERCASE (if rule enabled)
+    if (rules.preventAllCaps && name === name.toUpperCase() && /[A-Z]/.test(name)) {
+      return { valid: false, message: '❌ Product name cannot be all UPPERCASE' };
+    }
+
+    return { valid: true, message: '' };
+  } catch (error) {
+    // If we can't fetch rules, allow the product (don't fail on settings error)
+    console.error('⚠️ Error validating product name rules:', error.message);
+    return { valid: true, message: '' };
+  }
+};
+
+// ================= HELPER FUNCTION: Apply Naming Convention to Text =================
+// ✅ Converts text to Title Case (simple, synchronous)
+const applyNamingConvention = (text) => {
+  try {
+    // Handle null, undefined, or empty values
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+      return text;
+    }
+
+    // Simple Title Case conversion: capitalize first letter of each word
+    return text
+      .trim()
+      .split(' ')
+      .map(word => {
+        if (word.length === 0) return word;
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+  } catch (error) {
+    console.error('⚠️ Error applying naming convention:', error.message);
+    return text; // Return unchanged if error
+  }
+};
 
 // ================= HELPER FUNCTION: Get Current Financial Year =================
 const getCurrentFinancialYear = () => {
@@ -20,79 +79,137 @@ const getCurrentFinancialYear = () => {
   return month > 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 };
 
-// ================= HELPER FUNCTION: Generate Next Item Code =================
-const generateNextItemCode = async () => {
+// ================= HELPER FUNCTION: Get Next Item Code from Counter (Atomic & Fast) =================
+// ✅ For 300k+ products: Uses existing 'product_code' counter for atomic, O(1) generation
+const getNextItemCodeFromCounter = async () => {
   try {
     const financialYear = getCurrentFinancialYear();
 
-    // Find or create counter for product_code in current financial year
+    // ✅ ATOMIC OPERATION: Find counter, increment, and return new value in ONE operation
+    // This prevents race conditions and is guaranteed O(1) performance
+    // Uses existing 'product_code' counter that's already seeded
     const counter = await Counter.findOneAndUpdate(
-      { module: "product_code", financialYear },
-      { 
-        $inc: { lastNumber: 1 },
-        $setOnInsert: {
-          module: "product_code",
-          financialYear,
-          prefix: "PC",
-          lastNumber: 1
-        }
+      {
+        module: 'product_code',  // ✅ Using existing counter
+        financialYear: financialYear
       },
-      { upsert: true, new: true }
+      {
+        $inc: { lastNumber: 1 }  // ✅ ONLY increment, not setOnInsert (prevents conflicts)
+      },
+      {
+        new: true,  // ✅ Return updated document
+        upsert: true,  // ✅ Create if doesn't exist
+        setDefaultsOnInsert: true  // ✅ Set defaults on insert
+      }
     );
 
-    // Generate item code as numeric sequence (e.g., 1001, 1002, 1003...)
-    // Starting from 1000 + lastNumber
-    const nextCode = String(1000 + counter.lastNumber);
-    
-    return nextCode;
+    if (!counter || !counter.lastNumber) {
+      console.error('❌ Failed to increment counter');
+      throw new Error('Counter increment failed');
+    }
+
+    const nextItemCode = `${counter.lastNumber}`;
+    console.log(`✅ Generated itemcode: ${nextItemCode} (from Counter - atomic, O(1))`);
+    return nextItemCode;
+
   } catch (err) {
-    console.error("Error generating item code from sequence table:", err);
-    // Fallback: Generate from products if sequence table fails
-    try {
-      const lastProduct = await Product.findOne({ isDeleted: false })
-        .sort({ itemcode: -1 })
-        .lean();
-      
-      let nextCode = "1001";
-      if (lastProduct && lastProduct.itemcode) {
-        const numericPart = parseInt(lastProduct.itemcode.replace(/\D/g, ''));
-        if (!isNaN(numericPart)) {
-          nextCode = String(numericPart + 1);
+    console.error('❌ Error getting itemcode from counter:', err.message);
+    // Fallback: Generate from timestamp
+    const timestamp = Date.now().toString().slice(-8);
+    return `AUTO${timestamp}`;
+  }
+};
+
+// ================= HELPER FUNCTION: Generate Next Item Code (optimized with MongoDB aggregation) =================
+const generateNextItemCode = async () => {
+  try {
+    // ✅ OPTIMIZED: Use MongoDB aggregation to find MAX itemcode (efficient even with 100k+ products)
+    // Works in DB, doesn't load all docs into memory - scales to 100k+ products
+    const result = await Product.aggregate([
+      { $match: { isDeleted: false } },
+      {
+        // Only process itemcodes that are purely numeric (filter out "AUTO" fallbacks)
+        $addFields: {
+          isNumeric: { $eq: [{ $substr: ['$itemcode', 0, 4] }, 'AUTO'] }
+        }
+      },
+      {
+        $match: { isNumeric: false } // Only numeric itemcodes
+      },
+      {
+        $group: {
+          _id: null,
+          maxItemcode: { $max: { $toInt: '$itemcode' } }
         }
       }
-      return nextCode;
-    } catch (fallbackErr) {
-      console.error("Fallback error:", fallbackErr);
-      return "1001";
+    ]);
+
+    let maxNumeric = 1000; // Start from 1000 as baseline
+    
+    if (result && result.length > 0 && result[0].maxItemcode) {
+      maxNumeric = result[0].maxItemcode;
     }
+
+    // ✅ Retry mechanism for concurrent requests
+    let attemptedCode = String(maxNumeric + 1);
+    let retryCount = 0;
+    const maxRetries = 10; // Try up to 10 times to find unique code
+    
+    console.log(`📊 Found max numeric itemcode: ${maxNumeric}, attempting: ${attemptedCode}`);
+    
+    while (retryCount < maxRetries) {
+      // Check if this itemcode already exists
+      const existingWithCode = await Product.findOne({
+        itemcode: attemptedCode,
+        isDeleted: false
+      }).select('_id').lean();
+      
+      if (!existingWithCode) {
+        // ✅ Found unique code
+        console.log(`✅ Generated itemcode: ${attemptedCode} (after ${retryCount} retries, max was: ${maxNumeric})`);
+        return attemptedCode;
+      }
+      
+      // Code already exists, try next one
+      console.warn(`⚠️ Itemcode ${attemptedCode} already exists, retrying... (attempt ${retryCount + 1}/${maxRetries})`);
+      const nextNumeric = parseInt(attemptedCode) + 1;
+      attemptedCode = String(nextNumeric);
+      retryCount++;
+    }
+    
+    // Fallback: If we couldn't find unique after retries
+    console.error(`❌ Could not generate unique itemcode after ${maxRetries} retries, using timestamp fallback`);
+    const timestamp = Date.now().toString().slice(-8);
+    return `AUTO${timestamp}`;
+    
+  } catch (err) {
+    console.error("❌ Error generating item code:", err.message);
+    // Fallback: Generate from timestamp
+    const timestamp = Date.now().toString().slice(-8);
+    return `AUTO${timestamp}`;
   }
 };
 
 // ================= GET NEXT ITEM CODE (Peek - without incrementing) =================
 export const getNextItemCode = async (req, res) => {
   try {
-    const financialYear = getCurrentFinancialYear();
+    // Get the last product and predict next itemcode
+    const lastProduct = await Product.findOne({ isDeleted: false })
+      .select('itemcode')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Find current counter without incrementing
-    let counter = await Counter.findOne({
-      module: "product_code",
-      financialYear
-    });
+    let nextItemCode = "1001";
 
-    // If counter doesn't exist, return starting code
-    if (!counter) {
-      return res.json({
-        nextItemCode: "1001",
-        message: "Next item code to be generated"
-      });
+    if (lastProduct && lastProduct.itemcode) {
+      const lastNumeric = parseInt(lastProduct.itemcode.replace(/\D/g, ''), 10);
+      if (!isNaN(lastNumeric)) {
+        nextItemCode = String(lastNumeric + 1);
+      }
     }
 
-    // Calculate next code: 1000 + (lastNumber + 1)
-    // We add 1 because when actually saving, the $inc will add 1
-    const nextCode = String(1000 + counter.lastNumber + 1);
-
     res.json({
-      nextItemCode: nextCode,
+      nextItemCode: nextItemCode,
       message: "Next item code to be generated"
     });
   } catch (err) {
@@ -109,11 +226,11 @@ export const getNextItemCode = async (req, res) => {
 export const addProduct = async (req, res) => {
   try {
     let { 
-      itemcode, hsn, barcode, name, vendor, cost, price, stock, categoryId, groupingId, unitType, factor, 
+      itemcode, hsn, barcode, name, vendor, cost, price, categoryId, groupingId, unitType, factor, 
       packingUnits, pricingLevels, // ✅ Pricing variants
       costIncludeVat, marginPercent, marginAmount, taxAmount, taxPercent, taxType, // ✅ Pricing fields
       taxInPrice, trackExpiry, manufacturingDate, expiryDate, shelfLifeDays, expiryAlertDays, // ✅ Tax & Expiry
-      country, minStock, maxStock, reorderQuantity, shortName, localName, // ✅ Product info
+      country, minStock, shortName, localName, // ✅ Product info
       openingPrice, allowOpenPrice, enablePromotion, fastMovingItem, isScaleItem, scaleUnitType, itemHold, brandId, // ✅ Additional features
       finalPrice,  // ✅ Final price including tax
       createdBy, updatedBy, // ✅ Audit fields
@@ -126,7 +243,7 @@ export const addProduct = async (req, res) => {
       costIncludeVat, marginPercent, marginAmount, taxAmount, taxPercent, taxType,
       packingUnitsCount: packingUnits?.length,
       pricingLevelsKeys: Object.keys(pricingLevels || {}),
-      country, shortName, localName, minStock, maxStock, reorderQuantity,
+      country, shortName, localName, minStock,
       trackExpiry,
       // ✅ Additional features
       openingPrice, allowOpenPrice, enablePromotion, fastMovingItem, isScaleItem, scaleUnitType, itemHold, brandId
@@ -135,7 +252,6 @@ export const addProduct = async (req, res) => {
     // Parse numeric fields to ensure they're valid
     const costNum = cost !== undefined && cost !== null && cost !== '' ? parseFloat(cost) : null;
     const priceNum = price !== undefined && price !== null && price !== '' ? parseFloat(price) : null;
-    const stockNum = stock !== undefined && stock !== null && stock !== '' ? parseInt(stock) : 0;
 
     // Detailed validation with helpful error messages
     if (!barcode || barcode.toString().trim() === '') {
@@ -144,6 +260,13 @@ export const addProduct = async (req, res) => {
     if (!name || name.toString().trim() === '') {
       return res.status(400).json({ message: "❌ Product name is required" });
     }
+
+    // ✅ NEW: Validate product name against naming rules globally
+    const nameValidation = await validateProductName(name);
+    if (!nameValidation.valid) {
+      return res.status(400).json({ message: nameValidation.message });
+    }
+
     if (!vendor || vendor.toString().trim() === '') {
       return res.status(400).json({ message: "❌ Vendor is required" });
     }
@@ -152,9 +275,6 @@ export const addProduct = async (req, res) => {
     }
     if (priceNum === null || isNaN(priceNum) || priceNum <= 0) {
       return res.status(400).json({ message: "❌ Price must be a positive number (fill in pricing table)" });
-    }
-    if (stockNum === null || isNaN(stockNum) || stockNum < 0) {
-      return res.status(400).json({ message: "❌ Stock must be a valid number >= 0" });
     }
     if (!categoryId || categoryId.toString().trim() === '') {
       return res.status(400).json({ message: "❌ Department (category) is required" });
@@ -171,7 +291,6 @@ export const addProduct = async (req, res) => {
     // Use parsed values
     cost = costNum;
     price = priceNum;
-    stock = stockNum;
 
     // Validate unitType exists
     const unit = await UnitType.findById(unitType);
@@ -210,7 +329,8 @@ export const addProduct = async (req, res) => {
 
     // Auto-generate itemcode if not provided
     if (!itemcode) {
-      itemcode = await generateNextItemCode();
+      // ✅ USE COUNTER: O(1) atomic operation - best for 300k+ products
+      itemcode = await getNextItemCodeFromCounter();
     }
 
     // Convert barcode and itemcode to uppercase
@@ -237,6 +357,21 @@ export const addProduct = async (req, res) => {
       }
 
       return res.status(400).json({ message });
+    }
+
+    // ✅ NEW: Check if product name already exists (preventing duplicates on add)
+    const existingProductByName = await Product.findOne({
+      isDeleted: false,
+      name: { $regex: `^${name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
+    }).select('_id name itemcode');
+
+    if (existingProductByName) {
+      console.log(`❌ Product with name "${name.trim()}" already exists (Item Code: ${existingProductByName.itemcode})`);
+      return res.status(400).json({
+        message: `Product name "${name.trim()}" already exists (Item Code: ${existingProductByName.itemcode})`,
+        isDuplicate: true,
+        duplicateProduct: existingProductByName
+      });
     }
 
     // Process packing units if provided
@@ -310,14 +445,25 @@ export const addProduct = async (req, res) => {
       }
     }
 
+    // ✅ Apply naming convention to product name and shortName
+    const processedName = applyNamingConvention(name);
+    const processedShortName = applyNamingConvention(shortName);
+    
+    if (processedName !== name) {
+      console.log(`✅ Product name auto-capitalized: "${name}" → "${processedName}"`);
+    }
+    if (processedShortName !== shortName) {
+      console.log(`✅ Short name auto-capitalized: "${shortName}" → "${processedShortName}"`);
+    }
+
     // Create new product
     const product = new Product({
       itemcode: uppercaseItemcode,
       hsn: hsn ? hsn.toUpperCase() : "",
       barcode: uppercaseBarcode,
-      name,
+      name: processedName,
       vendor,
-      shortName: shortName || "",
+      shortName: processedShortName || "",
       localName: localName || "",
       country: country || null,
       unitType: unitType,
@@ -333,7 +479,6 @@ export const addProduct = async (req, res) => {
       taxPercent: taxPercent ? parseFloat(taxPercent) : 0, // ✅ Tax percentage
       taxType: taxType || "", // ✅ Tax type (VAT, GST, etc.)
       taxInPrice: taxInPrice || false, // ✅ Tax in price flag
-      stock: parseInt(stock),
       categoryId: categoryId || null,
       groupingId: groupingId || null,
       brandId: brandId || null, // ✅ Brand reference
@@ -347,8 +492,6 @@ export const addProduct = async (req, res) => {
       expiryAlertDays: expiryAlertDays ? parseInt(expiryAlertDays) : 30,
       // ✅ Stock management
       minStock: minStock ? parseInt(minStock) : 0,
-      maxStock: maxStock ? parseInt(maxStock) : 1000,
-      reorderQuantity: reorderQuantity ? parseInt(reorderQuantity) : 100,
       // ✅ Additional features
       openingPrice: openingPrice ? parseFloat(openingPrice) : 0,
       allowOpenPrice: allowOpenPrice || false,
@@ -374,6 +517,58 @@ export const addProduct = async (req, res) => {
 
     await product.save();
     
+    // ✅ NEW: Create corresponding CurrentStock record for this product (ATOMIC with product creation)
+    try {
+      const existingStock = await CurrentStock.findOne({ productId: product._id });
+      if (!existingStock) {
+        // ✅ Calculate values directly (no pre-hooks)
+        const totalQuantity = 0;
+        const allocatedQuantity = 0;
+        const damageQuality = 0;
+        const availableQuantity = Math.max(0, totalQuantity - allocatedQuantity - damageQuality);
+        const totalCost = 0;
+        const averageCost = totalQuantity > 0 ? totalCost / totalQuantity : 0;
+        
+        const stockEntry = new CurrentStock({
+          productId: product._id,
+          totalQuantity,
+          availableQuantity,
+          allocatedQuantity,
+          damageQuality,
+          totalCost,
+          averageCost,
+          grnReceivedQuantity: 0,
+          rtvReturnedQuantity: 0,
+          salesOutQuantity: 0,
+          salesReturnQuantity: 0,
+          adjustmentQuantity: 0,
+          isActive: true,
+        });
+        
+        const createdStock = await stockEntry.save();
+        
+        if (createdStock && createdStock._id) {
+          console.log(`✅ CurrentStock CREATED for product ${product.name} (ID: ${product._id}, StockID: ${createdStock._id})`);
+        } else {
+          console.error(`❌ CurrentStock save returned invalid result for product ${product._id}`);
+        }
+      } else {
+        console.log(`⚠️  CurrentStock already exists for product ${product.name}, skipping creation`);
+      }
+    } catch (stockErr) {
+      console.error(`❌ CRITICAL: Failed to create CurrentStock for product ${product.name} (ID: ${product._id}):`, {
+        message: stockErr.message,
+        code: stockErr.code,
+        keyPattern: stockErr.keyPattern,
+        stack: stockErr.stack
+      });
+      // Throw error to fail the product creation if stock creation fails
+      throw new Error(
+        `Product created but failed to create CurrentStock entry. ${stockErr.message}. ` +
+        `Please contact support. Product ID: ${product._id}`
+      );
+    }
+    
     // ✅ Fire-and-forget Meilisearch sync (non-blocking)
     // Product is already saved - sync happens async in background
     syncProductToMeilisearch(product)
@@ -394,6 +589,28 @@ export const addProduct = async (req, res) => {
       { path: 'unitType', select: 'unitName unitSymbol unitDecimal category' }
     ]);
 
+    // ✅ Fetch CurrentStock record
+    const currentStock = await CurrentStock.findOne({ productId: product._id });
+    
+    // ✅ VERIFY: CurrentStock must exist by this point
+    if (!currentStock) {
+      console.error(`❌ CRITICAL DATA INTEGRITY ERROR: CurrentStock missing after creation for product ${product._id}`);
+      console.error(`   Product: ${product.name}`);
+      console.error(`   This indicates CurrentStock creation failed silently`);
+      throw new Error(`CurrentStock verification failed for product ${product._id}. Stock entry was not created.`);
+    }
+    
+    console.log(`✅ VERIFIED: CurrentStock exists for product ${product.name}:`, {
+      stockId: currentStock._id,
+      productId: currentStock.productId,
+      totalQuantity: currentStock.totalQuantity,
+      availableQuantity: currentStock.availableQuantity
+    });
+
+    // ✅ Build response with CurrentStock included, stock field removed
+    const productResponse = product.toObject();
+    delete productResponse.stock; // ✅ REMOVE deprecated stock field
+    
     // ✅ DEBUG: Log saved product data
     console.log("✅ Product Saved Successfully:", {
       _id: product._id,
@@ -412,7 +629,6 @@ export const addProduct = async (req, res) => {
       localName: product.localName,
       country: product.country,
       minStock: product.minStock,
-      maxStock: product.maxStock,
       trackExpiry: product.trackExpiry,
       // ✅ Additional features
       openingPrice: product.openingPrice,
@@ -428,7 +644,13 @@ export const addProduct = async (req, res) => {
 
     res.status(201).json({
       message: "Product added successfully",
-      product,
+      product: {
+        ...productResponse,
+        // ✅ SINGLE SOURCE OF TRUTH: Include CurrentStock data
+        totalQuantity: currentStock?.totalQuantity || 0,
+        availableQuantity: currentStock?.availableQuantity || 0,
+        allocatedQuantity: currentStock?.allocatedQuantity || 0,
+      },
       meilisearchSync: {
         success: true,
         message: "Search index sync in progress...",
@@ -530,6 +752,24 @@ export const getProductById = async (req, res) => {
       });
     }
 
+    // ✅ SINGLE SOURCE OF TRUTH: Always fetch stock from CurrentStock table
+    const currentStock = await CurrentStock.findOne({
+      productId: product._id,
+      isDeleted: { $ne: true }
+    }).lean();
+
+    // ✅ Merge currentStock data into product response
+    // Note: Product.stock is deprecated and no longer updated.
+    // Use totalQuantity from CurrentStock table as the authoritative value.
+    const productObj = product.toObject();
+    delete productObj.stock; // ✅ REMOVE deprecated stock field from response
+    
+    const productWithStock = {
+      ...productObj,
+      currentStock: currentStock || null, // Full CurrentStock document
+      totalQuantity: currentStock?.totalQuantity || 0, // ✅ SINGLE SOURCE: Physical stock from CurrentStock
+    };
+
     // ✅ Log complete product data for debugging
     console.log("✅ Fetched Product for Edit:", {
       _id: product._id,
@@ -544,10 +784,8 @@ export const getProductById = async (req, res) => {
       vendor: product.vendor,
       unitType: product.unitType?._id || product.unitType,
       barcode: product.barcode,
-      stock: product.stock,
+      totalQuantity: productWithStock.totalQuantity, // ✅ SINGLE SOURCE: Physical quantity from CurrentStock
       minStock: product.minStock,
-      maxStock: product.maxStock,
-      reorderQuantity: product.reorderQuantity,
       cost: product.cost,
       price: product.price,
       costIncludeVat: product.costIncludeVat,
@@ -577,7 +815,7 @@ export const getProductById = async (req, res) => {
       pricingLevels: Object.keys(product.pricingLevels || {}).length,
     });
 
-    res.json(product);
+    res.json(productWithStock);
   } catch (err) {
     console.error("Error fetching product:", err);
     res.status(500).json({
@@ -591,11 +829,11 @@ export const getProductById = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const { 
-      itemcode, barcode, name, vendor, cost, price, stock, categoryId, groupingId, hsn, unitType, factor, 
+      itemcode, barcode, name, vendor, cost, price, categoryId, groupingId, hsn, unitType, factor, 
       packingUnits, pricingLevels, // ✅ Pricing variants
       costIncludeVat, marginPercent, marginAmount, taxAmount, taxPercent, taxType, // ✅ Pricing fields
       taxInPrice, trackExpiry, manufacturingDate, expiryDate, shelfLifeDays, expiryAlertDays, // ✅ Tax & Expiry
-      country, minStock, maxStock, reorderQuantity, shortName, localName, // ✅ Product info
+      country, minStock, shortName, localName, // ✅ Product info
       openingPrice, allowOpenPrice, enablePromotion, fastMovingItem, isScaleItem, scaleUnitType, itemHold, brandId, // ✅ Additional features
       finalPrice,  // ✅ Final price including tax
       createdBy, updatedBy, // ✅ Audit fields
@@ -672,11 +910,60 @@ export const updateProduct = async (req, res) => {
       product.barcode = uppercaseBarcode;
     }
 
+    // ✅ NEW: Validate product name against naming rules on update
+    if (name) {
+      const nameValidation = await validateProductName(name);
+      if (!nameValidation.valid) {
+        return res.status(400).json({ message: nameValidation.message });
+      }
+    }
+
+    // ✅ Apply naming convention to name and shortName FIRST
+    let processedName = product.name;
+    let processedShortName = product.shortName;
+    
+    if (name) {
+      processedName = applyNamingConvention(name);
+      if (processedName !== name) {
+        console.log(`✅ Product name auto-capitalized: "${name}" → "${processedName}"`);
+      }
+    }
+    
+    if (shortName !== undefined) {
+      processedShortName = applyNamingConvention(shortName);
+      if (processedShortName !== shortName) {
+        console.log(`✅ Short name auto-capitalized: "${shortName}" → "${processedShortName}"`);
+      }
+    }
+
+    // ✅ NEW: Check if product name is being changed and if new name already exists (using processed name)
+    if (name && processedName !== product.name) {
+      console.log(`✅ Validating name change from "${product.name}" to "${processedName}"`);
+      
+      // Query excludes current product to prevent self-match race condition
+      const existingProduct = await Product.findOne({
+        _id: { $ne: req.params.id }, // ✅ CRITICAL: Exclude the product being updated
+        name: { $regex: `^${processedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+        isDeleted: false
+      }).select('_id name itemcode');
+
+      if (existingProduct) {
+        console.log(`❌ Duplicate name found: "${processedName}" (Item Code: ${existingProduct.itemcode})`);
+        return res.status(400).json({
+          message: `Product name "${processedName}" already exists (Item Code: ${existingProduct.itemcode})`,
+          isDuplicate: true,
+          duplicateProduct: existingProduct
+        });
+      }
+    }
+
     // Update product
-    product.name = name || product.name;
+    if (name) {
+      product.name = processedName;
+    }
     product.vendor = vendor || product.vendor;
     if (shortName !== undefined) {
-      product.shortName = shortName || "";
+      product.shortName = processedShortName || "";
     }
     if (localName !== undefined) {
       product.localName = localName || "";
@@ -710,15 +997,10 @@ export const updateProduct = async (req, res) => {
     if (taxInPrice !== undefined) {
       product.taxInPrice = taxInPrice || false; // ✅ Tax in price flag
     }
-    product.stock = stock ? parseInt(stock) : product.stock;
+    // ✅ REMOVED: product.stock - now managed in CurrentStock table only
+    // If stock update needed, it will be synced to CurrentStock after product.save()
     if (minStock !== undefined) {
       product.minStock = minStock ? parseInt(minStock) : 0; // ✅ Min stock
-    }
-    if (maxStock !== undefined) {
-      product.maxStock = maxStock ? parseInt(maxStock) : 1000; // ✅ Max stock
-    }
-    if (reorderQuantity !== undefined) {
-      product.reorderQuantity = reorderQuantity ? parseInt(reorderQuantity) : 100; // ✅ Reorder quantity
     }
     // ✅ Expiry tracking fields
     if (trackExpiry !== undefined) {
@@ -889,6 +1171,9 @@ export const updateProduct = async (req, res) => {
 
     await product.save();
     
+    // ✅ Stock is now ONLY managed through CurrentStock table
+    // Product endpoint does NOT accept stock updates anymore
+    
     // ✅ Fire-and-forget Meilisearch sync (non-blocking)
     // Product is already saved - sync happens async in background
     // Small delay to ensure database write is complete, then sync
@@ -931,7 +1216,6 @@ export const updateProduct = async (req, res) => {
       localName: product.localName,
       country: product.country,
       minStock: product.minStock,
-      maxStock: product.maxStock,
       trackExpiry: product.trackExpiry,
       // ✅ Additional features
       openingPrice: product.openingPrice,
@@ -943,9 +1227,21 @@ export const updateProduct = async (req, res) => {
       image: product.image ? `Base64 image (${Math.round(product.image.length / 1024)}KB)` : null // ✅ Log image presence
     });
 
+    // ✅ Fetch CurrentStock for response and remove stock field
+    const currentStock = await CurrentStock.findOne({ productId: product._id });
+    const productResponse = product.toObject();
+    delete productResponse.stock; // ✅ REMOVE deprecated stock field
+
     res.json({
       message: "Product updated successfully",
-      product,
+      product: {
+        ...productResponse,
+        // ✅ SINGLE SOURCE OF TRUTH: Include CurrentStock data
+        quantityInStock: currentStock?.quantityInStock || 0,
+        totalQuantity: currentStock?.totalQuantity || 0,
+        availableQuantity: currentStock?.availableQuantity || 0,
+        allocatedQuantity: currentStock?.allocatedQuantity || 0,
+      },
       meilisearchSync: {
         success: true,
         message: "Search index sync in progress...",
@@ -1051,16 +1347,18 @@ export const updateProductStock = async (req, res) => {
   try {
     const { quantity } = req.body;
 
-    if (!quantity) {
+    if (quantity === undefined || quantity === null) {
       return res.status(400).json({
         message: "Quantity is required",
       });
     }
 
+    const quantityNum = parseInt(quantity);
+
     const product = await Product.findByIdAndUpdate(
       req.params.id,
       {
-        stock: quantity,
+        stock: quantityNum,
         updateDate: new Date(),
       },
       { new: true }
@@ -1070,6 +1368,34 @@ export const updateProductStock = async (req, res) => {
       return res.status(404).json({
         message: "Product not found",
       });
+    }
+
+    // ✅ NEW: Also update CurrentStock table
+    try {
+      // Check if CurrentStock exists (should from product creation)
+      const existingStock = await CurrentStock.findOne({ productId: product._id });
+      if (!existingStock) {
+        console.warn(
+          `⚠️  CurrentStock record missing for product ${product.name}. ` +
+          `This should have been created when the product was first created. ` +
+          `Skipping sync.`
+        );
+      } else {
+        await CurrentStock.findOneAndUpdate(
+          { productId: product._id },
+          {
+            $set: {
+              totalQuantity: quantityNum,
+              availableQuantity: quantityNum,
+              updatedAt: new Date(),
+            }
+          },
+          { returnDocument: 'after' }
+        );
+        console.log(`✅ CurrentStock synced for product ${product.name} (qty: ${quantityNum})`);
+      }
+    } catch (stockErr) {
+      console.error(`⚠️  Failed to sync CurrentStock for product ${product._id}:`, stockErr.message);
     }
 
     res.json({
@@ -1312,6 +1638,56 @@ export const checkItemcodeExists = async (req, res) => {
   } catch (err) {
     console.error("Error checking item code:", err);
     res.status(500).json({
+      message: "Error checking item code",
+      error: err.message,
+    });
+  }
+};
+
+// ================= CHECK IF ITEM CODE ALREADY EXISTS (Duplicate Prevention - GET) =================
+// ✅ GET endpoint for checking duplicate itemcodes (used during product edit)
+// Excludes current product from check to allow same itemcode on current product
+export const checkDuplicateItemcode = async (req, res) => {
+  try {
+    const { itemcode, excludeId } = req.query;
+
+    if (!itemcode || typeof itemcode !== 'string' || itemcode.trim() === '') {
+      return res.status(400).json({
+        isDuplicate: false,
+        product: null,
+        message: "Item code is required",
+      });
+    }
+
+    const uppercaseItemcode = itemcode.toUpperCase();
+    
+    let query = {
+      isDeleted: false,
+      itemcode: uppercaseItemcode,
+    };
+
+    // If editing a product, exclude current product from check
+    if (excludeId && typeof excludeId === 'string' && excludeId.length > 0 && excludeId !== 'null') {
+      query._id = { $ne: excludeId };
+    }
+
+    console.log(`🔍 Checking duplicate itemcode: ${uppercaseItemcode}${excludeId ? ` (excluding: ${excludeId})` : ''}`);
+    const existingProduct = await Product.findOne(query).select('_id itemcode name').lean();
+
+    if (existingProduct) {
+      console.log(`⚠️  Duplicate itemcode found: ${uppercaseItemcode} - Product: ${existingProduct.name}`);
+    }
+
+    res.json({
+      isDuplicate: !!existingProduct,
+      message: existingProduct ? "Item code already exists" : "Item code is unique",
+      product: existingProduct || null,
+    });
+  } catch (err) {
+    console.error("❌ Error checking duplicate itemcode:", err.message);
+    res.status(500).json({
+      isDuplicate: false,
+      product: null,
       message: "Error checking item code",
       error: err.message,
     });

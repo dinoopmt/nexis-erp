@@ -81,21 +81,20 @@ class GRNStockUpdateService {
             continue;
           }
 
-          // 1. Update stock quantity
-          const stockUpdate = await this.updateProductStock(
-            product,
-            item,
-            grnData
-          );
-          results.processedItems.push(stockUpdate);
-          results.updatedProducts.push(product._id.toString());
-
+          // ✅ DEPRECATED: updateProductStock() - Now handled by updateCurrentStock()
+          // Previously tried to update product.quantityInStock (which doesn't exist on schema)
+          // All stock updates now go through CurrentStock collection (single source of truth)
+          
           // 1b. ✅ NEW: Update CurrentStock collection for real-time tracking
           console.log(`📊 About to call updateCurrentStock for ${product.itemcode}`);
           const currentStockUpdate = await this.updateCurrentStock(product, item, grnData);
           if (currentStockUpdate) {
             console.log(`✅ Adding to currentStockUpdates:`, currentStockUpdate);
             results.currentStockUpdates.push(currentStockUpdate);
+            
+            // ✅ Use CurrentStock update as processedItem (replaces old updateProductStock)
+            results.processedItems.push(currentStockUpdate);
+            results.updatedProducts.push(product._id.toString());
           } else {
             console.warn(`⚠️ currentStockUpdate was null for ${product.itemcode}`);
           }
@@ -725,11 +724,23 @@ class GRNStockUpdateService {
 
       console.log(`\n🔄 updateCurrentStock START:`, { productCode: product.itemcode, qty: quantityReceived, grn: grnData.grnNumber });
 
+      // ✅ CORRECT WORKFLOW: CurrentStock must already exist from product creation
+      // GRN only UPDATES existing records, never CREATE new ones
+      const existingStock = await CurrentStock.findOne({ productId: product._id });
+      if (!existingStock) {
+        throw new Error(
+          `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
+          `This should have been created when the product was first created. ` +
+          `Create current stock entry first, then perform GRN transactions.`
+        );
+      }
+
+      // ✅ UPDATE only (no upsert) - forward workflow: product creation → current stock creation → GRN updates
       const updatedStock = await CurrentStock.findOneAndUpdate(
         { productId: product._id },
         {
           $inc: {
-            totalQuantity: quantityReceived,
+            totalQuantity: quantityReceived,  // ✅ Total physical stock
             // ✅ FIX: DO NOT increment availableQuantity directly
             // availableQuantity is calculated: totalQuantity - allocatedQuantity - damageQuality
             // It will be recalculated after all stock updates
@@ -750,11 +761,11 @@ class GRNStockUpdateService {
           // ✅ REMOVED: $push to updateHistory (unbounded growth issue)
           // Complete history is tracked in StockMovement collection
         },
-        { upsert: true, returnDocument: 'after' }
+        { returnDocument: 'after' }  // ✅ REMOVED upsert: true - no auto-creation during GRN
       );
 
       if (!updatedStock) {
-        console.error(`❌ CurrentStock update returned null for ${product.itemcode}`);
+        console.error(`❌ CurrentStock update failed for ${product.itemcode}`);
         return null;
       }
 
@@ -765,7 +776,7 @@ class GRNStockUpdateService {
         productId: product._id.toString(),
         itemCode: product.itemcode,
         quantityAdded: quantityReceived,
-        totalQuantity: updatedStock.totalQuantity,
+        totalQuantity: updatedStock.totalQuantity,  // ✅ Fix: use totalQuantity (not quantityInStock)
         availableQuantity: updatedStock.availableQuantity,
         reference: grnData.grnNumber
       };

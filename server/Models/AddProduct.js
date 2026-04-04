@@ -67,16 +67,6 @@ const productSchema = new mongoose.Schema({
     default: 0,
     description: "Minimum stock level - alert when below this"
   },
-  maxStock: {
-    type: Number,
-    default: 1000,
-    description: "Maximum stock to maintain"
-  },
-  reorderQuantity: {
-    type: Number,
-    default: 100,
-    description: "Standard quantity to order when stock is low"
-  },
   categoryId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Grouping',
@@ -146,7 +136,6 @@ const productSchema = new mongoose.Schema({
     trim: true,
     uppercase: true
   },
-  stock: { type: Number, required: true },
   category: { type: String, default: null },
   
   // Packing units (multiple prices and barcodes for different packaging levels)

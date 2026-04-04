@@ -303,8 +303,6 @@ export const buildProductForSave = (
     taxPercent: parseFloat(productData.taxPercent) || 0,
     taxInPrice: productData.taxInPrice || false,
     minStock: parseInt(productData.minStock) || 0,
-    maxStock: parseInt(productData.maxStock) || 1000,
-    reorderQuantity: parseInt(productData.reorderQuantity) || 100,
     trackExpiry: productData.trackExpiry || false,
     manufacturingDate: productData.manufacturingDate || null,
     expiryDate: productData.expiryDate || null,
@@ -343,11 +341,21 @@ export const buildProductForSave = (
  * Ensures all fields are present even if backend doesn't return them
  */
 export const prepareProductForEdit = (completeProduct, activeCountryCode = "AE") => {
-  // ✅ When taxInPrice=true, display finalPrice (what user entered)
-  // ✅ When taxInPrice=false, display price (base price without tax)
+  // ✅ SINGLE SOURCE OF TRUTH: Stock comes from CurrentStock.quantityInStock ONLY
+  // Product.stock field is deprecated and no longer updated by backend.
+  // Always use quantityInStock from the currentStock object.
+  
+  // When taxInPrice=true, display finalPrice (what user entered)
+  // When taxInPrice=false, display price (base price without tax)
   const displayPrice = completeProduct.taxInPrice && completeProduct.finalPrice 
     ? completeProduct.finalPrice 
     : completeProduct.price || "";
+
+  // ✅ SINGLE SOURCE: Use quantityInStock from CurrentStock table
+  // This is the authoritative stock value. Never update product.stock field.
+  const stock = completeProduct.quantityInStock !== undefined && completeProduct.quantityInStock !== null
+    ? completeProduct.quantityInStock  // From CurrentStock table (SINGLE SOURCE)
+    : (completeProduct.stock || "");    // Fallback for legacy/missing data
 
   return {
     _id: completeProduct._id || "",
@@ -363,10 +371,7 @@ export const prepareProductForEdit = (completeProduct, activeCountryCode = "AE")
     unitType: completeProduct.unitType || "",
     factor: completeProduct.factor !== undefined ? completeProduct.factor : 1,
     barcode: completeProduct.barcode || "",
-    stock: completeProduct.stock !== undefined ? completeProduct.stock : "",
     minStock: completeProduct.minStock || 0,
-    maxStock: completeProduct.maxStock || 1000,
-    reorderQuantity: completeProduct.reorderQuantity || 100,
     cost: completeProduct.cost || "",
     price: displayPrice,
     costIncludeVat: completeProduct.costIncludeVat || "",

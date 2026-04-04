@@ -474,7 +474,8 @@ const BasicInfoTab = forwardRef((
     }
     
     const factor = parseFloat(pricingLines[index]?.factor) || 1;
-    const baseStock = parseFloat(newProduct.stock) || 0;
+    // ✅ UPDATED: Use totalQuantity from CurrentStock table (managed by Inventory Adjustment)
+    const baseStock = parseFloat(newProduct.quantityInStock) || 0;
     
     // Only show stock if baseStock is greater than or equal to factor
     if (baseStock >= factor) {
@@ -1046,28 +1047,6 @@ const BasicInfoTab = forwardRef((
                   )}
                 </div>
 
-                {/* Current Available Stock (on-hand inventory) */}
-                <div className="flex items-center gap-3 h-9">
-                  <label className="text-xs font-semibold text-gray-700 w-20 p-2 flex-shrink-0">
-                    Stock O/H
-                  </label>
-
-                  <input
-                    type="number"
-                    placeholder="0"
-                    className="border rounded px-2 py-1 text-xs text-center flex-1 w-10 border-gray-300"
-                    value={newProduct.stock ?? 0}
-                    onChange={(e) => {
-                      setNewProduct({
-                        ...newProduct,
-                        stock: e.target.value === '' ? 0 : e.target.value,
-                      });
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    disabled={loading}
-                  />
-                </div>
-
                 {/* Reorder Point (alert when stock falls below this) */}
                 <div className="flex items-center gap-3 h-9">
                   <label className="text-xs font-semibold text-gray-700 w-20 p-2 flex-shrink-0">
@@ -1094,7 +1073,7 @@ const BasicInfoTab = forwardRef((
                     <span className="text-xs font-semibold text-gray-700">{pricingLines[0]?.unit 
                         ? units?.find(u => String(u._id) === String(pricingLines[0].unit))?.unitName || 'N/A'
                         : 'Select unit'}</span>
-                    <span className="text-sm font-bold text-blue-600">{newProduct.stock ?? 0}</span>
+                    <span className="text-sm font-bold text-blue-600">{newProduct.quantityInStock ?? 0}</span>
 
                   </div>
                   <div className="flex justify-between items-center">

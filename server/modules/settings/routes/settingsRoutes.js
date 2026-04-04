@@ -44,6 +44,13 @@ router.get('/store/feature/:featureName', storeSettingsController.checkFeatureEn
 // ✅ NEW: Printer Configuration Templates Routes
 router.use('/printer-configurations', printerConfigurationRoutes);
 
+// ✅ NEW: Product Naming Rules Routes
+router.get('/naming-rules', storeSettingsController.getNamingRules);
+router.get('/naming-rules/fresh', storeSettingsController.getFreshNamingRules); // ✅ Fresh on login
+router.get('/naming-rules/subscribe', storeSettingsController.subscribeToNamingRulesChanges); // ✅ Real-time SSE
+router.post('/naming-rules', storeSettingsController.updateNamingRules);
+router.put('/naming-rules', storeSettingsController.updateNamingRules);
+
 // Get All Settings Combined
 router.get('/', settingsController.getAllSettings);
 

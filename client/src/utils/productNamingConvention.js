@@ -186,6 +186,40 @@ export const checkDuplicateProductName = async (productName, excludeProductId = 
 };
 
 /**
+ * Check if an item code already exists in the database
+ * ✅ Used during product editing to prevent duplicate itemcodes before save
+ * @param {string} itemcode - Item code to check (e.g., "1005")
+ * @param {string} excludeProductId - Product ID to exclude (when editing)
+ * @returns {Promise<Object>} { isDuplicate: boolean, product: Object|null, message: string }
+ */
+export const checkDuplicateItemcode = async (itemcode, excludeProductId = null) => {
+  try {
+    const response = await axios.get(
+      `${API_URL}/products/check-duplicate-itemcode`,
+      {
+        params: {
+          itemcode: itemcode?.toUpperCase() || '',
+          excludeId: excludeProductId,
+        },
+      }
+    );
+
+    return {
+      isDuplicate: response.data.isDuplicate,
+      product: response.data.product || null,
+      message: response.data.message || '',
+    };
+  } catch (error) {
+    console.error('❌ Error checking duplicate itemcode:', error);
+    return {
+      isDuplicate: false,
+      product: null,
+      error: error.message,
+    };
+  }
+};
+
+/**
  * 🚀 PERFORMANCE: Cache for store naming rules (prevents repeated API calls)
  */
 let storeNamingRulesCache = null;
@@ -299,6 +333,7 @@ export default {
   validateProductName,
   normalizeProductName,
   checkDuplicateProductName,
+  checkDuplicateItemcode,
   getStoreNamingRules,
   applyNamingConvention,
   getValidationErrorMessage,

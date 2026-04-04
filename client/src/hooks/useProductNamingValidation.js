@@ -26,6 +26,10 @@ export const useProductNamingValidation = (productId = null) => {
   const [duplicateCheck, setDuplicateCheck] = useState({ isDuplicate: false, similarProducts: [] });
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   const [isLoadingRules, setIsLoadingRules] = useState(true);
+  
+  // ✅ NEW: Track last validated name to prevent re-validation on non-name field changes
+  const [lastValidatedName, setLastValidatedName] = useState(null);
+  const [validationCache, setValidationCache] = useState({});
 
   // ✅ Load store naming rules on mount
   useEffect(() => {
@@ -96,6 +100,14 @@ export const useProductNamingValidation = (productId = null) => {
     // Step 1: Normalize
     const normalized = normalizeProductName(name);
 
+    // ✅ NEW: Check validation cache - skip if this exact name was just validated
+    if (validationCache[normalized] && lastValidatedName === normalized) {
+      console.log('✅ Using cached validation result for name:', normalized);
+      return validationCache[normalized];
+    }
+
+    console.log('🔄 Validating name:', normalized);
+
     // Step 2 & 3: Validate and check duplicates in parallel (OPTIMIZED)
     const validation = validateProductName(normalized, {
       allowLowercase: !storeRules.preventLowercase,
@@ -103,37 +115,56 @@ export const useProductNamingValidation = (productId = null) => {
     });
 
     if (!validation.isValid) {
-      return {
+      const result = {
         isValid: false,
         error: getValidationErrorMessage(validation),
         processedName: normalized,
       };
+      // Cache invalid result
+      setValidationCache(prev => ({ ...prev, [normalized]: result }));
+      setLastValidatedName(normalized);
+      return result;
     }
 
     // Step 3: Parallel duplicate check if needed (doesn't block validation)
     if (storeRules.enforceOnSave && storeRules.checkDuplicates) {
-      const duplicate = await checkDuplicateProductName(normalized, productId);
-      
-      if (duplicate.isDuplicate) {
-        return {
-          isValid: false,
-          error: `Product name "${normalized}" already exists`,
-          isDuplicate: true,
-          similarProducts: duplicate.similarProducts,
-          processedName: normalized,
-        };
+      try {
+        const duplicate = await checkDuplicateProductName(normalized, productId);
+        
+        if (duplicate.isDuplicate) {
+          const result = {
+            isValid: false,
+            error: `Product name "${normalized}" already exists`,
+            isDuplicate: true,
+            similarProducts: duplicate.similarProducts,
+            processedName: normalized,
+          };
+          // Cache duplicate error
+          setValidationCache(prev => ({ ...prev, [normalized]: result }));
+          setLastValidatedName(normalized);
+          return result;
+        }
+      } catch (error) {
+        console.error('❌ Duplicate check error (continuing with validation):', error.message);
+        // Don't fail - allow save even if duplicate check fails
       }
     }
 
     // Step 4: Auto-capitalize if enforce is on
     const finalName = storeRules.enforceOnSave ? applyNamingConvention(normalized, storeRules) : normalized;
 
-    return {
+    const result = {
       isValid: true,
       processedName: finalName,
       warning: getValidationWarningMessage(validation),
     };
-  }, [storeRules, productId]);
+
+    // ✅ Cache successful validation result
+    setValidationCache(prev => ({ ...prev, [normalized]: result }));
+    setLastValidatedName(normalized);
+
+    return result;
+  }, [storeRules, productId, validationCache, lastValidatedName]);
 
   return {
     // State
@@ -149,6 +180,13 @@ export const useProductNamingValidation = (productId = null) => {
     normalize,
     applyConvention,
     validateAndPrepareForSave,
+
+    // ✅ NEW: Clear cache when modal reopens or form resets
+    clearCache: useCallback(() => {
+      setValidationCache({});
+      setLastValidatedName(null);
+      setDuplicateCheck({ isDuplicate: false, similarProducts: [] });
+    }, []),
 
     // Helper getters
     getErrorMessage: () => getValidationErrorMessage(validationResult),

@@ -179,18 +179,7 @@ CurrentStockSchema.index({ totalQuantity: 1 });
 CurrentStockSchema.index({ availableQuantity: 1 });
 CurrentStockSchema.index({ lastUpdatedBy: 1, updatedAt: -1 });
 
-// ✅ Update average cost whenever total cost changes
-CurrentStockSchema.pre('save', function(next) {
-  if (this.totalQuantity > 0) {
-    this.averageCost = this.totalCost / this.totalQuantity;
-  } else {
-    this.averageCost = 0;
-  }
-  
-  // Update availableQuantity
-  this.availableQuantity = Math.max(0, this.totalQuantity - this.allocatedQuantity - this.damageQuality);
-  
-  next();
-});
+// ✅ REMOVED complex pre-hook - simpler approach: set values directly in creation/update code
+// Pre-hooks can cause issues with Mongoose middleware, avoiding them for better reliability
 
 export default mongoose.model('CurrentStock', CurrentStockSchema, 'current_stock');

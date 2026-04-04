@@ -11,6 +11,7 @@ import {
   getProductStats,
   checkBarcodeExists,
   checkItemcodeExists,
+  checkDuplicateItemcode,
   checkDuplicateProductName,
   getNextItemCode,
   generateBarcode,
@@ -72,6 +73,10 @@ router.post("/checkitemcode", checkItemcodeExists);
 // ================= CHECK IF PRODUCT NAME ALREADY EXISTS (Duplicate Prevention) =================
 // ✅ GET /products/check-duplicate-name?name=ProductName&excludeId=productId
 router.get("/check-duplicate-name", checkDuplicateProductName);
+
+// ================= CHECK IF ITEM CODE ALREADY EXISTS (Duplicate Prevention - GET) =================
+// ✅ GET /products/check-duplicate-itemcode?itemcode=1005&excludeId=productId
+router.get("/check-duplicate-itemcode", checkDuplicateItemcode);
 
 // ================= GET NEXT ITEM CODE (Peek - without incrementing) =================
 router.get("/nexitemcode", getNextItemCode);
@@ -226,6 +231,149 @@ router.post("/cache/flush", async (req, res) => {
   } catch (err) {
     console.error("❌ Error in cache endpoint:", err);
     res.status(500).json({ message: "Error in cache endpoint", error: err.message });
+  }
+});
+
+// ✅ DIAGNOSTIC: Verify CurrentStock entries exist for all products
+router.get("/diagnostic/verify-current-stock", async (req, res) => {
+  try {
+    const AddProduct = (await import("../../../Models/AddProduct.js")).default;
+    const CurrentStock = (await import("../../../Models/CurrentStock.js")).default;
+    
+    /// Get all active products
+    const allProducts = await AddProduct.find({ isDeleted: false }).select('_id name itemcode barcode').lean();
+    const totalProducts = allProducts.length;
+    
+    // Get all CurrentStock entries
+    const allStocks = await CurrentStock.find().select('productId').lean();
+    const totalStocks = allStocks.length;
+    const stockProductIds = new Set(allStocks.map(s => s.productId.toString()));
+    
+    // Find orphaned products (no CurrentStock)
+    const orphanedProducts = [];
+    for (const product of allProducts) {
+      if (!stockProductIds.has(product._id.toString())) {
+        orphanedProducts.push({
+          _id: product._id,
+          name: product.name,
+          itemcode: product.itemcode,
+          barcode: product.barcode
+        });
+      }
+    }
+    
+    // Find orphaned stocks (no Product)
+    const productIds = new Set(allProducts.map(p => p._id.toString()));
+    const orphanedStocks = [];
+    for (const stock of allStocks) {
+      if (!productIds.has(stock.productId.toString())) {
+        orphanedStocks.push(stock.productId);
+      }
+    }
+    
+    const status = orphanedProducts.length === 0 && orphanedStocks.length === 0 
+      ? "✅ OK" 
+      : "❌ ISSUES FOUND";
+    
+    res.json({
+      status,
+      timestamp: new Date().toISOString(),
+      summary: {
+        totalProducts,
+        totalCurrentStockEntries: totalStocks,
+        orphanedProductsCount: orphanedProducts.length,
+        orphanedStocksCount: orphanedStocks.length,
+      },
+      orphanedProducts: orphanedProducts.slice(0, 50), // First 50
+      orphanedStocks: orphanedStocks.slice(0, 50), // First 50
+      notes: orphanedProducts.length > 50 
+        ? `... and ${orphanedProducts.length - 50} more products without CurrentStock`
+        : orphanedStocks.length > 50
+        ? `... and ${orphanedStocks.length - 50} more CurrentStock entries without products`
+        : "No issues found"
+    });
+  } catch (err) {
+    console.error("❌ Error in diagnostic endpoint:", err);
+    res.status(500).json({ 
+      message: "Error in diagnostic endpoint", 
+      error: err.message,
+      status: "❌ FAILED"
+    });
+  }
+});
+
+// ✅ REPAIR: Create missing CurrentStock entries for orphaned products
+router.post("/diagnostic/repair-current-stock", async (req, res) => {
+  try {
+    const AddProduct = (await import("../../../Models/AddProduct.js")).default;
+    const CurrentStock = (await import("../../../Models/CurrentStock.js")).default;
+    
+    // Get all active products
+    const allProducts = await AddProduct.find({ isDeleted: false }).select('_id name itemcode barcode').lean();
+    
+    // Get all CurrentStock entries
+    const allStocks = await CurrentStock.find().select('productId').lean();
+    const stockProductIds = new Set(allStocks.map(s => s.productId.toString()));
+    
+    // Find orphaned products (no CurrentStock)
+    const orphanedProducts = [];
+    for (const product of allProducts) {
+      if (!stockProductIds.has(product._id.toString())) {
+        orphanedProducts.push(product);
+      }
+    }
+    
+    // Create missing CurrentStock entries
+    const created = [];
+    const errors = [];
+    
+    for (const product of orphanedProducts) {
+      try {
+        const newStock = new CurrentStock({
+          productId: product._id,
+          totalQuantity: 0,
+          availableQuantity: 0,
+          allocatedQuantity: 0,
+          grnReceivedQuantity: 0,
+          rtvReturnedQuantity: 0,
+          salesOutQuantity: 0,
+          salesReturnQuantity: 0,
+          adjustmentQuantity: 0,
+          damageQuality: 0,
+          isActive: true,
+        });
+        
+        await newStock.save();
+        created.push({
+          productId: product._id,
+          name: product.name,
+          itemcode: product.itemcode
+        });
+      } catch (err) {
+        errors.push({
+          productId: product._id,
+          name: product.name,
+          error: err.message
+        });
+      }
+    }
+    
+    res.json({
+      status: errors.length === 0 ? "✅ SUCCESS" : "⚠️  PARTIAL",
+      timestamp: new Date().toISOString(),
+      created: created.length,
+      createdProducts: created,
+      failed: errors.length,
+      errors: errors,
+      message: `Created ${created.length} missing CurrentStock entries${errors.length > 0 ? `, ${errors.length} failed` : ""}`
+    });
+  } catch (err) {
+    console.error("❌ Error in repair endpoint:", err);
+    res.status(500).json({ 
+      message: "Error in repair endpoint", 
+      error: err.message,
+      status: "❌ FAILED"
+    });
   }
 });
 

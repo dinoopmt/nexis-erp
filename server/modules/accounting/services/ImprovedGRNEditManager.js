@@ -187,6 +187,16 @@ class ImprovedGRNEditManager {
 
           const { productId, oldQty, newQty } = delta;
 
+          // ✅ Update stock with delta - VALIDATE EXISTENCE FIRST
+          // Check if CurrentStock exists (should from product creation)
+          const existingStock = await CurrentStock.findOne({ productId }).session(session);
+          if (!existingStock) {
+            throw new Error(
+              `❌ CRITICAL: CurrentStock record missing for product ${productId}. ` +
+              `This should have been created when the product was first created.`
+            );
+          }
+
           // Update stock with delta using $inc (atomic increment)
           const updated = await CurrentStock.findOneAndUpdate(
             { productId },
@@ -194,7 +204,7 @@ class ImprovedGRNEditManager {
               $inc: { totalQuantity: delta.delta },
               $set: { updatedAt: new Date(), updatedBy: userId }
             },
-            { upsert: true, session, returnDocument: 'after' }
+            { session, returnDocument: 'after' }
           );
 
           console.log(`     ✅ ${productId}: ${oldQty} → ${newQty}`);

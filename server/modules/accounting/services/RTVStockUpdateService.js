@@ -4,6 +4,7 @@ import StockBatch from "../../../Models/StockBatch.js";
 import StockMovement from "../../../Models/StockMovement.js";
 import ActivityLog from "../../../Models/ActivityLog.js";
 import Grn from "../../../Models/Grn.js";
+import CurrentStock from "../../../Models/CurrentStock.js"; // ✅ ADDED: Single source of truth for stock
 import RTVJournalService from "./RTVJournalService.js";
 
 /**
@@ -163,7 +164,17 @@ class RTVStockUpdateService {
    */
   static async reverseProductStock(product, item, rtvData) {
     try {
-      const quantityBefore = product.quantityInStock || 0;
+      // ✅ CORRECT WORKFLOW: Get stock from CurrentStock table (single source of truth)
+      const currentStock = await CurrentStock.findOne({ productId: product._id });
+      
+      if (!currentStock) {
+        throw new Error(
+          `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
+          `This should have been created when the product was first created.`
+        );
+      }
+
+      const quantityBefore = currentStock.quantityInStock || 0;
       const quantityReturned = item.quantity || 0;
 
       // ✅ CRITICAL: Cannot return more than available
@@ -173,22 +184,35 @@ class RTVStockUpdateService {
         );
       }
 
-      // ✅ REVERSE: Reduce stock
-      product.quantityInStock = (quantityBefore - quantityReturned);
-      product.lastStockUpdate = new Date();
-      product.lastStockUpdateBy = rtvData.createdBy;
+      // ✅ UPDATE CurrentStock collection (SINGLE SOURCE OF TRUTH)
+      const updatedStock = await CurrentStock.findOneAndUpdate(
+        { productId: product._id },
+        {
+          $inc: {
+            quantityInStock: -quantityReturned,  // Decrease stock
+            totalQuantity: -quantityReturned
+          },
+          $set: {
+            lastRtvDate: rtvData.rtvDate || new Date(),
+            lastUpdatedBy: rtvData.createdBy || "SYSTEM",
+            // ✅ Update lastActivity snapshot
+            lastActivity: {
+              timestamp: new Date(),
+              type: 'RTV',
+              referenceId: rtvData._id,
+              reference: rtvData.rtvNumber,
+              description: `RTV ${rtvData.rtvNumber} - ${quantityReturned} units reversed`
+            }
+          }
+        },
+        { returnDocument: 'after' }
+      );
 
-      // ✅ Update minimum stock warning if needed
-      if (product.minStock && product.quantityInStock < product.minStock) {
-        product.lowStockAlert = true;
-        product.lowStockAlertDate = new Date();
-      } else if (product.quantityInStock >= product.minStock) {
-        product.lowStockAlert = false;
+      if (!updatedStock) {
+        throw new Error(`Failed to update CurrentStock for ${product.itemcode}`);
       }
 
-      await product.save();
-
-      console.log(`✅ Stock reversed for ${product.itemcode}: ${quantityBefore} → ${product.quantityInStock} (-${quantityReturned})`);
+      console.log(`✅ Stock reversed for ${product.itemcode}: ${quantityBefore} → ${updatedStock.quantityInStock} (-${quantityReturned})`);
 
       return {
         productId: product._id.toString(),
@@ -196,7 +220,7 @@ class RTVStockUpdateService {
         itemName: product.name,
         quantityReturned,
         quantityBefore,
-        quantityAfter: product.quantityInStock,
+        quantityAfter: updatedStock.quantityInStock,
         uom: product.unitSymbol,
         returnReason: item.returnReason
       };
@@ -368,7 +392,10 @@ class RTVStockUpdateService {
       const costingMethod = product.costingMethod || "FIFO";
       const oldCost = product.cost || 0;
       const quantityReturned = item.quantity || 0;
-      const currentStock = product.quantityInStock; // After reversal
+      
+      // ✅ CORRECT WORKFLOW: Get stock from CurrentStock table (after reversal)
+      const currentStock = await CurrentStock.findOne({ productId: product._id });
+      const remainingQuantity = currentStock ? (currentStock.quantityInStock - quantityReturned) : 0;
 
       // ✅ NEW LOGIC: Check if this is latest GRN and if stock becomes zero
       if (rtvData.items && rtvData.items.length > 0) {
@@ -381,7 +408,7 @@ class RTVStockUpdateService {
           );
 
           // ✅ RULE 3 CASE 2: Latest GRN fully returned → Shift cost to previous GRN
-          if (isLatestGrn && currentStock <= 0) {
+          if (isLatestGrn && remainingQuantity <= 0) {
             const previousCost = await this.getPreviousGrnCost(
               product._id,
               currentItem.grnId
@@ -422,9 +449,9 @@ class RTVStockUpdateService {
       if (costingMethod === "WAC") {
         const returnedValue = quantityReturned * item.unitCost;
 
-        if (currentStock > 0) {
-          const currentTotalValue = currentStock * oldCost + returnedValue;
-          const newWac = currentTotalValue / (currentStock + quantityReturned);
+        if (remainingQuantity > 0) {
+          const currentTotalValue = remainingQuantity * oldCost + returnedValue;
+          const newWac = currentTotalValue / (remainingQuantity + quantityReturned);
           const newCost = Math.round(newWac * 100) / 100;
 
           product.cost = newCost;

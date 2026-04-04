@@ -1,7 +1,59 @@
 import StoreSettings from '../../../Models/StoreSettings.js';
 import logger from '../../../config/logger.js';
+import { EventEmitter } from 'events';
 
-class StoreSettingsService {
+// ✅ GLOBAL EVENT EMITTER: Broadcast settings changes to all connected clients
+export const settingsEventEmitter = new EventEmitter();
+
+class StoreSettingsService extends EventEmitter {
+  constructor() {
+    super();
+    // ✅ IN-MEMORY CACHE: Store naming rules with TTL to avoid DB queries on every product creation
+    this.namingRulesCache = null;
+    this.namingRulesCacheTime = null;
+    this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+  }
+
+  /**
+   * Check if cache is still valid
+   */
+  isCacheValid() {
+    if (!this.namingRulesCache || !this.namingRulesCacheTime) {
+      return false;
+    }
+    const now = Date.now();
+    const isValid = now - this.namingRulesCacheTime < this.CACHE_TTL;
+    if (!isValid) {
+      logger.debug('✅ Naming rules cache expired, will refresh from DB');
+    }
+    return isValid;
+  }
+
+  /**
+   * Invalidate naming rules cache (call after update)
+   */
+  invalidateNamingRulesCache() {
+    this.namingRulesCache = null;
+    this.namingRulesCacheTime = null;
+    logger.info('✅ Naming rules cache invalidated');
+  }
+
+  /**
+   * Force refresh: Fetch fresh data from DB (used on user login)
+   * Bypasses cache completely
+   */
+  async forceRefreshNamingRules() {
+    try {
+      logger.info('🔄 Force refresh naming rules (user login detected)');
+      this.invalidateNamingRulesCache();
+      // Next call will fetch from DB
+      return await this.getNamingRules();
+    } catch (error) {
+      logger.error('Error force refreshing naming rules:', error);
+      throw error;
+    }
+  }
+
   /**
    * Get store settings
    */
@@ -225,6 +277,93 @@ class StoreSettingsService {
       };
     } catch (error) {
       logger.error('Error fetching barcode configuration:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get product naming rules (with in-memory caching)
+   */
+  async getNamingRules() {
+    try {
+      // ✅ CACHE CHECK: Return cached rules if still valid (avoids DB query)
+      if (this.isCacheValid()) {
+        logger.debug('✅ Returning naming rules from cache (TTL: 5min)');
+        return this.namingRulesCache;
+      }
+
+      // Cache miss or expired - fetch from DB
+      let settings = await StoreSettings.findOne();
+
+      if (!settings) {
+        // Create default store settings if not exists
+        settings = new StoreSettings({
+          storeName: 'Default Store',
+          storeCode: 'STR001',
+        });
+        await settings.save();
+      }
+
+      const rules = settings.productNamingRules || {
+        enabled: true,
+        convention: 'FREE',
+        preventLowercase: false,
+        preventAllCaps: false,
+        enforceOnSave: true,
+        checkDuplicates: true,
+      };
+
+      // ✅ CACHE UPDATE: Store in memory with timestamp
+      this.namingRulesCache = rules;
+      this.namingRulesCacheTime = Date.now();
+      logger.debug('✅ Naming rules cached (valid for 5 minutes)');
+
+      return rules;
+    } catch (error) {
+      logger.error('Error fetching product naming rules:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update product naming rules (invalidates cache + broadcasts change)
+   */
+  async updateNamingRules(rulesData) {
+    try {
+      let settings = await StoreSettings.findOne();
+
+      if (!settings) {
+        settings = new StoreSettings({
+          storeName: 'Default Store',
+          storeCode: 'STR001',
+          productNamingRules: rulesData,
+        });
+      } else {
+        settings.productNamingRules = {
+          ...settings.productNamingRules,
+          ...rulesData,
+        };
+      }
+
+      settings.updatedAt = new Date();
+      await settings.save();
+
+      // ✅ CACHE INVALIDATION: Clear cache so next request fetches updated rules
+      this.invalidateNamingRulesCache();
+
+      logger.info('Product naming rules updated successfully');
+
+      // ✅ BROADCAST: Notify all connected clients about settings change
+      settingsEventEmitter.emit('naming-rules-updated', {
+        timestamp: new Date(),
+        rules: settings.productNamingRules,
+        message: '✅ Naming rules updated by admin'
+      });
+      logger.info('🔔 Broadcasting naming rules update to all connected clients');
+
+      return settings.productNamingRules;
+    } catch (error) {
+      logger.error('Error updating product naming rules:', error);
       throw error;
     }
   }

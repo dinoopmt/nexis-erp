@@ -933,7 +933,16 @@ class GRNEditManager {
         const product = await AddProduct.findById(change.productId);
         if (!product) throw new Error(`Product not found: ${change.productId}`);
 
-        // ✅ 1. Update CurrentStock
+        // ✅ 1. Update CurrentStock - VALIDATE EXISTENCE FIRST
+        // Check if CurrentStock exists (should from product creation)
+        const existingStock = await CurrentStock.findOne({ productId: change.productId });
+        if (!existingStock) {
+          throw new Error(
+            `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
+            `This should have been created when the product was first created.`
+          );
+        }
+
         const updated = await CurrentStock.findOneAndUpdate(
           { productId: change.productId },
           {
@@ -953,7 +962,7 @@ class GRNEditManager {
               }
             }
           },
-          { returnDocument: 'after', upsert: true }
+          { returnDocument: 'after' }
         );
 
         // ✅ 2. Record new movement
@@ -1110,7 +1119,16 @@ class GRNEditManager {
           const product = await AddProduct.findById(item.productId);
           if (!product) throw new Error(`Product not found: ${item.productId}`);
 
-          // Update stock
+          // ✅ Update stock - VALIDATE EXISTENCE FIRST
+          // Check if CurrentStock exists (should from product creation)
+          const existingStock = await CurrentStock.findOne({ productId: item.productId });
+          if (!existingStock) {
+            throw new Error(
+              `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
+              `This should have been created when the product was first created.`
+            );
+          }
+
           await CurrentStock.findOneAndUpdate(
             { productId: item.productId },
             {
@@ -1120,8 +1138,7 @@ class GRNEditManager {
                 grnReceivedQuantity: item.quantity
               },
               $set: { lastUpdatedBy: userId }
-            },
-            { upsert: true }
+            }
           );
 
           // Record movement
@@ -1426,7 +1443,16 @@ class GRNEditManager {
 
           console.log(`   Applying: ${product.itemcode} qty ${newItem.quantity}`);
 
-          // ✅ 1. Increase CurrentStock quantities
+          // ✅ 1. Increase CurrentStock quantities - VALIDATE EXISTENCE FIRST
+          // Check if CurrentStock exists (should from product creation)
+          const existingStock = await CurrentStock.findOne({ productId: newItem.productId });
+          if (!existingStock) {
+            throw new Error(
+              `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
+              `This should have been created when the product was first created.`
+            );
+          }
+
           const applied = await CurrentStock.findOneAndUpdate(
             { productId: newItem.productId },
             {
@@ -1447,7 +1473,7 @@ class GRNEditManager {
                 }
               }
             },
-            { returnDocument: 'after', upsert: true }
+            { returnDocument: 'after' }
           );
 
           if (applied) {

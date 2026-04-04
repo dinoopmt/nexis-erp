@@ -6,6 +6,7 @@ import { showToast } from "./AnimatedCenteredToast.jsx";
 import useDecimalFormat from "../../hooks/useDecimalFormat";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
 import useProductNamingValidation from "../../hooks/useProductNamingValidation";
+import { checkDuplicateItemcode } from "../../utils/productNamingConvention"; // ✅ NEW: For itemcode duplicate check
 import { clearQueryCache } from "../../utils/searchCache";  // ✅ ADDED - Auto-clear search cache on product update
 import {
   buildPricingLinesFromProduct as sharedBuildPricingLines,
@@ -133,8 +134,10 @@ const GlobalProductFormModal = () => {
   // ✅ Wrapper function to close modal and dismiss all toasts
   const handleCloseModal = useCallback(() => {
     toast.dismiss(); // Clear all validation error toasts
+    // ✅ NEW: Clear validation cache to prevent stale errors when modal reopens
+    namingValidation.clearCache();
     closeProductForm(); // Close the modal
-  }, [closeProductForm]);
+  }, [closeProductForm, namingValidation]);
 
   // Country Detection
   const isIndiaCompany = activeCountryCode === "IN";
@@ -1119,10 +1122,54 @@ const GlobalProductFormModal = () => {
         console.warn('⚠️ Name warning:', nameValidationResult.warning);
       }
 
-      // ✅ Update product name with processed version (auto-capitalized)
+      // ✅ SHORT NAME AUTO-CAPITALIZATION (same as product name)
+      let processedShortName = newProduct.shortName;
+      if (processedShortName && namingValidation.storeRules?.enforceOnSave) {
+        processedShortName = namingValidation.applyConvention(processedShortName);
+        console.log(`✅ Short Name auto-capitalized: ${newProduct.shortName} → ${processedShortName}`);
+      }
+
+      // ✅ ITEMCODE VALIDATION (Create and Edit modes)
+      // Prevent 400 errors on backend by catching duplicate itemcode early
+      if (newProduct.itemcode) {
+        const newItemcode = newProduct.itemcode.toUpperCase();
+        
+        if (mode === 'create') {
+          // ✅ CREATE MODE: Always validate (new product, itemcode must be unique)
+          console.log(`🔍 Validating new itemcode: ${newItemcode}`);
+          const itemcodeCheck = await checkDuplicateItemcode(newItemcode, null);
+          
+          if (itemcodeCheck.isDuplicate) {
+            const errorMsg = `Item code "${newItemcode}" already exists (used by: ${itemcodeCheck.product?.name || 'Unknown Product'})`;
+            setErrors((prev) => ({ ...prev, itemcode: errorMsg }));
+            showToast('error', errorMsg);
+            setLoading(false);
+            return; // ✅ Block save - prevent backend 400 error
+          }
+        } else if (mode === 'edit') {
+          // ✅ EDIT MODE: Only validate if itemcode has changed
+          const originalItemcode = productData?.itemcode;
+          
+          if (newItemcode !== originalItemcode?.toUpperCase()) {
+            console.log(`🔍 Validating itemcode change: ${originalItemcode} → ${newItemcode}`);
+            const itemcodeCheck = await checkDuplicateItemcode(newItemcode, productData?._id);
+            
+            if (itemcodeCheck.isDuplicate) {
+              const errorMsg = `Item code "${newItemcode}" already exists (used by: ${itemcodeCheck.product?.name || 'Unknown Product'})`;
+              setErrors((prev) => ({ ...prev, itemcode: errorMsg }));
+              showToast('error', errorMsg);
+              setLoading(false);
+              return; // ✅ Block save - prevent backend 400 error
+            }
+          }
+        }
+      }
+
+      // ✅ Update product name and shortName with processed versions (auto-capitalized)
       const processedProduct = {
         ...newProduct,
         name: nameValidationResult.processedName,
+        shortName: processedShortName,
       };
       
       // ✅ Backend handles all uniqueness validation (itemcode + barcodes in single query)
@@ -1170,7 +1217,7 @@ const GlobalProductFormModal = () => {
       const currentUsername = currentUser?.username || "Unknown User";
 
       // ✅ Build product data using shared utility
-      const productData = buildProductForSave(
+      const productDataForSave = buildProductForSave(
         processedProduct,
         pricingLines,
         selectedPricingLines,
@@ -1182,8 +1229,8 @@ const GlobalProductFormModal = () => {
       );
 
       const saveResult = await productAPI.saveProduct(
-        productData,
-        mode === "edit" ? productData._id : null,
+        productDataForSave,
+        mode === "edit" ? productDataForSave._id : null,
       );
 
       // ✅ Handle new response format: { product, meilisearchSync, message } or null if failed
@@ -1284,10 +1331,9 @@ const GlobalProductFormModal = () => {
                 unitType: completeProduct.unitType || "",
                 factor: completeProduct.factor !== undefined ? completeProduct.factor : 1,
                 barcode: completeProduct.barcode || "",
-                stock: completeProduct.stock !== undefined ? completeProduct.stock : "",
+                // ✅ REMOVED: stock - use totalQuantity from CurrentStock table
+                quantityInStock: completeProduct.totalQuantity !== undefined ? completeProduct.totalQuantity : 0,
                 minStock: completeProduct.minStock || 0,
-                maxStock: completeProduct.maxStock || 1000,
-                reorderQuantity: completeProduct.reorderQuantity || 100,
                 cost: completeProduct.cost || "",
                 price: completeProduct.price || "",
                 costIncludeVat: completeProduct.costIncludeVat || completeProduct.costIncludeVat || "",
@@ -1403,6 +1449,9 @@ const GlobalProductFormModal = () => {
       
       // 1. Clear form fields immediately
       setErrors({});
+      
+      // ✅ NEW: Clear validation cache so next product doesn't have stale errors
+      namingValidation.clearCache();
       setNewProduct({
         _id: "",
         itemcode: "Auto-generated",
@@ -1417,7 +1466,7 @@ const GlobalProductFormModal = () => {
         unitType: "",
         factor: 1,
         barcode: "",
-        stock: "",
+        // ✅ REMOVED: stock - managed by Inventory Adjustment module, display via card
         minStock: 0,
         maxStock: 1000,
         reorderQuantity: 100,

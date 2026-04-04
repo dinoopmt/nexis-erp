@@ -249,6 +249,34 @@ const storeSettingsSchema = new mongoose.Schema(
         default: true,
       },
     },
+    // ✅ Product Naming Conventions
+    productNamingRules: {
+      enabled: {
+        type: Boolean,
+        default: true,
+      },
+      convention: {
+        type: String,
+        default: "FREE",
+        enum: ["FREE", "PREFIX_PATTERN", "AUTO_GENERATED"],
+      },
+      preventLowercase: {
+        type: Boolean,
+        default: false,
+      },
+      preventAllCaps: {
+        type: Boolean,
+        default: false,
+      },
+      enforceOnSave: {
+        type: Boolean,
+        default: true,
+      },
+      checkDuplicates: {
+        type: Boolean,
+        default: true,
+      },
+    },
     createdAt: {
       type: Date,
       default: Date.now,
