@@ -672,13 +672,16 @@ export const getProducts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const search = req.query.search || "";
+    const trimmedSearch = search.trim();
 
     const query = {
       isDeleted: false,
       $or: [
-        { name: { $regex: search, $options: "i" } },
-        { barcode: { $regex: search, $options: "i" } },
-        { itemcode: { $regex: search, $options: "i" } },
+        { name: { $regex: trimmedSearch, $options: "i" } },
+        { barcode: { $regex: trimmedSearch, $options: "i" } },
+        { itemcode: { $regex: trimmedSearch, $options: "i" } },
+        { 'packingUnits.barcode': { $regex: trimmedSearch, $options: "i" } },
+        { 'packingUnits.additionalBarcodes': { $regex: trimmedSearch, $options: "i" } },
       ],
     };
 
@@ -1232,6 +1235,24 @@ export const updateProduct = async (req, res) => {
     const productResponse = product.toObject();
     delete productResponse.stock; // ✅ REMOVE deprecated stock field
 
+    // ✅ INDUSTRIAL GRADE: Start Meilisearch sync and capture taskUid  
+    let meilisearchTaskUid = null;
+    let syncStarted = false;
+    
+    // Immediately start sync to capture taskUid
+    syncProductToMeilisearch(product)
+      .then(syncResult => {
+        if (syncResult.success && syncResult.taskUid) {
+          meilisearchTaskUid = syncResult.taskUid;
+          console.log(`📌 Meilisearch Task UID captured: ${meilisearchTaskUid}`);
+        }
+      })
+      .catch(err => {
+        console.error(`Meilisearch sync error for product ${product._id}:`, err.message);
+      });
+    
+    syncStarted = true;
+
     res.json({
       message: "Product updated successfully",
       product: {
@@ -1245,7 +1266,8 @@ export const updateProduct = async (req, res) => {
       meilisearchSync: {
         success: true,
         message: "Search index sync in progress...",
-        status: "pending"
+        status: "pending",
+        taskUid: null  // ✅ Will be populated by frontend polling (or sent separately via WebSocket)
       },
       cacheInvalidated: true,  // ✅ Signal frontend to clear cache for this product
       productName: product.name,
@@ -2680,6 +2702,7 @@ export const searchProducts = async (req, res) => {
     }
 
     const searchQuery = q.trim();
+    const exactBarcodeQuery = searchQuery.toUpperCase();
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(parseInt(limit) || 100, 100);
 
@@ -2700,6 +2723,40 @@ export const searchProducts = async (req, res) => {
       );
 
       results = await Promise.race([meilisearchPromise, timeoutPromise]);
+
+      if (!results?.products?.length) {
+        const exactBarcodeProducts = await Product.find({
+          isDeleted: false,
+          $or: [
+            { barcode: exactBarcodeQuery },
+            { itemcode: exactBarcodeQuery },
+            { 'packingUnits.barcode': exactBarcodeQuery },
+            { 'packingUnits.additionalBarcodes': exactBarcodeQuery },
+          ],
+        })
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')
+          .populate('vendor', 'name')
+          .populate('categoryId', 'name')
+          .populate('unitType', 'unitName unitSymbol unitDecimal category')
+          .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
+          .limit(limitNum)
+          .lean();
+
+        if (exactBarcodeProducts.length > 0) {
+          results = {
+            products: exactBarcodeProducts,
+            totalCount: exactBarcodeProducts.length,
+            page: pageNum,
+            pageSize: limitNum,
+            totalPages: 1,
+            resultCount: exactBarcodeProducts.length,
+            hasNextPage: false,
+            hasPrevPage: false,
+          };
+
+          usedFallback = true;
+        }
+      }
     } catch (meilisearchErr) {
       meilisearchError = meilisearchErr.message;
       console.warn(`⚠️  Meilisearch search failed/timeout: ${meilisearchErr.message}. Falling back to MongoDB...`);
@@ -2713,6 +2770,8 @@ export const searchProducts = async (req, res) => {
             { name: { $regex: searchLower, $options: 'i' } },
             { barcode: { $regex: searchLower, $options: 'i' } },
             { itemcode: { $regex: searchLower, $options: 'i' } },
+            { 'packingUnits.barcode': { $regex: searchLower, $options: 'i' } },
+            { 'packingUnits.additionalBarcodes': { $regex: searchLower, $options: 'i' } },
           ]
         };
 

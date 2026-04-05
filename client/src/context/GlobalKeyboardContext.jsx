@@ -79,6 +79,7 @@ export const GlobalKeyboardProvider = ({ children }) => {
       normalized,
       handler,
       global: options.global !== false, // Default to global (skip on form input)
+      allowInInput: options.allowInInput === true,
       description: options.description || '',
       category: options.category || 'General',
     };
@@ -101,8 +102,25 @@ export const GlobalKeyboardProvider = ({ children }) => {
   // ✅ Global keyboard event listener
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // 🔍 IMPORTANT: Skip native browser navigation keys
+      // These should NEVER be intercepted by our shortcuts system
+      // (Tab, Arrow keys, etc. need to work naturally in forms)
+      const nativeNavKeys = [
+        'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+        'Enter', 'Space', 'Home', 'End', 'PageUp', 'PageDown',
+        'Backspace', 'Delete'
+        // NOTE: Escape is NOT in this list - we handle it as a shortcut to close GRN modal
+      ];
+      
+      if (nativeNavKeys.includes(e.key)) {
+        // ✅ Let browser handle these keys natively (no preventDefault, no shortcut processing)
+        return;
+      }
+
       const eventShortcut = eventToShortcut(e);
-      if (!eventShortcut) return;
+      if (!eventShortcut) {
+        return;
+      }
 
       // ✅ Skip if user is typing in an input/textarea
       const isFormInput = 
@@ -115,7 +133,7 @@ export const GlobalKeyboardProvider = ({ children }) => {
       Object.values(shortcutsRef.current).forEach((shortcut) => {
         if (shortcut.normalized === eventShortcut) {
           // Skip global shortcuts if user is in form input
-          if (isFormInput && shortcut.global) {
+          if (isFormInput && shortcut.global && !shortcut.allowInInput) {
             return;
           }
 

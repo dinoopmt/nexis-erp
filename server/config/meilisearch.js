@@ -108,11 +108,12 @@ const searchProducts = async (query, options = {}) => {
 /**
  * Add or update a product in Meilisearch index
  * @param {object} product - Product document
+ * @returns {object} - Returns { success: true/false, taskUid: number, message: string }
  */
 const indexProduct = async (product) => {
   if (!meilisearchClient || !isConnected) {
     console.warn('⚠️  Meilisearch not connected - skipping index');
-    return false;
+    return { success: false, taskUid: null, message: 'Meilisearch not connected' };
   }
 
   try {
@@ -139,11 +140,31 @@ const indexProduct = async (product) => {
       createdate: product.createdate ? new Date(product.createdate).getTime() : Date.now(),
     }];
 
-    await meilisearchClient.index('products').addDocuments(documents);
-    return true;
+    // ✅ INDUSTRIAL GRADE: Capture taskUid from Meilisearch response
+    const task = await meilisearchClient.index('products').addDocuments(documents);
+    
+    if (task && typeof task.uid === 'number') {
+      console.log(`📌 Meilisearch task created - UID: ${task.uid}`);
+      return { 
+        success: true, 
+        taskUid: task.uid, 
+        message: 'Document added to Meilisearch queue'
+      };
+    }
+    
+    console.warn('⚠️  No taskUid returned from Meilisearch');
+    return { 
+      success: true, 
+      taskUid: null, 
+      message: 'Document indexed but no task UID'
+    };
   } catch (err) {
     console.error('❌ Indexing Error:', err.message);
-    return false;
+    return { 
+      success: false, 
+      taskUid: null, 
+      message: err.message 
+    };
   }
 };
 
@@ -367,6 +388,30 @@ const setupIndex = async () => {
   }
 };
 
+/**
+ * Get the status of a Meilisearch task
+ * @param {number} taskUid - Task UID returned from indexed products
+ * @returns {Promise<object>} - Task status { uid, status, type, indexUid, ... }
+ */
+const getTaskStatus = async (taskUid) => {
+  if (!meilisearchClient || !isConnected) {
+    throw new Error('Meilisearch not connected');
+  }
+  
+  if (typeof taskUid !== 'number') {
+    throw new Error('Invalid taskUid - must be a number');
+  }
+  
+  try {
+    const task = await meilisearchClient.getTask(taskUid);
+    console.log(`📊 Task ${taskUid} status: ${task.status}`);
+    return task;
+  } catch (err) {
+    console.error(`❌ Failed to get task status for ${taskUid}:`, err.message);
+    throw err;
+  }
+};
+
 export {
   initializeMeilisearch,
   searchProducts,
@@ -375,6 +420,7 @@ export {
   deleteProductIndex,
   setupIndex,
   resetMeilisearchIndex,
+  getTaskStatus,
 };
 
 export const getConnectionStatus = () => isConnected;

@@ -16,7 +16,8 @@ const GrnUnitVariantSelector = ({
   if (!isOpen) return null;
 
   // Get packing units (unit variants) from product
-  const packingUnits = product?.packingUnits || [];
+  // Ensure packingUnits is an array before using map
+  const packingUnits = Array.isArray(product?.packingUnits) ? product.packingUnits : [];
   
   // Create options: base unit + packing units
   const unitOptions = [

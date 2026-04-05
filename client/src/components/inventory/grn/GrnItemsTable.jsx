@@ -21,6 +21,8 @@ const GrnItemsTable = ({
   onCellValueChanged,
   gridContext,
   highlightedItemId,
+  editTargetItemId,
+  onEditTargetHandled,
   isViewMode = false, // ✅ NEW: Read-only mode
 }) => {
   const gridRef = useRef(null);
@@ -50,6 +52,35 @@ const GrnItemsTable = ({
       }
     }
   }, [highlightedItemId, items]);
+
+  useEffect(() => {
+    if (!editTargetItemId || isViewMode || !gridRef.current?.api) {
+      return;
+    }
+
+    const rowIndex = items.findIndex((item) => item.id === editTargetItemId);
+
+    if (rowIndex < 0) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        gridRef.current.api.ensureIndexVisible(rowIndex, 'middle');
+        gridRef.current.api.setFocusedCell(rowIndex, 'qty');
+        gridRef.current.api.startEditingCell({
+          rowIndex,
+          colKey: 'qty',
+        });
+      } catch (error) {
+        // Silent error handling
+      } finally {
+        onEditTargetHandled?.();
+      }
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [editTargetItemId, isViewMode, items, onEditTargetHandled]);
 
   return (
     <div
@@ -104,8 +135,11 @@ const GrnItemsTable = ({
           headerHeight={gridConfig.headerHeight}
           suppressMenuHide={gridConfig.suppressMenuHide}
           stopEditingWhenCellsLoseFocus={gridConfig.stopEditingWhenCellsLoseFocus}
-          suppressClicksWhenReadOnly={isViewMode} // ✅ Prevent clicks on read-only cells
-          readOnlyEdit={isViewMode} // ✅ Read-only mode flag
+          suppressClickEdit={isViewMode} // ✅ Prevent edit mode on cell click when read-only
+          rowSelection={{
+            mode: 'multiRow',
+            enableClickSelection: !isViewMode, // ✅ AG Grid v32.2+ - Allow row selection only when not read-only
+          }}
           getRowClass={(params) => {
             const rowId = params.data?.id;
             const shouldHighlight = highlightedItemId && rowId === highlightedItemId;

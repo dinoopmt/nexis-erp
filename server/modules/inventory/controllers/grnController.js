@@ -284,6 +284,68 @@ export const createGrn = async (req, res) => {
       })),
     });
 
+    // ✅ VALIDATION: Verify all items have valid product references
+    console.log("🔍 [VALIDATE] Validating and converting product references for GRN items...");
+    const mongoose = (await import("mongoose")).default;
+    
+    for (let i = 0; i < newGrn.items.length; i++) {
+      const item = newGrn.items[i];
+      
+      // Check if productId exists
+      if (!item.productId) {
+        console.error(`❌ [VALIDATE] Item ${i + 1} missing productId!`);
+        return res.status(400).json({
+          message: `Item ${i + 1} (${item.itemName}) is missing product reference (productId)`,
+          error: "MISSING_PRODUCT_ID",
+          itemIndex: i,
+          item: {
+            itemName: item.itemName,
+            itemCode: item.itemCode,
+            productId: item.productId,
+          },
+        });
+      }
+
+      // ✅ Convert productId string to MongoDB ObjectId if needed
+      try {
+        if (typeof item.productId === 'string') {
+          if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+            console.error(`❌ [VALIDATE] Item ${i + 1} has invalid ObjectId format for productId: "${item.productId}"`);
+            return res.status(400).json({
+              message: `Item ${i + 1} (${item.itemName}) has invalid product ID format: "${item.productId}"`,
+              error: "INVALID_PRODUCT_ID_FORMAT",
+              itemIndex: i,
+              receivedProductId: item.productId,
+            });
+          }
+          // Convert to ObjectId
+          newGrn.items[i].productId = new mongoose.Types.ObjectId(item.productId);
+          console.log(`✅ [VALIDATE] Item ${i + 1}: Converted productId string to ObjectId`);
+        } else if (mongoose.Types.ObjectId.isValid(item.productId)) {
+          console.log(`✅ [VALIDATE] Item ${i + 1}: productId already valid ObjectId`);
+        } else {
+          console.error(`❌ [VALIDATE] Item ${i + 1} has invalid productId type/value:`, item.productId);
+          return res.status(400).json({
+            message: `Item ${i + 1} (${item.itemName}) has invalid product ID`,
+            error: "INVALID_PRODUCT_ID_FORMAT",
+            itemIndex: i,
+            receivedProductId: item.productId,
+            productIdType: typeof item.productId,
+          });
+        }
+      } catch (validateErr) {
+        console.error(`❌ [VALIDATE] Error validating Item ${i + 1} productId:`, validateErr.message);
+        return res.status(400).json({
+          message: `Item ${i + 1}: Error validating product ID`,
+          error: "PRODUCT_ID_VALIDATION_ERROR",
+          itemIndex: i,
+          errorDetail: validateErr.message,
+        });
+      }
+    }
+
+    console.log("✅ [VALIDATE] All items validated successfully - product references converted to ObjectIds");
+
     await newGrn.save();
 
     console.log(`✅ GRN created successfully: ${grnNumber}`);

@@ -169,12 +169,50 @@ export const formatBarcodeForDisplay = (barcode) => {
   return clean;
 };
 
+/**
+ * 🔴 NORMALIZE BARCODE FOR MATCHING
+ * Production-grade normalization for POS scanning
+ * - Trims whitespace
+ * - Removes internal spaces (hidden scanner characters)
+ * - Converts to lowercase
+ * - Handles all scanner hardware formats
+ */
+export const normalizeBarcode = (code) => {
+  if (!code) return "";
+  
+  return code
+    .trim()
+    .replace(/\s+/g, "") // Remove all spaces (including hidden newlines)
+    .toLowerCase(); // Case insensitive
+};
+
+/**
+ * Check if barcode is valid (minimum length)
+ */
+export const isValidBarcode = (code) => {
+  const normalized = normalizeBarcode(code);
+  return normalized.length >= 3;
+};
+
+/**
+ * Debug: Show barcode byte values (for hidden characters)
+ */
+export const debugBarcode = (code) => {
+  return code
+    .split("")
+    .map((char) => `${char}(${char.charCodeAt(0)})`)
+    .join(" ");
+};
+
 export default {
   generateBarcode,
   generateUnitBarcode,
   generateUniqueBarcode,
   validateBarcode,
   formatBarcodeForDisplay,
+  normalizeBarcode,
+  isValidBarcode,
+  debugBarcode,
 };
 
 

@@ -28,16 +28,56 @@ const toastConfig = {
 
 // ✅ Clean showToast - No position conflicts
 // Only show ONE toast at a time (replace previous)
-// Auto-close on click
+// Close on: click on toast, keyboard (Escape/Enter/Space), click anywhere else, or timeout
 export const showToast = (type = 'success', message = '') => {
   const { bg, icon, color } = toastConfig[type] || toastConfig.success;
 
   toast.dismiss(); // Remove all previous toasts
 
+  const handleDismiss = (toastId) => {
+    toast.dismiss(toastId);
+    document.removeEventListener('click', handleFormClick);
+  };
+
+  const handleKeyDown = (e, toastId) => {
+    if (e.key === 'Escape' || e.key === 'Enter' || e.code === 'Space') {
+      e.preventDefault();
+      handleDismiss(toastId);
+    }
+  };
+
+  const handleFormClick = (e) => {
+    // Don't dismiss if clicking on the toast itself
+    const toastElement = document.querySelector('[role="button"][aria-label="Close notification"]');
+    if (toastElement && toastElement.contains(e.target)) {
+      return;
+    }
+    // Dismiss on any other click
+    toast.dismiss();
+    document.removeEventListener('click', handleFormClick);
+  };
+
   toast((t) => (
     <div
-      onClick={() => toast.dismiss(t.id)}
-      style={{ cursor: 'pointer' }}
+      onClick={() => handleDismiss(t.id)}
+      onKeyDown={(e) => handleKeyDown(e, t.id)}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.opacity = '0.85';
+        e.currentTarget.style.transform = 'scale(1.02)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.opacity = '1';
+        e.currentTarget.style.transform = 'scale(1)';
+      }}
+      tabIndex={0}
+      role="button"
+      aria-label="Close notification"
+      style={{
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        userSelect: 'none',
+        outline: 'none',
+      }}
     >
       {message}
     </div>
@@ -55,5 +95,10 @@ export const showToast = (type = 'success', message = '') => {
       textAlign: 'center',
     },
   });
+
+  // Add global click listener to dismiss when clicking elsewhere
+  setTimeout(() => {
+    document.addEventListener('click', handleFormClick);
+  }, 100);
 };
 

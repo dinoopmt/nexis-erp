@@ -16,6 +16,7 @@ import {
 
 // Context
 import { ProductFormContext } from "../../context/ProductFormContext";
+import useGlobalKeyboard from "../../hooks/useGlobalKeyboard";
 
 // Custom Hooks
 import { useProductForm } from "./sample/useProductForm";
@@ -48,6 +49,7 @@ const GlobalProductFormModal = () => {
     editIndex = -1, // ✅ Optional: current product index from Product.jsx
     setEditIndex, // ✅ Optional: function to update index
   } = useContext(ProductFormContext);
+  const { registerShortcut } = useGlobalKeyboard();
 
   // Form State
   const { newProduct, setNewProduct, pricingLines, setPricingLines, selectedPricingLines, setSelectedPricingLines, resetForm } =
@@ -116,6 +118,8 @@ const GlobalProductFormModal = () => {
   const basicInfoTabRef = useRef(null);
   const tabContentRef = useRef(null);
   const searchInputRef = useRef(null);
+  const saveShortcutHandlerRef = useRef(null);
+  const closeShortcutHandlerRef = useRef(null);
 
   // ✅ Close search dropdown when clicking outside
   useEffect(() => {
@@ -138,6 +142,10 @@ const GlobalProductFormModal = () => {
     namingValidation.clearCache();
     closeProductForm(); // Close the modal
   }, [closeProductForm, namingValidation]);
+
+  useEffect(() => {
+    closeShortcutHandlerRef.current = handleCloseModal;
+  }, [handleCloseModal]);
 
   // Country Detection
   const isIndiaCompany = activeCountryCode === "IN";
@@ -1427,6 +1435,51 @@ const GlobalProductFormModal = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    saveShortcutHandlerRef.current = handleSaveProduct;
+  }, [handleSaveProduct]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    const unregisterSave = registerShortcut(
+      'Ctrl+S',
+      (event) => {
+        event.preventDefault();
+        saveShortcutHandlerRef.current?.();
+      },
+      {
+        id: 'global-product-form-save',
+        description: 'Save product form',
+        category: 'Product Form',
+        global: true,
+        allowInInput: true,
+      },
+    );
+
+    const unregisterClose = registerShortcut(
+      'Escape',
+      (event) => {
+        event.preventDefault();
+        closeShortcutHandlerRef.current?.();
+      },
+      {
+        id: 'global-product-form-close',
+        description: 'Close product form',
+        category: 'Product Form',
+        global: true,
+        allowInInput: true,
+      },
+    );
+
+    return () => {
+      unregisterSave?.();
+      unregisterClose?.();
+    };
+  }, [isOpen, registerShortcut]);
 
   // Simple Delete Handler
   const handleDeleteProduct = () => {

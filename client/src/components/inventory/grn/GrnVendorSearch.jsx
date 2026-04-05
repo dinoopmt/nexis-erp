@@ -9,6 +9,7 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredVendors, setFilteredVendors] = useState([]);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef(null);
 
   // Get selected vendor name - use fallback name if vendor not in array yet
@@ -19,6 +20,7 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
   useEffect(() => {
     if (!vendors || vendors.length === 0) {
       setFilteredVendors([]);
+      setHighlightedIndex(-1);
       return;
     }
 
@@ -34,6 +36,7 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
       );
       setFilteredVendors(filtered);
     }
+    setHighlightedIndex(-1);
   }, [searchTerm, vendors]);
 
   // Close dropdown when clicking outside
@@ -44,6 +47,7 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
         !containerRef.current.contains(event.target)
       ) {
         setIsOpen(false);
+        setHighlightedIndex(-1);
       }
     };
 
@@ -55,12 +59,36 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
     onVendorSelect(vendor);
     setIsOpen(false);
     setSearchTerm("");
+    setHighlightedIndex(-1);
   };
 
   const handleClear = (e) => {
     e.stopPropagation();
     onVendorSelect(null);
     setSearchTerm("");
+    setHighlightedIndex(-1);
+  };
+
+  // ✅ Keyboard navigation: Arrow keys and Enter
+  const handleKeyDown = (e) => {
+    if (!isOpen || filteredVendors.length === 0) {
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev < filteredVendors.length - 1 ? prev + 1 : prev
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && highlightedIndex < filteredVendors.length) {
+        handleVendorSelect(filteredVendors[highlightedIndex]);
+      }
+    }
   };
 
   if (!vendors || vendors.length === 0) {
@@ -98,6 +126,7 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
               setIsOpen(true);
             }
           }}
+          onKeyDown={handleKeyDown}
           onClick={() => !isViewMode && setIsOpen(true)}
           placeholder="Search vendor..."
           disabled={isViewMode} // ✅ Disable in view mode
@@ -128,14 +157,15 @@ const GrnVendorSearch = ({ vendors, selectedVendorId, selectedVendorName, isView
       {isOpen && !isViewMode && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-20 max-h-64 overflow-y-auto">
           {filteredVendors && filteredVendors.length > 0 ? (
-            filteredVendors.map((vendor) => (
+            filteredVendors.map((vendor, index) => (
               <div
                 key={vendor._id}
                 onClick={() =>
                   handleVendorSelect(vendor)
                 }
-                className={`px-3 py-2 hover:bg-blue-50 cursor-pointer border-b last:border-b-0 transition ${
-                  selectedVendorId === vendor._id ? "bg-blue-100" : ""
+                onMouseEnter={() => setHighlightedIndex(index)}
+                className={`px-3 py-2 cursor-pointer border-b last:border-b-0 transition ${
+                  highlightedIndex === index ? "bg-blue-200" : selectedVendorId === vendor._id ? "bg-blue-100" : "hover:bg-blue-50"
                 }`}
               >
                 <div className="font-semibold text-sm text-gray-900">

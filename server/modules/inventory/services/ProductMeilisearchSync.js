@@ -9,7 +9,7 @@ import { indexProduct, bulkIndexProducts, deleteProductIndex } from "../../../co
 /**
  * Sync a single product to Meilisearch
  * @param {object} product - Product document
- * @returns {Promise<boolean>}
+ * @returns {Promise<object>} { success, synced, taskUid, error }
  */
 export const syncProductToMeilisearch = async (product, maxRetries = 3) => {
   let lastError = null;
@@ -25,18 +25,23 @@ export const syncProductToMeilisearch = async (product, maxRetries = 3) => {
 
       if (!populatedProduct) {
         console.warn(`⚠️  Product not found in database: ${product._id}`);
-        return { success: false, synced: false, error: 'Product not found in database' };
+        return { success: false, synced: false, taskUid: null, error: 'Product not found in database' };
       }
 
-      // ✅ Index the product - check if it actually succeeded
+      // ✅ Index the product - NOW RETURNS OBJECT WITH taskUid
       const indexResult = await indexProduct(populatedProduct);
       
-      if (indexResult === false) {
-        throw new Error('Meilisearch indexing returned false - client may not be connected');
+      if (!indexResult || !indexResult.success) {
+        throw new Error(indexResult?.message || 'Meilisearch indexing failed');
       }
 
-      console.log(`✅ Synced product: ${populatedProduct.name} (${populatedProduct._id}) - Attempt ${attempt}/${maxRetries}`);
-      return { success: true, synced: true, productId: populatedProduct._id };
+      console.log(`✅ Synced product: ${populatedProduct.name} (${populatedProduct._id}) - Task UID: ${indexResult.taskUid}`);
+      return { 
+        success: true, 
+        synced: true, 
+        taskUid: indexResult.taskUid,
+        productId: populatedProduct._id 
+      };
       
     } catch (err) {
       lastError = err;
@@ -53,7 +58,7 @@ export const syncProductToMeilisearch = async (product, maxRetries = 3) => {
   
   // All retries exhausted
   console.error(`❌ Failed to sync product ${product._id} after ${maxRetries} attempts:`, lastError?.message);
-  return { success: false, synced: false, error: lastError?.message || 'Unknown error' };
+  return { success: false, synced: false, taskUid: null, error: lastError?.message || 'Unknown error' };
 };
 
 /**

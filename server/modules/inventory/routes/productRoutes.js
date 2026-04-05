@@ -26,6 +26,9 @@ import {
   searchProducts,
 } from "../controllers/productController.js";
 
+// ✅ Import Meilisearch task status function
+import { getTaskStatus } from "../../../config/meilisearch.js";
+
 // ✅ Temporarily removed rate limiting due to bug - will re-enable after fix
 // import { searchLimiter } from "../../../config/rateLimiter.js";
 
@@ -114,6 +117,47 @@ router.post("/cleanup-meilisearch-orphans", cleanupMeilisearchOrphans);
 // ================= OPTIMIZED SERVER-SIDE SEARCH (For 200k+ Products) =================
 // ✅ With caching, pagination, analytics, and rate limiting
 router.get("/search", searchLimiter, searchProducts);
+
+// ================= GET MEILISEARCH TASK STATUS (For Frontend Polling) =================
+// ✅ Frontend polls this endpoint to check if task is completed
+// Usage: GET /api/v1/products/meilisearch-task-status/12345
+router.get("/meilisearch-task-status/:taskUid", async (req, res) => {
+  try {
+    const { taskUid } = req.params;
+    const taskId = parseInt(taskUid, 10);
+    
+    if (isNaN(taskId)) {
+      return res.status(400).json({ 
+        message: "Invalid taskUid - must be a number",
+        taskUid
+      });
+    }
+    
+    const task = await getTaskStatus(taskId);
+    
+    res.json({
+      success: true,
+      task: {
+        uid: task.uid,
+        status: task.status,  // 'enqueued', 'processing', 'succeeded', 'failed'
+        type: task.type,      // 'documentAdditionOrUpdate'
+        indexUid: task.indexUid,
+        createdAt: task.enqueuedAt,
+        startedAt: task.startedAt,
+        finishedAt: task.finishedAt,
+        duration: task.duration,
+        error: task.error
+      }
+    });
+  } catch (err) {
+    console.error("❌ Error getting task status:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to get task status",
+      error: err.message
+    });
+  }
+});
 
 // ================= ANALYTICS ENDPOINTS (Admin Only) =================
 // ✅ Get search analytics summary
