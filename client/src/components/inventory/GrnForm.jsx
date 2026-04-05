@@ -1,4 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect, useContext, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useContext,
+  useMemo,
+} from "react";
 import { useLocation } from "react-router-dom";
 import { Plus, X, Search } from "lucide-react";
 import { showToast } from "../shared/AnimatedCenteredToast.jsx";
@@ -19,7 +26,11 @@ import useGlobalKeyboard from "../../hooks/useGlobalKeyboard";
 import { ProductFormContext } from "../../context/ProductFormContext";
 
 // Utilities
-import { calculateGrnTotals, calculateItemCost, calculateFocOnPost } from "../../utils/grnCalculations";
+import {
+  calculateGrnTotals,
+  calculateItemCost,
+  calculateFocOnPost,
+} from "../../utils/grnCalculations";
 import { clearAllCache } from "../../utils/searchCache";
 import { useGlobalBarcodeScanner } from "../../hooks/useGlobalBarcodeScanner";
 import { normalizeBarcode } from "../../utils/barcodeUtils";
@@ -39,17 +50,31 @@ import { API_URL } from "../../config/config";
 
 const GrnForm = () => {
   // ✅ Country-based Decimal Format Hook
-  const { formatCurrency, formatNumber, round, sum, parseInput, isValidDecimal } = useDecimalFormat();
+  const {
+    formatCurrency,
+    formatNumber,
+    round,
+    sum,
+    parseInput,
+    isValidDecimal,
+  } = useDecimalFormat();
   const { registerShortcut } = useGlobalKeyboard();
   const location = useLocation();
 
   // Form State & Management
-  const { formData, setFormData, editingId, setEditingId, resetForm, fetchNextGrnNo } =
-    useGrnFormData();
+  const {
+    formData,
+    setFormData,
+    editingId,
+    setEditingId,
+    resetForm,
+    fetchNextGrnNo,
+  } = useGrnFormData();
 
   // ✅ Global Product Form Context (with fallback for safety)
   const productFormContext = useContext(ProductFormContext);
-  const { openProductForm, isOpen: isProductFormOpen } = productFormContext || {};
+  const { openProductForm, isOpen: isProductFormOpen } =
+    productFormContext || {};
 
   // Search & Selection States
   const [showNewGrnModal, setShowNewGrnModal] = useState(false);
@@ -65,7 +90,7 @@ const GrnForm = () => {
   const [editTargetItemId, setEditTargetItemId] = useState(null); // ✅ Open qty editor for duplicate scan target
   const [isAutoSearching, setIsAutoSearching] = useState(false); // Track if this is auto-search after product update
   const [isProcessing, setIsProcessing] = useState(false); // 🔴 Prevent double scan race condition
-  
+
   // ✅ Track last added item for quantity increment support
   const lastAddedItemRef = useRef(null); // { productId, barcode, itemId }
 
@@ -82,16 +107,9 @@ const GrnForm = () => {
   const [unitTypes, setUnitTypes] = useState([]);
   const [unitTypesMap, setUnitTypesMap] = useState(null);
 
-  // Debug vendors state
-  useEffect(() => {
-    console.log("📦 GrnForm vendors state:", vendors);
-  }, [vendors]);
-
   // Fallback: Manually fetch vendors if hook doesn't auto-populate
   useEffect(() => {
-    console.log("🚀 GrnForm mounted, triggering vendor fetch");
     if (vendors.length === 0) {
-      console.log("📥 No vendors yet, calling fetchVendors manually");
       fetchVendors();
     }
   }, []);
@@ -99,7 +117,8 @@ const GrnForm = () => {
   // Grid Management
   const barcodeInputRef = useRef(null);
   const itemSearchInputRef = useRef(null);
-  const { gridContainerRef, gridHeight } = useGrnGridDimensions(showNewGrnModal);
+  const { gridContainerRef, gridHeight } =
+    useGrnGridDimensions(showNewGrnModal);
 
   // Product Search Hook - Centralized with Meilisearch + fallback
   // Product Search Hook - Centralized with Meilisearch + fallback
@@ -116,31 +135,31 @@ const GrnForm = () => {
   // - No memory leaks
   // - Server is source of truth
   // - Direct O(1) product updates
-  
+
   // When product updated, ONLY update that specific product in dropdown
   const [updatedProductCache, setUpdatedProductCache] = useState({});
-  
+
   // ✅ DEBUG: Log cache changes
   useEffect(() => {
     if (Object.keys(updatedProductCache).length > 0) {
-      console.log('💾 [CACHE] Updated products in cache:', {
+      console.log("💾 [CACHE] Updated products in cache:", {
         count: Object.keys(updatedProductCache).length,
         products: Object.entries(updatedProductCache).map(([id, p]) => ({
           id: id.substring(0, 8),
           name: p.name,
-          price: p.price
-        }))
+          price: p.price,
+        })),
       });
     }
   }, [updatedProductCache]);
-  
+
   // Merge is now O(1) - only check if product is in our small update cache
-  const mergedSearchResults = searchResults.map(item => {
+  const mergedSearchResults = searchResults.map((item) => {
     // Only merge if this specific product was just updated
     // Prevents O(n) iteration on every render
     if (updatedProductCache[item._id]) {
       const merged = { ...item, ...updatedProductCache[item._id] };
-      console.log(`🔀 [MERGE] Product ${item.name}: price ${item.price} → ${merged.price}`);
+
       return merged;
     }
     return item;
@@ -148,7 +167,6 @@ const GrnForm = () => {
 
   // Log merge summary to understand if results are being searched
   if (Object.keys(updatedProductCache).length > 0) {
-    console.log(`🔀 [MERGE-SUMMARY] Cache has ${Object.keys(updatedProductCache).length} products, SearchResults has ${searchResults.length} items (can only merge visible items)`);
   }
 
   // ✅ PRODUCTION HYBRID APPROACH: Optimistic UI + Background Meilisearch Sync
@@ -162,30 +180,23 @@ const GrnForm = () => {
   useEffect(() => {
     const handleProductUpdatedHybrid = (event) => {
       const { product, meilisearchSync } = event.detail || {};
-      
+
       if (!product?._id) {
-        console.warn('❌ [HYBRID] No product data in event');
         return;
       }
-      
-      console.log('📨 [HYBRID] Event received:', {
-        productId: product._id,
-        name: product.name,
-        newPrice: product.price,
-      });
-      
+
       // Wait for Meilisearch to fully index the product update (3.5s)
-      console.log(`⏰ Waiting 3.5s for Meilisearch indexing...`);
+
       setTimeout(() => {
         // Now clear the cache so next search gets fresh data with updated price
-        console.log(`🗑️ Clearing search cache...`);
+
         clearAllCache();
-        console.log(`✅ Cache cleared - next search will fetch from Meilisearch with updated product`);
       }, 3500);
     };
 
-    window.addEventListener('productUpdated', handleProductUpdatedHybrid);
-    return () => window.removeEventListener('productUpdated', handleProductUpdatedHybrid);
+    window.addEventListener("productUpdated", handleProductUpdatedHybrid);
+    return () =>
+      window.removeEventListener("productUpdated", handleProductUpdatedHybrid);
   }, [itemSearch]);
 
   // 🔴 P3: Listen for product updates from Product modal and refresh search results AND items in form
@@ -193,56 +204,59 @@ const GrnForm = () => {
     const handleProductUpdated = (event) => {
       const syncStartTime = performance.now();
       const { product } = event.detail || {};
-      
+
       if (!product?._id) {
-        console.warn('⚠️ [SYNC] No product ID in event data');
         return;
       }
-      
+
       // ✅ IMMEDIATE: Update items if any match this product
       if (formData.items && formData.items.length > 0) {
-        
         // Check which items match
-        const matchingItems = formData.items.filter(item => {
+        const matchingItems = formData.items.filter((item) => {
           return item.productId === product._id;
         });
-        
+
         if (matchingItems.length > 0) {
-          
           setFormData((prev) => {
             const updatedItems = prev.items.map((item) => {
               if (item.productId === product._id) {
-                const newTrackExpiry = product.trackExpiry !== undefined ? product.trackExpiry : item.trackExpiry;
+                const newTrackExpiry =
+                  product.trackExpiry !== undefined
+                    ? product.trackExpiry
+                    : item.trackExpiry;
                 return { ...item, trackExpiry: newTrackExpiry };
               }
               return item;
             });
-            
-            const hasChanged = updatedItems.some((item, idx) => item.trackExpiry !== prev.items[idx]?.trackExpiry);
+
+            const hasChanged = updatedItems.some(
+              (item, idx) => item.trackExpiry !== prev.items[idx]?.trackExpiry,
+            );
             if (hasChanged) {
-              setRefreshTrigger(t => t + 1);
+              setRefreshTrigger((t) => t + 1);
             }
-            
+
             return { ...prev, items: updatedItems };
           });
         } else {
-          console.warn(`⚠️ [NO-MATCH] No items found matching productId: ${product._id}`);
-          console.log(`📋 [DEBUG] Current items:`, formData.items.map(i => ({ name: i.productName, id: i.id, productId: i.productId, trackExpiry: i.trackExpiry })));
+          console.warn(
+            `⚠️ [NO-MATCH] No items found matching productId: ${product._id}`,
+          );
         }
       } else {
         console.warn(`⚠️ [EMPTY] formData.items is empty or undefined`);
       }
-      
+
       // ✅ SYNC: Only update form items, don't mess with search refresh
       // (search dropdown is handled by the first listener via merge)
       // Just log for debugging
       if (itemSearch && itemSearch.trim()) {
-        console.log(`✅ [FORM-UPDATE] Product updated, items synced in form`);
       }
     };
 
-    window.addEventListener('productUpdated', handleProductUpdated);
-    return () => window.removeEventListener('productUpdated', handleProductUpdated);
+    window.addEventListener("productUpdated", handleProductUpdated);
+    return () =>
+      window.removeEventListener("productUpdated", handleProductUpdated);
   }, [itemSearch, clearCache]);
 
   // ✅ Auto-clear indexing status after 3 seconds
@@ -256,29 +270,27 @@ const GrnForm = () => {
   }, [indexingStatus]);
 
   // Item Management
-  const { addItemToGrn: addItemToGrnBase, updateItem, removeItemFromGrn: removeItemFromGrnBase } =
-    useGrnItemManagement(formData, setFormData, unitTypesMap);
+  const {
+    addItemToGrn: addItemToGrnBase,
+    updateItem,
+    removeItemFromGrn: removeItemFromGrnBase,
+  } = useGrnItemManagement(formData, setFormData, unitTypesMap);
 
   // ✅ WRAPPER: Remove item AND clear lastAddedItemRef if it's the same item
   const removeItemFromGrn = useCallback(
     (itemId) => {
-      console.log(`🗑️  [REMOVE] Removing item with ID: ${itemId}`);
-      
       // Find the item being removed
-      const removedItem = formData.items?.find(item => item.id === itemId);
-      if (removedItem) {
-        console.log(`🗑️  [REMOVE] Item being removed:`, {
-          productName: removedItem.productName,
-          productId: removedItem.productId,
-        });
-        
-        // ✅ If this is the last added item, clear the reference
-        if (lastAddedItemRef.current && lastAddedItemRef.current.productId === removedItem.productId) {
-          console.warn(`⚠️  [REMOVE] Clearing lastAddedItemRef since item being removed matches last added item`);
-          lastAddedItemRef.current = null;
-        }
+      const removedItem = formData.items?.find((item) => item.id === itemId);
+
+      // ✅ If this is the last added item, clear the reference
+      if (
+        removedItem &&
+        lastAddedItemRef.current &&
+        lastAddedItemRef.current.productId === removedItem.productId
+      ) {
+        lastAddedItemRef.current = null;
       }
-      
+
       // Call the base remove function
       removeItemFromGrnBase(itemId);
     },
@@ -296,12 +308,15 @@ const GrnForm = () => {
   const focusSearchShortcutHandlerRef = useRef(null);
   const isGrnRoute = location.pathname === "/grn-form";
   const isGlobalGrnContextActive =
-    isGrnRoute && showNewGrnModal && !isViewMode && !showBatchExpiryModal && !showUnitSelector;
+    isGrnRoute &&
+    showNewGrnModal &&
+    !isViewMode &&
+    !showBatchExpiryModal &&
+    !showUnitSelector;
 
   // 🔍 DEBUG: Log context activation
   useEffect(() => {
     if (isGlobalGrnContextActive) {
-      console.log('✅ [GrnForm] GRN Context ACTIVE - keyboard shortcuts enabled');
     }
   }, [isGlobalGrnContextActive]);
 
@@ -328,7 +343,9 @@ const GrnForm = () => {
       }
 
       highlightTimeoutRef.current = setTimeout(() => {
-        setHighlightedItemId((current) => (current === itemId ? null : current));
+        setHighlightedItemId((current) =>
+          current === itemId ? null : current,
+        );
       }, 2500);
     }, 0);
   }, []);
@@ -336,13 +353,6 @@ const GrnForm = () => {
   // ✅ Wrapper to highlight newly added items
   const addItemToGrn = useCallback(
     (product, selectedUnit = null) => {
-      console.log("🔴 [CRITICAL] addItemToGrn CALLED with:", {
-        productName: product?.name,
-        productId: product?._id,
-        selectedUnit: selectedUnit?.name,
-        formDataItemsBeforeAdd: formData.items?.length || 0,
-      });
-
       if (!product) {
         console.error("❌ [ADD] No product provided to addItemToGrn!");
         return;
@@ -356,11 +366,8 @@ const GrnForm = () => {
           productName: product.name,
           timestamp: Date.now(),
         };
-        console.log("💾 [ADD] Saved to lastAddedItemRef:", lastAddedItemRef.current);
 
-        console.log("🔴 [ADD] Calling addItemToGrnBase from HOOK...");
         addItemToGrnBase(product, selectedUnit);
-        console.log("🔴 [ADD] addItemToGrnBase HOOK CALLED");
       } catch (error) {
         console.error("❌ [ADD] ERROR in addItemToGrn:", error);
       }
@@ -379,12 +386,19 @@ const GrnForm = () => {
     if (currentItems.length > prevItems.length) {
       const newItem = currentItems[currentItems.length - 1];
       highlightId = newItem?.id;
-    } else if (currentItems.length === prevItems.length && currentItems.length > 0) {
+    } else if (
+      currentItems.length === prevItems.length &&
+      currentItems.length > 0
+    ) {
       for (let i = 0; i < currentItems.length; i++) {
         const currentItem = currentItems[i];
         const prevItem = prevItems[i];
 
-        if (prevItem && currentItem?.id === prevItem.id && currentItem?.qty > prevItem.qty) {
+        if (
+          prevItem &&
+          currentItem?.id === prevItem.id &&
+          currentItem?.qty > prevItem.qty
+        ) {
           highlightId = currentItem.id;
           break;
         }
@@ -430,7 +444,6 @@ const GrnForm = () => {
           return updatedItem;
         });
 
-        console.log("♻️ Tax type changed to:", prev.taxType, "- Recalculated all items");
         return { ...prev, items: updatedItems };
       });
     }
@@ -445,7 +458,7 @@ const GrnForm = () => {
    */
   const normalizeBarcode = useCallback((barcode) => {
     if (!barcode) return "";
-    
+
     // Trim, remove all spaces (hidden characters too), and lowercase
     return barcode
       .trim()
@@ -460,133 +473,140 @@ const GrnForm = () => {
    * - Adds directly without modal if matched
    * - Uses normalized barcode comparison
    */
-  const checkAndHandleVariantBarcode = useCallback((product, barcode) => {
-    if (!product?.packingUnits || !Array.isArray(product.packingUnits)) {
-      console.log("📝 [BARCODE] No unit variants to check");
-      return false;
-    }
+  const checkAndHandleVariantBarcode = useCallback(
+    (product, barcode) => {
+      if (!product?.packingUnits || !Array.isArray(product.packingUnits)) {
+        return false;
+      }
 
-    const normalizedBarcode = normalizeBarcode(barcode);
-    if (!normalizedBarcode) {
-      console.log("⚠️ [BARCODE] Empty barcode after normalization");
-      return false;
-    }
+      const normalizedBarcode = normalizeBarcode(barcode);
+      if (!normalizedBarcode) {
+        return false;
+      }
 
-    console.log("🔍 [BARCODE] Checking variant barcodes:", {
-      scannedBarcode: normalizedBarcode,
-      variantCount: product.packingUnits.length,
-      variantBarcodes: product.packingUnits.map((pu) => ({
-        barcode: normalizeBarcode(pu.barcode),
-        unitName: pu.unit?.unitName,
-      })),
-    });
-
-    // 🔴 Find ALL matches (detect duplicates)
-    const matchedVariants = product.packingUnits
-      .map((pu, idx) => ({
-        variant: pu,
-        index: idx,
-        normalizedBarcode: normalizeBarcode(pu.barcode),
-      }))
-      .filter((item) => item.normalizedBarcode === normalizedBarcode);
-
-    if (matchedVariants.length === 0) {
-      console.log(`ℹ️ [BARCODE] No variant barcode match found`);
-      return false;
-    }
-
-    if (matchedVariants.length > 1) {
-      console.warn(
-        `⚠️ [BARCODE] ⚠️ DUPLICATE BARCODE DETECTED! ${matchedVariants.length} variants have the same barcode:`,
-        matchedVariants.map((m) => ({
-          variant: m.variant.unit?.unitName,
-          barcode: m.normalizedBarcode,
+      console.log("🔍 [BARCODE] Checking variant barcodes:", {
+        scannedBarcode: normalizedBarcode,
+        variantCount: product.packingUnits.length,
+        variantBarcodes: product.packingUnits.map((pu) => ({
+          barcode: normalizeBarcode(pu.barcode),
+          unitName: pu.unit?.unitName,
         })),
+      });
+
+      // 🔴 Find ALL matches (detect duplicates)
+      const matchedVariants = product.packingUnits
+        .map((pu, idx) => ({
+          variant: pu,
+          index: idx,
+          normalizedBarcode: normalizeBarcode(pu.barcode),
+        }))
+        .filter((item) => item.normalizedBarcode === normalizedBarcode);
+
+      if (matchedVariants.length === 0) {
+        return false;
+      }
+
+      if (matchedVariants.length > 1) {
+        console.warn(
+          `⚠️ [BARCODE] ⚠️ DUPLICATE BARCODE DETECTED! ${matchedVariants.length} variants have the same barcode:`,
+          matchedVariants.map((m) => ({
+            variant: m.variant.unit?.unitName,
+            barcode: m.normalizedBarcode,
+          })),
+        );
+        showToast(
+          "warning",
+          `⚠️ Duplicate variant barcode! Using first match: ${matchedVariants[0].variant.unit?.unitName}`,
+        );
+      }
+
+      // Use first match
+      const matchedItem = matchedVariants[0];
+      const matchedVariant = matchedItem.variant;
+
+      console.log(
+        `✅ [BARCODE] ✨ FOUND VARIANT BARCODE MATCH: ${matchedVariant.unit?.unitName || "Variant"}`,
       );
-      showToast(
-        "warning",
-        `⚠️ Duplicate variant barcode! Using first match: ${matchedVariants[0].variant.unit?.unitName}`,
-      );
-    }
 
-    // Use first match
-    const matchedItem = matchedVariants[0];
-    const matchedVariant = matchedItem.variant;
+      // Build the selected unit object
+      const selectedUnit = {
+        id: `variant-${matchedItem.index}`,
+        name: matchedVariant.unit?.unitName || "Unit",
+        barcode: matchedVariant.barcode || "",
+        unit:
+          matchedVariant.unit?.unitSymbol || matchedVariant.unitSymbol || "PC",
+        factor: matchedVariant.factor || 1,
+        cost: matchedVariant.cost || product?.cost || 0,
+        price: matchedVariant.price || product?.price || 0,
+      };
 
-    console.log(
-      `✅ [BARCODE] ✨ FOUND VARIANT BARCODE MATCH: ${matchedVariant.unit?.unitName || "Variant"}`,
-    );
-
-    // Build the selected unit object
-    const selectedUnit = {
-      id: `variant-${matchedItem.index}`,
-      name: matchedVariant.unit?.unitName || "Unit",
-      barcode: matchedVariant.barcode || "",
-      unit: matchedVariant.unit?.unitSymbol || matchedVariant.unitSymbol || "PC",
-      factor: matchedVariant.factor || 1,
-      cost: matchedVariant.cost || product?.cost || 0,
-      price: matchedVariant.price || product?.price || 0,
-    };
-
-    // Add directly with the matched variant (bypass modal)
-    addItemToGrn(product, selectedUnit);
-    return true;
-  }, [normalizeBarcode, addItemToGrn]);
+      // Add directly with the matched variant (bypass modal)
+      addItemToGrn(product, selectedUnit);
+      return true;
+    },
+    [normalizeBarcode, addItemToGrn],
+  );
 
   /**
    * Handle item selection with unit variant support
    */
-  const handleItemSelected = useCallback((product) => {
-    console.log("🔍 Product selected - checking for packingUnits:", {
-      productName: product?.name,
-      hasPackingUnits: !!product?.packingUnits,
-      packingUnitsLength: product?.packingUnits?.length || 0,
-      packingUnits: product?.packingUnits,
-      taxPercent: product?.taxPercent,
-      taxType: product?.taxType,
-      tax: product?.tax,
-      fullProduct: product,
-    });
+  const handleItemSelected = useCallback(
+    (product) => {
+      console.log("🔍 Product selected - checking for packingUnits:", {
+        productName: product?.name,
+        hasPackingUnits: !!product?.packingUnits,
+        packingUnitsLength: product?.packingUnits?.length || 0,
+        packingUnits: product?.packingUnits,
+        taxPercent: product?.taxPercent,
+        taxType: product?.taxType,
+        tax: product?.tax,
+        fullProduct: product,
+      });
 
-    // Check if product has packing units (unit variants)
-    if (product?.packingUnits && product.packingUnits.length > 0) {
-      console.log("✅ Product has unit variants - showing selector modal");
-      // Show unit selector modal
-      setProductForUnitSelection(product);
-      setShowUnitSelector(true);
-    } else {
-      console.log("ℹ️ No unit variants - adding with base unit");
-      // Add directly with base unit
-      addItemToGrn(product);
-    }
-    setItemSearch("");
-  }, [addItemToGrn]);
+      // Check if product has packing units (unit variants)
+      if (product?.packingUnits && product.packingUnits.length > 0) {
+        // Show unit selector modal
+        setProductForUnitSelection(product);
+        setShowUnitSelector(true);
+      } else {
+        // Add directly with base unit
+        addItemToGrn(product);
+      }
+      setItemSearch("");
+    },
+    [addItemToGrn],
+  );
 
   /**
    * Handle unit variant selection
    */
-  const handleUnitVariantSelected = useCallback((selectedUnit) => {
-    if (productForUnitSelection) {
-      addItemToGrn(productForUnitSelection, selectedUnit);
-      setShowUnitSelector(false);
-      setProductForUnitSelection(null);
-    }
-  }, [productForUnitSelection, addItemToGrn]);
+  const handleUnitVariantSelected = useCallback(
+    (selectedUnit) => {
+      if (productForUnitSelection) {
+        addItemToGrn(productForUnitSelection, selectedUnit);
+        setShowUnitSelector(false);
+        setProductForUnitSelection(null);
+      }
+    },
+    [productForUnitSelection, addItemToGrn],
+  );
 
   /**
    * ✅ Handle product creation - Use global product form modal
    */
   const handleCreateProduct = useCallback(() => {
     if (!openProductForm) {
-      showToast('error', 'Product form not available. Please refresh the page.');
+      showToast(
+        "error",
+        "Product form not available. Please refresh the page.",
+      );
       return;
     }
     openProductForm({
-      mode: 'create',
+      mode: "create",
       onSave: (newProduct) => {
         // Auto-select the newly created product
         handleItemSelected(newProduct);
-        console.log("✅ Product created and selected for GRN:", newProduct.name);
       },
     });
   }, [openProductForm, handleItemSelected]);
@@ -625,7 +645,7 @@ const GrnForm = () => {
       };
 
       addItemToGrn(product, selectedUnit);
-      console.log(`✅ [VARIANT] Added ${product.name} (${variant.unit?.unitName})`);
+
       setBarcodeValue("");
     },
     [addItemToGrn, formData.items, setBarcodeValue, showToast],
@@ -633,7 +653,6 @@ const GrnForm = () => {
 
   const handleDuplicateScan = useCallback(
     (_barcode, item, meta = {}) => {
-      console.warn(`🚫 [SCAN] Duplicate scan blocked for: ${item.productName}`);
       highlightExistingItem(item.id, { startEdit: true });
       showToast("error", "Item already added");
       setBarcodeValue("");
@@ -664,10 +683,6 @@ const GrnForm = () => {
         return;
       }
 
-      console.log(`✅ [PRODUCT] Found product: ${product.name}`);
-      console.log(`🔴 [PRODUCT] product object:`, product);
-      console.log("⚡ [PRODUCT] Adding with base unit (no modal for instant scanning)");
-
       // Add directly with base unit - no modal interruption!
       // (Variant-specific barcodes are handled in handleVariantFound)
       console.log("🔴 [PRODUCT] Calling addItemToGrn NOW");
@@ -677,7 +692,13 @@ const GrnForm = () => {
 
       setBarcodeValue("");
     },
-    [addItemToGrn, formData.items, highlightExistingItem, setBarcodeValue, showToast],
+    [
+      addItemToGrn,
+      formData.items,
+      highlightExistingItem,
+      setBarcodeValue,
+      showToast,
+    ],
   );
 
   /**
@@ -686,15 +707,15 @@ const GrnForm = () => {
   const handleBarcodeNotFound = useCallback(
     (barcode) => {
       console.warn(`❌ [NOT FOUND] No product found for: ${barcode}`);
-      
+
       // ✅ Clear lastAddedItemRef so we don't try to increment non-existent items
       if (lastAddedItemRef.current) {
         console.warn(`⚠️  [NOT FOUND] Clearing stale lastAddedItemRef`);
         lastAddedItemRef.current = null;
       }
-      
+
       // ✅ Show error toast so user knows product wasn't found
-      showToast('error', `Product not found: ${barcode}`);
+      showToast("error", `Product not found: ${barcode}`);
       setBarcodeValue("");
     },
     [setBarcodeValue, showToast],
@@ -709,9 +730,9 @@ const GrnForm = () => {
   const handleIncrementQty = useCallback(
     (barcode) => {
       console.log(`🔄 [QTY] Incrementing quantity for repeat scan: ${barcode}`);
-      
+
       const normalizedBarcode = normalizeBarcode(barcode);
-      
+
       // Check if this matches the last added item
       if (!lastAddedItemRef.current) {
         console.warn(`❌ [QTY] No last added item to increment`);
@@ -723,23 +744,40 @@ const GrnForm = () => {
       const lastUnitBarcode = normalizeBarcode(lastItem.unitBarcode);
 
       console.log(`📍 [QTY] Last added item:`, lastItem);
-      console.log(`🔍 [QTY] Checking: ${normalizedBarcode} vs ${lastBarcode} or ${lastUnitBarcode}`);
+      console.log(
+        `🔍 [QTY] Checking: ${normalizedBarcode} vs ${lastBarcode} or ${lastUnitBarcode}`,
+      );
 
       // Match against main barcode or unit barcode
-      if (normalizedBarcode !== lastBarcode && normalizedBarcode !== lastUnitBarcode) {
+      if (
+        normalizedBarcode !== lastBarcode &&
+        normalizedBarcode !== lastUnitBarcode
+      ) {
         console.warn(
           `❌ [QTY] Barcode doesn't match last item. Expected ${lastBarcode} or ${lastUnitBarcode}, got ${normalizedBarcode}`,
         );
         return;
       }
 
-      console.log(`✅ [QTY] Barcode matched! Incrementing quantity for: ${lastItem.productName}`);
+      console.log(
+        `✅ [QTY] Barcode matched! Incrementing quantity for: ${lastItem.productName}`,
+      );
 
       // ✅ FIXED: Check if item ACTUALLY exists in formData
       setFormData((prev) => {
-        console.log(`🔎 [QTY] Current formData.items in setFormData callback:`, prev.items?.length || 0, "items");
-        console.log(`📋 [QTY] Items in formData:`, prev.items?.map(i => ({ name: i.productName, productId: i.productId })) || []);
-        
+        console.log(
+          `🔎 [QTY] Current formData.items in setFormData callback:`,
+          prev.items?.length || 0,
+          "items",
+        );
+        console.log(
+          `📋 [QTY] Items in formData:`,
+          prev.items?.map((i) => ({
+            name: i.productName,
+            productId: i.productId,
+          })) || [],
+        );
+
         // Find the item in the current state (guaranteed to be fresh)
         const itemIndex = prev.items?.findIndex(
           (item) => item.productId === lastItem.productId,
@@ -763,8 +801,10 @@ const GrnForm = () => {
 
           // ✅ REMOVED: Toast notification during scanning
           // Just log to console, don't show toast
-          console.log(`📊 [QTY] Quantity updated: ${lastItem.productName} qty: ${newQty}`);
-          
+          console.log(
+            `📊 [QTY] Quantity updated: ${lastItem.productName} qty: ${newQty}`,
+          );
+
           return {
             ...prev,
             items: updatedItems,
@@ -775,14 +815,17 @@ const GrnForm = () => {
           // Don't force add here - let user add from search to ensure proper data
           console.error(`❌ [QTY] Item missing from formData!`);
           console.error(`🔍 [QTY] Expected productId: ${lastItem.productId}`);
-          console.error(`📋 [QTY] Available in formData:`, prev.items?.map(i => i.productId) || []);
-          
+          console.error(
+            `📋 [QTY] Available in formData:`,
+            prev.items?.map((i) => i.productId) || [],
+          );
+
           // ✅ REMOVED: Toast notification, just log to console
           console.warn(`⚠️  [QTY] Item not in table - treating as new scan`);
-          
+
           // Reset tracking so next scan will try to add fresh
           lastAddedItemRef.current = null;
-          
+
           return prev;
         }
       });
@@ -800,9 +843,7 @@ const GrnForm = () => {
       const response = await axios.get(searchUrl);
 
       if (response.data?.products && response.data.products.length > 0) {
-        console.log(
-          `🌐 [API] Found ${response.data.products.length} products`,
-        );
+        console.log(`🌐 [API] Found ${response.data.products.length} products`);
         return response.data.products[0]; // Return first match
       }
 
@@ -837,7 +878,6 @@ const GrnForm = () => {
       handleProductFound,
       handleBarcodeNotFound,
       formData.items, // ✅ Add to dependencies
-
     ],
   );
 
@@ -885,7 +925,12 @@ const GrnForm = () => {
     } else {
       barcodeScannerControls?.resume();
     }
-  }, [showUnitSelector, showBatchExpiryModal, isProductFormOpen, barcodeScannerControls]);
+  }, [
+    showUnitSelector,
+    showBatchExpiryModal,
+    isProductFormOpen,
+    barcodeScannerControls,
+  ]);
 
   /**
    * ✅ Handle batch/expiry button click
@@ -899,46 +944,56 @@ const GrnForm = () => {
   /**
    * ✅ Handle batch/expiry modal save
    */
-  const handleBatchExpirySave = useCallback((data) => {
-    const { itemId, batchNumber, expiryDate } = data;
-    console.log("💾 Saving batch/expiry:", { itemId, batchNumber, expiryDate });
-    
-    setFormData((prev) => {
-      const updatedItems = prev.items.map((item) => {
-        if (item.id === itemId) {
-          return {
-            ...item,
-            batchNumber: batchNumber,
-            expiryDate: new Date(expiryDate).toISOString(),
-          };
-        }
-        return item;
+  const handleBatchExpirySave = useCallback(
+    (data) => {
+      const { itemId, batchNumber, expiryDate } = data;
+      console.log("💾 Saving batch/expiry:", {
+        itemId,
+        batchNumber,
+        expiryDate,
       });
-      return { ...prev, items: updatedItems };
-    });
 
-    showToast('success', "Batch & expiry details saved");
-  }, [setFormData]);
+      setFormData((prev) => {
+        const updatedItems = prev.items.map((item) => {
+          if (item.id === itemId) {
+            return {
+              ...item,
+              batchNumber: batchNumber,
+              expiryDate: new Date(expiryDate).toISOString(),
+            };
+          }
+          return item;
+        });
+        return { ...prev, items: updatedItems };
+      });
+
+      showToast("success", "Batch & expiry details saved");
+    },
+    [setFormData],
+  );
 
   // API Management
-  const { fetchVendors, fetchGrns, saveGrn, deleteGrn } = useGrnApi(setVendors, setGrnList);
+  const { fetchVendors, fetchGrns, saveGrn, deleteGrn } = useGrnApi(
+    setVendors,
+    setGrnList,
+  );
   const productAPI = useProductAPI();
-  
+
   // Fetch Unit Types - Only once on component mount
   useEffect(() => {
     let isMounted = true;
-    
+
     const loadUnitTypes = async () => {
       try {
         const units = await productAPI.fetchUnits();
-        
+
         if (!isMounted) return; // Prevent state update if unmounted
-        
+
         setUnitTypes(units);
-        
+
         // Create a map of unit ID -> unit data for quick lookups
         const map = {};
-        units.forEach(unit => {
+        units.forEach((unit) => {
           map[unit._id] = unit;
           // Also map by name/symbol for additional lookups
           map[unit.unitSymbol] = unit;
@@ -949,54 +1004,65 @@ const GrnForm = () => {
         console.error("❌ Error loading unit types:", err);
       }
     };
-    
+
     loadUnitTypes();
-    
+
     return () => {
       isMounted = false; // Cleanup on unmount
     };
   }, []); // Empty array = run only once on mount
 
   // Grid Configuration
-  const handleEditProduct = useCallback(async (productId) => {
-    try {
-      // Fetch product details
-      const response = await axios.get(`${API_URL}/products/getproduct/${productId}`);
-      const product = response.data;
-      
-      if (!openProductForm) {
-        showToast('error', 'Product form not available');
-        return;
-      }
-      
-      // Open product modal in edit mode
-      openProductForm({
-        mode: 'edit',
-        product: product,
-        onSave: (updatedProduct) => {
-          // After saving, the product is updated and event is dispatched
-          // GrnForm already listens to productUpdated event
-          showToast('success', 'Product updated successfully');
-        },
-      });
-    } catch (error) {
-      console.error('Error fetching product:', error);
-      showToast('error', 'Failed to load product for editing');
-    }
-  }, [openProductForm]);
+  const handleEditProduct = useCallback(
+    async (productId) => {
+      try {
+        // Fetch product details
+        const response = await axios.get(
+          `${API_URL}/products/getproduct/${productId}`,
+        );
+        const product = response.data;
 
-  const { columns, gridConfig } = useGrnGridConfig(removeItemFromGrn, formData.taxType, handleEditProduct);
+        if (!openProductForm) {
+          showToast("error", "Product form not available");
+          return;
+        }
+
+        // Open product modal in edit mode
+        openProductForm({
+          mode: "edit",
+          product: product,
+          onSave: (updatedProduct) => {
+            // After saving, the product is updated and event is dispatched
+            // GrnForm already listens to productUpdated event
+            showToast("success", "Product updated successfully");
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching product:", error);
+        showToast("error", "Failed to load product for editing");
+      }
+    },
+    [openProductForm],
+  );
+
+  const { columns, gridConfig } = useGrnGridConfig(
+    removeItemFromGrn,
+    formData.taxType,
+    handleEditProduct,
+  );
 
   // ✅ Memoize GRN totals calculation (called 10+ times per render - prevent recalculation)
   const grnTotals = useMemo(
     () => calculateGrnTotals(formData.items, formData.shippingCost),
-    [formData.items, formData.shippingCost]
+    [formData.items, formData.shippingCost],
   );
 
   // ✅ Helper functions for summary calculations
   const getDiscountAmount = () => {
     if (formData.manualDiscountPercent) {
-      return round((grnTotals.totalSubtotal * formData.manualDiscountPercent) / 100);
+      return round(
+        (grnTotals.totalSubtotal * formData.manualDiscountPercent) / 100,
+      );
     }
     return formData.manualDiscountAmount || grnTotals.totalDiscount;
   };
@@ -1019,11 +1085,14 @@ const GrnForm = () => {
 
   // ✅ FOC (Free Of Charge) Calculations
   const getTotalFocQty = () => {
-    return formData.items.reduce((sum, item) => sum + (parseFloat(item.focQty) || 0), 0);
+    return formData.items.reduce(
+      (sum, item) => sum + (parseFloat(item.focQty) || 0),
+      0,
+    );
   };
 
   const getTotalFocItems = () => {
-    return formData.items.filter(item => item.foc || item.focQty > 0).length;
+    return formData.items.filter((item) => item.foc || item.focQty > 0).length;
   };
 
   const getRegularQty = () => {
@@ -1033,6 +1102,8 @@ const GrnForm = () => {
   const openNewGrnModal = useCallback(async () => {
     setIsViewMode(false);
     setEditingId(null);
+    setItemSearch(""); // ✅ Reset product search
+    setBarcodeValue(""); // ✅ Reset barcode input
     await resetForm();
     setShowNewGrnModal(true);
   }, [resetForm, setEditingId]);
@@ -1040,6 +1111,9 @@ const GrnForm = () => {
   const closeGrnModal = useCallback(async () => {
     setShowNewGrnModal(false);
     setIsViewMode(false);
+    setItemSearch(""); // ✅ Reset product search
+    setBarcodeValue(""); // ✅ Reset barcode input
+    setGrnSearch(""); // ✅ Reset GRN list search
     await resetForm();
   }, [resetForm]);
 
@@ -1050,29 +1124,36 @@ const GrnForm = () => {
     const itemsCount = formData.items?.length || 0;
 
     if (!vendorId) {
-      showToast('error', "Please select a vendor");
+      showToast("error", "Please select a vendor");
       return false;
     }
 
     if (!invoiceNo) {
-      showToast('error', "Please enter invoice number");
+      showToast("error", "Please enter invoice number");
       return false;
     }
 
     if (!taxType) {
-      showToast('error', "Please select a tax type (Exclusive, Inclusive, or No Tax)");
+      showToast(
+        "error",
+        "Please select a tax type (Exclusive, Inclusive, or No Tax)",
+      );
       return false;
     }
 
     if (itemsCount === 0) {
-      showToast('error', "Please add at least one item");
+      showToast("error", "Please add at least one item");
       return false;
     }
 
-    const itemsWithZeroCost = formData.items.filter((item) => item.cost === 0 && !item.foc);
+    const itemsWithZeroCost = formData.items.filter(
+      (item) => item.cost === 0 && !item.foc,
+    );
     if (itemsWithZeroCost.length > 0) {
-      const itemNames = itemsWithZeroCost.map((item) => item.productName).join(", ");
-      showToast('error', `Cost cannot be 0 for non-FOC items: ${itemNames}`);
+      const itemNames = itemsWithZeroCost
+        .map((item) => item.productName)
+        .join(", ");
+      showToast("error", `Cost cannot be 0 for non-FOC items: ${itemNames}`);
       return false;
     }
 
@@ -1117,7 +1198,12 @@ const GrnForm = () => {
   }, [isGrnRoute, isViewMode, showNewGrnModal]);
 
   useEffect(() => {
-    if (!showNewGrnModal || isViewMode || showBatchExpiryModal || showUnitSelector) {
+    if (
+      !showNewGrnModal ||
+      isViewMode ||
+      showBatchExpiryModal ||
+      showUnitSelector
+    ) {
       modalHasInitialFocusRef.current = false;
       return undefined;
     }
@@ -1143,19 +1229,25 @@ const GrnForm = () => {
     draftShortcutHandlerRef.current = handleDraftSubmit;
     postShortcutHandlerRef.current = handlePostSubmit;
     focusSearchShortcutHandlerRef.current = focusItemSearchInput;
-  }, [openNewGrnModal, closeGrnModal, handleDraftSubmit, handlePostSubmit, focusItemSearchInput]);
+  }, [
+    openNewGrnModal,
+    closeGrnModal,
+    handleDraftSubmit,
+    handlePostSubmit,
+    focusItemSearchInput,
+  ]);
 
   useEffect(() => {
     const unregisterOpen = registerShortcut(
-      'Alt+N',
+      "Alt+N",
       (event) => {
         event.preventDefault();
         openShortcutHandlerRef.current?.();
       },
       {
-        id: 'grn-form-open',
-        description: 'Open new GRN',
-        category: 'GRN',
+        id: "grn-form-open",
+        description: "Open new GRN",
+        category: "GRN",
         global: true,
       },
     );
@@ -1171,7 +1263,7 @@ const GrnForm = () => {
     }
 
     const unregisterSave = registerShortcut(
-      'Ctrl+S',
+      "Ctrl+S",
       (event) => {
         event.preventDefault();
         if (isGlobalGrnContextActive) {
@@ -1179,46 +1271,46 @@ const GrnForm = () => {
         }
       },
       {
-        id: 'grn-form-save',
-        description: 'Save GRN as draft',
-        category: 'GRN',
+        id: "grn-form-save",
+        description: "Save GRN as draft",
+        category: "GRN",
         global: true,
         allowInInput: true,
       },
     );
 
     const unregisterSearch = registerShortcut(
-      'Ctrl+F',
+      "Ctrl+F",
       (event) => {
         event.preventDefault();
         focusSearchShortcutHandlerRef.current?.();
       },
       {
-        id: 'grn-form-search',
-        description: 'Focus GRN search',
-        category: 'GRN',
+        id: "grn-form-search",
+        description: "Focus GRN search",
+        category: "GRN",
         global: true,
         allowInInput: true,
       },
     );
 
     const unregisterClose = registerShortcut(
-      'Escape',
+      "Escape",
       (event) => {
         event.preventDefault();
         closeShortcutHandlerRef.current?.();
       },
       {
-        id: 'grn-form-close',
-        description: 'Close GRN form',
-        category: 'GRN',
+        id: "grn-form-close",
+        description: "Close GRN form",
+        category: "GRN",
         global: true,
         allowInInput: true,
       },
     );
 
     const unregisterPost = registerShortcut(
-      'Ctrl+Enter',
+      "Ctrl+Enter",
       (event) => {
         event.preventDefault();
         if (isGlobalGrnContextActive) {
@@ -1226,9 +1318,9 @@ const GrnForm = () => {
         }
       },
       {
-        id: 'grn-form-post',
-        description: 'Post GRN',
-        category: 'GRN',
+        id: "grn-form-post",
+        description: "Post GRN",
+        category: "GRN",
         global: true,
         allowInInput: true,
       },
@@ -1248,11 +1340,11 @@ const GrnForm = () => {
     let grnNumber;
     try {
       grnNumber = await fetchNextGrnNo();
-      setFormData(prev => ({ ...prev, grnNo: grnNumber }));
+      setFormData((prev) => ({ ...prev, grnNo: grnNumber }));
       console.log("✅ Fresh GRN number generated:", grnNumber);
     } catch (error) {
       console.error("Error generating GRN number:", error);
-      showToast('error', "Failed to generate GRN number");
+      showToast("error", "Failed to generate GRN number");
       return;
     }
 
@@ -1261,14 +1353,14 @@ const GrnForm = () => {
       const userData = localStorage.getItem("user");
       const currentUser = userData ? JSON.parse(userData) : null;
       const currentUserId = currentUser?._id || null;
-      
+
       if (!currentUserId) {
-        showToast('error', "User information not found. Please login again.");
+        showToast("error", "User information not found. Please login again.");
         return;
       }
 
       // ✅ NEW: Apply FOC calculations before posting
-      const itemsWithFocCalculated = formData.items.map(item => {
+      const itemsWithFocCalculated = formData.items.map((item) => {
         const processedItem = { ...item };
         calculateFocOnPost(processedItem);
         return processedItem;
@@ -1276,7 +1368,8 @@ const GrnForm = () => {
 
       console.log("🎯 FOC calculations applied during posting:", {
         itemCount: itemsWithFocCalculated.length,
-        focItems: itemsWithFocCalculated.filter(i => i.foc || i.focQty > 0).length,
+        focItems: itemsWithFocCalculated.filter((i) => i.foc || i.focQty > 0)
+          .length,
       });
 
       // ✅ Transform items to match backend schema with validation
@@ -1288,8 +1381,9 @@ const GrnForm = () => {
           const itemCode = item.itemCode;
           const qty = parseFloat(item.qty || item.quantity || 0) || 0;
           const cost = parseFloat(item.cost || item.unitCost || 0) || 0;
-          const finalCost = parseFloat(item.finalCost || item.totalCost || (qty * cost)) || 0;
-          
+          const finalCost =
+            parseFloat(item.finalCost || item.totalCost || qty * cost) || 0;
+
           // ✅ DIAGNOSTIC: Log the raw item and extracted productId
           console.log(`🔗 [DIAG] Item ${index + 1} productId extraction:`, {
             rawItem: item,
@@ -1313,158 +1407,204 @@ const GrnForm = () => {
           if (!qty || qty <= 0) {
             throw new Error(`Item ${index + 1}: Invalid quantity (${qty})`);
           }
-          if (typeof cost !== 'number' || cost < 0) {
+          if (typeof cost !== "number" || cost < 0) {
             throw new Error(`Item ${index + 1}: Invalid unit cost (${cost})`);
           }
           // ✅ Check for 0 cost on non-FOC items
           if (cost === 0 && !item.foc) {
-            throw new Error(`Item ${index + 1}: Cost cannot be 0 for non-FOC items`);
+            throw new Error(
+              `Item ${index + 1}: Cost cannot be 0 for non-FOC items`,
+            );
           }
 
-          const totalCost = finalCost || (qty * cost);
-          if (typeof totalCost !== 'number' || totalCost < 0) {
-            throw new Error(`Item ${index + 1}: Invalid total cost (${totalCost})`);
+          const totalCost = finalCost || qty * cost;
+          if (typeof totalCost !== "number" || totalCost < 0) {
+            throw new Error(
+              `Item ${index + 1}: Invalid total cost (${totalCost})`,
+            );
           }
 
-        // ✅ Calculate batch & expiry details
-        let batchDetails = {
-          batchNumber: (item.batchNumber || "").trim(),
-          expiryDate: item.expiryDate || null,
-          daysToExpiry: null,
-          batchStatus: "ACTIVE",
-          expiryStatus: "FRESH",
-          hasExpirtTracking: false,
-        };
+          // ✅ Calculate batch & expiry details
+          let batchDetails = {
+            batchNumber: (item.batchNumber || "").trim(),
+            expiryDate: item.expiryDate || null,
+            daysToExpiry: null,
+            batchStatus: "ACTIVE",
+            expiryStatus: "FRESH",
+            hasExpirtTracking: false,
+          };
 
-        // ✅ Calculate days to expiry if expiry date provided
-        if (item.expiryDate) {
-          batchDetails.hasExpirtTracking = true;
-          const today = new Date();
-          const expiry = new Date(item.expiryDate);
-          const daysRemaining = Math.floor((expiry - today) / (1000 * 60 * 60 * 24));
-          batchDetails.daysToExpiry = daysRemaining;
+          // ✅ Calculate days to expiry if expiry date provided
+          if (item.expiryDate) {
+            batchDetails.hasExpirtTracking = true;
+            const today = new Date();
+            const expiry = new Date(item.expiryDate);
+            const daysRemaining = Math.floor(
+              (expiry - today) / (1000 * 60 * 60 * 24),
+            );
+            batchDetails.daysToExpiry = daysRemaining;
 
-          // Determine batch status and expiry status
-          if (daysRemaining < 0) {
-            batchDetails.batchStatus = "EXPIRED";
-            batchDetails.expiryStatus = "EXPIRED";
-          } else if (daysRemaining <= 30) {
-            batchDetails.batchStatus = "EXPIRING_SOON";
-            batchDetails.expiryStatus = "EXPIRING_SOON";
-          } else {
-            batchDetails.batchStatus = "ACTIVE";
-            batchDetails.expiryStatus = "FRESH";
+            // Determine batch status and expiry status
+            if (daysRemaining < 0) {
+              batchDetails.batchStatus = "EXPIRED";
+              batchDetails.expiryStatus = "EXPIRED";
+            } else if (daysRemaining <= 30) {
+              batchDetails.batchStatus = "EXPIRING_SOON";
+              batchDetails.expiryStatus = "EXPIRING_SOON";
+            } else {
+              batchDetails.batchStatus = "ACTIVE";
+              batchDetails.expiryStatus = "FRESH";
+            }
           }
-        }
 
-        // ✅ Enhanced item details including tax, discount, and batch info
-        const quantity = parseFloat(qty);
-        const unitCost = parseFloat(cost);
-        const totalCostValue = parseFloat(totalCost);
-        const discount = parseFloat(item.discount || 0);
-        const discountPercent = parseFloat(item.discountPercent || 0);
-        const taxPercent = parseFloat(item.taxPercent || 0);
-        const taxAmount = parseFloat(item.taxAmount || 0);
-        
-        // ✅ Validate numeric fields are not NaN
-        if (isNaN(quantity)) {
-          throw new Error(`Item ${index + 1}: quantity is not a valid number (${qty})`);
-        }
-        if (isNaN(unitCost)) {
-          throw new Error(`Item ${index + 1}: unitCost is not a valid number (${cost})`);
-        }
-        if (isNaN(totalCostValue)) {
-          throw new Error(`Item ${index + 1}: totalCost is not a valid number (${totalCost})`);
-        }
+          // ✅ Enhanced item details including tax, discount, and batch info
+          const quantity = parseFloat(qty);
+          const unitCost = parseFloat(cost);
+          const totalCostValue = parseFloat(totalCost);
+          const discount = parseFloat(item.discount || 0);
+          const discountPercent = parseFloat(item.discountPercent || 0);
+          const taxPercent = parseFloat(item.taxPercent || 0);
+          const taxAmount = parseFloat(item.taxAmount || 0);
 
-        // ✅ Validate no negative values
-        if (discount < 0) {
-          throw new Error(`Item ${index + 1}: Discount cannot be negative (${discount})`);
-        }
-        if (discountPercent < 0) {
-          throw new Error(`Item ${index + 1}: Discount percentage cannot be negative (${discountPercent}%)`);
-        }
-        if (taxPercent < 0) {
-          throw new Error(`Item ${index + 1}: Tax percentage cannot be negative (${taxPercent}%)`);
-        }
-        if (taxAmount < 0) {
-          throw new Error(`Item ${index + 1}: Tax amount cannot be negative (${taxAmount})`);
-        }
-        
-        const transformedItem = {
-          productId: productId,
-          itemName: productName.trim(),
-          itemCode: itemCode.trim(),
-          quantity: quantity,
-          unitType: item.unitType || "PC",
-          foc: item.foc || false,
-          focQty: Math.max(0, parseFloat(item.focQty || 0)),
-          unitCost: unitCost,
-          itemDiscount: discount,
-          itemDiscountPercent: discountPercent,
-          
-          // ✅ Include calculated amounts for backend
-          netCost: Math.max(0, parseFloat((quantity * unitCost - discount) || 0)),
-          focCost: item.focCost || (Math.max(0, parseFloat(item.focQty || 0)) * unitCost),  // ✅ NEW: Include FOC cost
-          paidAmount: item.focCost 
-            ? Math.max(0, parseFloat((quantity * unitCost - discount) || 0) - (item.focCost || 0))
-            : Math.max(0, parseFloat((quantity * unitCost - discount) || 0)),  // ✅ NEW: Amount actually paid after FOC
-          
-          taxType: item.taxType || formData.taxType || "exclusive",
-          taxPercent: taxPercent,
-          taxAmount: taxAmount,
-          totalCost: totalCostValue,
-          // Batch & Expiry Details
-          batchDetails: batchDetails,
-          batchNumber: batchDetails.batchNumber,
-          expiryDate: batchDetails.expiryDate,
-          daysToExpiry: batchDetails.daysToExpiry,
-          batchStatus: batchDetails.batchStatus,
-          expiryStatus: batchDetails.expiryStatus,
-          hasExpirtTracking: batchDetails.hasExpirtTracking,
-          notes: (item.notes || "").trim(),
-        };
+          // ✅ Validate numeric fields are not NaN
+          if (isNaN(quantity)) {
+            throw new Error(
+              `Item ${index + 1}: quantity is not a valid number (${qty})`,
+            );
+          }
+          if (isNaN(unitCost)) {
+            throw new Error(
+              `Item ${index + 1}: unitCost is not a valid number (${cost})`,
+            );
+          }
+          if (isNaN(totalCostValue)) {
+            throw new Error(
+              `Item ${index + 1}: totalCost is not a valid number (${totalCost})`,
+            );
+          }
 
-        console.log(`✅ Item ${index + 1} validated:`, transformedItem);
-        return transformedItem;
+          // ✅ Validate no negative values
+          if (discount < 0) {
+            throw new Error(
+              `Item ${index + 1}: Discount cannot be negative (${discount})`,
+            );
+          }
+          if (discountPercent < 0) {
+            throw new Error(
+              `Item ${index + 1}: Discount percentage cannot be negative (${discountPercent}%)`,
+            );
+          }
+          if (taxPercent < 0) {
+            throw new Error(
+              `Item ${index + 1}: Tax percentage cannot be negative (${taxPercent}%)`,
+            );
+          }
+          if (taxAmount < 0) {
+            throw new Error(
+              `Item ${index + 1}: Tax amount cannot be negative (${taxAmount})`,
+            );
+          }
+
+          const transformedItem = {
+            productId: productId,
+            itemName: productName.trim(),
+            itemCode: itemCode.trim(),
+            quantity: quantity,
+            unitType: item.unitType || "PC",
+            foc: item.foc || false,
+            focQty: Math.max(0, parseFloat(item.focQty || 0)),
+            unitCost: unitCost,
+            itemDiscount: discount,
+            itemDiscountPercent: discountPercent,
+
+            // ✅ Include calculated amounts for backend
+            netCost: Math.max(
+              0,
+              parseFloat(quantity * unitCost - discount || 0),
+            ),
+            focCost:
+              item.focCost ||
+              Math.max(0, parseFloat(item.focQty || 0)) * unitCost, // ✅ NEW: Include FOC cost
+            paidAmount: item.focCost
+              ? Math.max(
+                  0,
+                  parseFloat(quantity * unitCost - discount || 0) -
+                    (item.focCost || 0),
+                )
+              : Math.max(0, parseFloat(quantity * unitCost - discount || 0)), // ✅ NEW: Amount actually paid after FOC
+
+            taxType: item.taxType || formData.taxType || "exclusive",
+            taxPercent: taxPercent,
+            taxAmount: taxAmount,
+            totalCost: totalCostValue,
+            // Batch & Expiry Details
+            batchDetails: batchDetails,
+            batchNumber: batchDetails.batchNumber,
+            expiryDate: batchDetails.expiryDate,
+            daysToExpiry: batchDetails.daysToExpiry,
+            batchStatus: batchDetails.batchStatus,
+            expiryStatus: batchDetails.expiryStatus,
+            hasExpirtTracking: batchDetails.hasExpirtTracking,
+            notes: (item.notes || "").trim(),
+          };
+
+          console.log(`✅ Item ${index + 1} validated:`, transformedItem);
+          return transformedItem;
         } catch (itemError) {
-          console.error(`❌ Error transforming item ${index + 1}:`, itemError.message);
+          console.error(
+            `❌ Error transforming item ${index + 1}:`,
+            itemError.message,
+          );
           throw itemError;
         }
       });
 
       // ✅ Calculate all GRN totals with country-based decimal control
       const shippingCost = Math.max(0, parseFloat(formData.shippingCost || 0));
-      
+
       // ✅ Validate header-level numeric fields
       if (shippingCost < 0) {
         throw new Error("Shipping cost cannot be negative");
       }
-      
+
       const grnTotals = calculateGrnTotals(formData.items, shippingCost);
-      
+
       // Calculate discount totals with proper decimal handling
       const totalDiscountAmount = Math.max(0, grnTotals.totalDiscount || 0);
-      const totalDiscountPercent = grnTotals.totalSubtotal > 0 
-        ? round((totalDiscountAmount / grnTotals.totalSubtotal * 100))
-        : 0;
+      const totalDiscountPercent =
+        grnTotals.totalSubtotal > 0
+          ? round((totalDiscountAmount / grnTotals.totalSubtotal) * 100)
+          : 0;
 
       const totalExTax = grnTotals.totalSubtotal - totalDiscountAmount;
       const finalTotal = grnTotals.netTotal + shippingCost;
 
       // ✅ Calculate batch & expiry tracking summary
       const batchExpiryTracking = {
-        itemsWithBatchTracking: transformedItems.filter(i => i.batchNumber && i.batchNumber.trim()).length,
-        itemsWithExpiryTracking: transformedItems.filter(i => i.hasExpirtTracking).length,
-        expiringItems: transformedItems.filter(i => i.batchStatus === "EXPIRING_SOON").length,
-        expiredItems: transformedItems.filter(i => i.batchStatus === "EXPIRED").length,
+        itemsWithBatchTracking: transformedItems.filter(
+          (i) => i.batchNumber && i.batchNumber.trim(),
+        ).length,
+        itemsWithExpiryTracking: transformedItems.filter(
+          (i) => i.hasExpirtTracking,
+        ).length,
+        expiringItems: transformedItems.filter(
+          (i) => i.batchStatus === "EXPIRING_SOON",
+        ).length,
+        expiredItems: transformedItems.filter(
+          (i) => i.batchStatus === "EXPIRED",
+        ).length,
         earliestExpiryDate: transformedItems
-          .filter(i => i.expiryDate)
-          .map(i => new Date(i.expiryDate))
-          .reduce((earliest, date) => date < earliest ? date : earliest, new Date("2099-12-31"))
+          .filter((i) => i.expiryDate)
+          .map((i) => new Date(i.expiryDate))
+          .reduce(
+            (earliest, date) => (date < earliest ? date : earliest),
+            new Date("2099-12-31"),
+          )
           .toISOString()
           .split("T")[0],
-        expiryTrackingEnabled: transformedItems.some(i => i.hasExpirtTracking),
+        expiryTrackingEnabled: transformedItems.some(
+          (i) => i.hasExpirtTracking,
+        ),
       };
 
       // ✅ Enhanced GRN Payload with all details
@@ -1474,20 +1614,20 @@ const GrnForm = () => {
         grnDate: formData.grnDate,
         invoiceNo: formData.invoiceNo || "",
         lpoNo: formData.lpoNo || "",
-        
+
         // Vendor Details
         vendorId: formData.vendorId,
         vendorName: formData.vendorName,
         paymentTerms: formData.paymentTerms || "due_on_receipt",
-        
+
         // Shipper Details
         shipperId: formData.shipperId || null,
         shipperName: formData.shipperName || "",
         shippingCost: parseFloat(formData.shippingCost || 0),
-        
+
         // Tax & Discount Info
         taxType: formData.taxType || "exclusive",
-        
+
         // GRN Level Totals
         totalQty: grnTotals.totalQty || 0,
         subtotal: parseFloat(grnTotals.totalSubtotal || 0),
@@ -1497,7 +1637,7 @@ const GrnForm = () => {
         taxAmount: parseFloat(grnTotals.totalTaxAmount || 0),
         netTotal: parseFloat(grnTotals.netTotal || 0),
         finalTotal: parseFloat(finalTotal),
-        
+
         // Batch & Expiry Tracking Summary
         batchExpiryTracking: batchExpiryTracking,
 
@@ -1508,14 +1648,14 @@ const GrnForm = () => {
           regularQty: getRegularQty(),
           hasFoc: getTotalFocQty() > 0,
         },
-        
+
         // Metadata
         status: action === "draft" ? "Draft" : "Received",
         deliveryDate: new Date().toISOString().split("T")[0],
         referenceNumber: formData.lpoNo || "",
         notes: formData.notes || "",
         createdBy: currentUserId,
-        
+
         // Items with full details
         items: transformedItems,
       };
@@ -1537,7 +1677,7 @@ const GrnForm = () => {
           unitCost: item.unitCost,
         })),
       });
-      
+
       // ✅ Log each item for debugging
       submitData.items.forEach((item, idx) => {
         console.log(`📦 Item ${idx + 1}:`, {
@@ -1553,7 +1693,7 @@ const GrnForm = () => {
           totalCostType: typeof item.totalCost,
         });
       });
-      
+
       console.log("📋 Full submitData:", submitData);
       console.log("✅ Submitting with createdBy:", {
         currentUserId,
@@ -1565,38 +1705,48 @@ const GrnForm = () => {
       const grnDate = new Date(submitData.grnDate);
       const grnYear = grnDate.getFullYear();
       const grnMonth = grnDate.getMonth(); // 0-11
-      const grnFinancialYear = grnMonth >= 3 ? `${grnYear}-${grnYear + 1}` : `${grnYear - 1}-${grnYear}`;
+      const grnFinancialYear =
+        grnMonth >= 3
+          ? `${grnYear}-${grnYear + 1}`
+          : `${grnYear - 1}-${grnYear}`;
 
       // Check existing GRNs in the list
       const existingGrns = grnList || [];
-      
+
       // Check for duplicate invoice number
       if (submitData.invoiceNo && submitData.invoiceNo.trim()) {
-        const duplicateInvoice = existingGrns.find(grn => {
+        const duplicateInvoice = existingGrns.find((grn) => {
           // Skip if it's the same GRN being edited
           if (editingId && grn._id === editingId) return false;
-          
+
           // Check if same vendor
-          if (grn.vendorId?.toString() !== submitData.vendorId?.toString() && grn.vendorId !== submitData.vendorId) {
+          if (
+            grn.vendorId?.toString() !== submitData.vendorId?.toString() &&
+            grn.vendorId !== submitData.vendorId
+          ) {
             return false;
           }
-          
+
           // Check if same financial year
           if (grn.grnDate) {
             const existingDate = new Date(grn.grnDate);
             const existingYear = existingDate.getFullYear();
             const existingMonth = existingDate.getMonth();
-            const existingFY = existingMonth >= 3 ? `${existingYear}-${existingYear + 1}` : `${existingYear - 1}-${existingYear}`;
+            const existingFY =
+              existingMonth >= 3
+                ? `${existingYear}-${existingYear + 1}`
+                : `${existingYear - 1}-${existingYear}`;
             if (existingFY !== grnFinancialYear) return false;
           }
-          
+
           // Check if same invoice number
           return grn.invoiceNo === submitData.invoiceNo.trim();
         });
 
         if (duplicateInvoice) {
-          showToast('error',
-            `⚠️ Invoice number "${submitData.invoiceNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateInvoice.grnNumber})`
+          showToast(
+            "error",
+            `⚠️ Invoice number "${submitData.invoiceNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateInvoice.grnNumber})`,
           );
           return;
         }
@@ -1604,31 +1754,38 @@ const GrnForm = () => {
 
       // Check for duplicate LPO number
       if (submitData.lpoNo && submitData.lpoNo.trim()) {
-        const duplicateLpo = existingGrns.find(grn => {
+        const duplicateLpo = existingGrns.find((grn) => {
           // Skip if it's the same GRN being edited
           if (editingId && grn._id === editingId) return false;
-          
+
           // Check if same vendor
-          if (grn.vendorId?.toString() !== submitData.vendorId?.toString() && grn.vendorId !== submitData.vendorId) {
+          if (
+            grn.vendorId?.toString() !== submitData.vendorId?.toString() &&
+            grn.vendorId !== submitData.vendorId
+          ) {
             return false;
           }
-          
+
           // Check if same financial year
           if (grn.grnDate) {
             const existingDate = new Date(grn.grnDate);
             const existingYear = existingDate.getFullYear();
             const existingMonth = existingDate.getMonth();
-            const existingFY = existingMonth >= 3 ? `${existingYear}-${existingYear + 1}` : `${existingYear - 1}-${existingYear}`;
+            const existingFY =
+              existingMonth >= 3
+                ? `${existingYear}-${existingYear + 1}`
+                : `${existingYear - 1}-${existingYear}`;
             if (existingFY !== grnFinancialYear) return false;
           }
-          
+
           // Check if same LPO number
           return grn.lpoNo === submitData.lpoNo.trim();
         });
 
         if (duplicateLpo) {
-          showToast('error',
-            `⚠️ LPO number "${submitData.lpoNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateLpo.grnNumber})`
+          showToast(
+            "error",
+            `⚠️ LPO number "${submitData.lpoNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateLpo.grnNumber})`,
           );
           return;
         }
@@ -1646,7 +1803,7 @@ const GrnForm = () => {
         statusText: response.statusText,
         hasData: !!response.data,
         dataId: response.data?._id,
-        editingId: editingId
+        editingId: editingId,
       });
 
       if (response.status === 200 || response.status === 201) {
@@ -1655,36 +1812,44 @@ const GrnForm = () => {
           saved: true,
           posted: false,
           postError: null,
-          inventoryUpdates: null
+          inventoryUpdates: null,
         };
 
         // ✅ NEW: If GRN was CREATED (not edited), automatically POST it to trigger stock updates
         if (!editingId && response.data?._id) {
-          console.log(`📤 Auto-posting new GRN to trigger stock updates: ${response.data._id}`);
-          
+          console.log(
+            `📤 Auto-posting new GRN to trigger stock updates: ${response.data._id}`,
+          );
+
           try {
             const postResponse = await axios.post(
               `${API_URL}/grn/${response.data._id}/post`,
-              { createdBy: submitData.createdBy || currentUserId }
+              { createdBy: submitData.createdBy || currentUserId },
             );
-            
+
             console.log(`✅ GRN Posted successfully:`, {
               status: postResponse.status,
               statusText: postResponse.statusText,
-              currentStockUpdates: postResponse.data?.inventory?.currentStockUpdates || 0,
+              currentStockUpdates:
+                postResponse.data?.inventory?.currentStockUpdates || 0,
               batchesCreated: postResponse.data?.inventory?.batchesCreated || 0,
-              costUpdates: postResponse.data?.inventory?.costUpdates || 0
+              costUpdates: postResponse.data?.inventory?.costUpdates || 0,
             });
-            
+
             completionStatus.posted = true;
             completionStatus.inventoryUpdates = {
-              currentStock: postResponse.data?.inventory?.currentStockUpdates || 0,
+              currentStock:
+                postResponse.data?.inventory?.currentStockUpdates || 0,
               batches: postResponse.data?.inventory?.batchesCreated || 0,
-              costUpdates: postResponse.data?.inventory?.costUpdates || 0
+              costUpdates: postResponse.data?.inventory?.costUpdates || 0,
             };
           } catch (postError) {
-            console.error(`❌ Error posting GRN:`, postError.response?.data || postError.message);
-            completionStatus.postError = postError.response?.data?.message || postError.message;
+            console.error(
+              `❌ Error posting GRN:`,
+              postError.response?.data || postError.message,
+            );
+            completionStatus.postError =
+              postError.response?.data?.message || postError.message;
           }
         }
 
@@ -1701,7 +1866,7 @@ const GrnForm = () => {
         }
 
         console.log(`📢 Showing combined toast: ${toastMessage}`);
-        showToast('success', toastMessage);
+        showToast("success", toastMessage);
 
         // ✅ Clear product search cache to ensure fresh costs display in dropdown
         clearAllCache();
@@ -1714,6 +1879,11 @@ const GrnForm = () => {
             ? listResponse.data
             : listResponse.data?.data || [],
         );
+
+        // ✅ Reset search states when closing modal
+        setItemSearch("");
+        setBarcodeValue("");
+        setGrnSearch("");
 
         await resetForm();
         setShowNewGrnModal(false);
@@ -1739,7 +1909,10 @@ const GrnForm = () => {
           details: error.response?.data?.details,
         });
         console.error("📤 SENT DATA:", sentData);
-        console.error("📥 FULL RESPONSE DATA:", JSON.stringify(error.response?.data, null, 2));
+        console.error(
+          "📥 FULL RESPONSE DATA:",
+          JSON.stringify(error.response?.data, null, 2),
+        );
       } else {
         // JavaScript error (during transformation or data building)
         console.error("❌ GRN Processing Error (before API call):", {
@@ -1748,19 +1921,26 @@ const GrnForm = () => {
           stack: error.stack,
         });
       }
-      
+
       // Extract detailed error message
-      let errorMessage = error.response?.data?.message || error.message || "Error saving GRN";
-      
+      let errorMessage =
+        error.response?.data?.message || error.message || "Error saving GRN";
+
       // If there are validation errors, include them in the message
-      if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+      if (
+        error.response?.data?.errors &&
+        Array.isArray(error.response.data.errors)
+      ) {
         errorMessage = error.response.data.errors.join(" | ");
       }
-      
+
       // ✅ Clear GRN number on error so next submit gets a fresh one
-      setFormData(prev => ({ ...prev, grnNo: "" }));
-      
-      showToast('error', errorMessage + " (Try submitting again for a fresh GRN number)");
+      setFormData((prev) => ({ ...prev, grnNo: "" }));
+
+      showToast(
+        "error",
+        errorMessage + " (Try submitting again for a fresh GRN number)",
+      );
     }
   };
 
@@ -1823,23 +2003,30 @@ const GrnForm = () => {
           </select>
         </div>
 
-          <GrnListTable
-            grnList={grnList.filter(grn =>
+        <GrnListTable
+          grnList={grnList.filter(
+            (grn) =>
               (grn.grnNumber?.toLowerCase().includes(grnSearch.toLowerCase()) ||
-              grn.invoiceNo?.toLowerCase().includes(grnSearch.toLowerCase()) ||
-              grn.vendorName?.toLowerCase().includes(grnSearch.toLowerCase())) &&
-              (grnStatusFilter === "" || grn.status === grnStatusFilter)
-            )}
+                grn.invoiceNo
+                  ?.toLowerCase()
+                  .includes(grnSearch.toLowerCase()) ||
+                grn.vendorName
+                  ?.toLowerCase()
+                  .includes(grnSearch.toLowerCase())) &&
+              (grnStatusFilter === "" || grn.status === grnStatusFilter),
+          )}
           onView={(grn) => {
             // ✅ Map backend GRN data to frontend form format (VIEW MODE)
-            const mappedItems = (grn.items || []).map(item => ({
+            const mappedItems = (grn.items || []).map((item) => ({
               id: item._id || Math.random().toString(36),
               productId: item.productId,
               productName: item.itemName,
               itemCode: item.itemCode,
               qty: item.quantity,
               cost: item.unitCost,
-              netCost: item.netCost || (item.quantity * item.unitCost - (item.itemDiscount || 0)),
+              netCost:
+                item.netCost ||
+                item.quantity * item.unitCost - (item.itemDiscount || 0),
               netCostWithoutTax: item.netCostWithoutTax || 0,
               finalCost: item.totalCost || 0,
               unitType: item.unitType || "PC",
@@ -1856,19 +2043,21 @@ const GrnForm = () => {
               notes: item.notes || "",
             }));
 
-            const recalculatedItems = mappedItems.map(item => {
+            const recalculatedItems = mappedItems.map((item) => {
               const itemToCalculate = { ...item };
               calculateItemCost(itemToCalculate, true);
               return itemToCalculate;
             });
-            
+
             const mappedGrn = {
               grnNo: grn.grnNumber,
               invoiceNo: grn.invoiceNo || "",
               lpoNo: grn.lpoNo || "",
               vendorId: grn.vendorId,
               vendorName: grn.vendorName,
-              grnDate: grn.grnDate ? new Date(grn.grnDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+              grnDate: grn.grnDate
+                ? new Date(grn.grnDate).toISOString().split("T")[0]
+                : new Date().toISOString().split("T")[0],
               taxType: grn.taxType || "exclusive",
               notes: grn.notes || "",
               documents: grn.documents || [],
@@ -1878,39 +2067,43 @@ const GrnForm = () => {
               shipperName: grn.shipperName || "",
               items: recalculatedItems,
             };
-            
+
             setFormData(mappedGrn);
             setEditingId(grn._id);
+            setItemSearch(""); // ✅ Reset product search
+            setBarcodeValue(""); // ✅ Reset barcode input
             setIsViewMode(true); // ✅ Enable view mode
             setShowNewGrnModal(true);
           }}
           onEdit={(grn) => {
             // ✅ Map backend GRN data to frontend form format
-            const mappedItems = (grn.items || []).map(item => ({
-              id: item._id || Math.random().toString(36),  // ✅ NEW: Ensure item has ID for tracking
+            const mappedItems = (grn.items || []).map((item) => ({
+              id: item._id || Math.random().toString(36), // ✅ NEW: Ensure item has ID for tracking
               productId: item.productId,
-              productName: item.itemName,  // Backend: itemName → Frontend: productName
+              productName: item.itemName, // Backend: itemName → Frontend: productName
               itemCode: item.itemCode,
-              qty: item.quantity,  // Backend: quantity → Frontend: qty
-              cost: item.unitCost,  // Backend: unitCost → Frontend: cost
-              
+              qty: item.quantity, // Backend: quantity → Frontend: qty
+              cost: item.unitCost, // Backend: unitCost → Frontend: cost
+
               // ✅ NEW: Map all calculated fields from backend
-              netCost: item.netCost || (item.quantity * item.unitCost - (item.itemDiscount || 0)),
+              netCost:
+                item.netCost ||
+                item.quantity * item.unitCost - (item.itemDiscount || 0),
               netCostWithoutTax: item.netCostWithoutTax || 0,
               finalCost: item.totalCost || 0,
-              
+
               // ✅ FOC Fields
               unitType: item.unitType || "PC",
               foc: item.foc || false,
               focQty: item.focQty || 0,
               discount: item.itemDiscount || 0,
               discountPercent: item.itemDiscountPercent || 0,
-              
+
               // Tax Fields
               taxType: item.taxType || grn.taxType || "exclusive",
               taxPercent: item.taxPercent || 0,
               taxAmount: item.taxAmount || 0,
-              
+
               // Batch/Expiry Fields
               trackExpiry: item.trackExpiry || false,
               batchNumber: item.batchNumber || "",
@@ -1920,20 +2113,22 @@ const GrnForm = () => {
 
             // ✅ NEW: Recalculate all items using entry-phase flag
             // This ensures UI values are correct (without FOC deduction in display)
-            const recalculatedItems = mappedItems.map(item => {
+            const recalculatedItems = mappedItems.map((item) => {
               const itemToCalculate = { ...item };
               // Use skipFocCalculation=true so UI displays entry-state values
               calculateItemCost(itemToCalculate, true);
               return itemToCalculate;
             });
-            
+
             const mappedGrn = {
-              grnNo: grn.grnNumber,  // Backend: grnNumber → Frontend: grnNo
+              grnNo: grn.grnNumber, // Backend: grnNumber → Frontend: grnNo
               invoiceNo: grn.invoiceNo || "",
               lpoNo: grn.lpoNo || "",
               vendorId: grn.vendorId,
               vendorName: grn.vendorName,
-              grnDate: grn.grnDate ? new Date(grn.grnDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+              grnDate: grn.grnDate
+                ? new Date(grn.grnDate).toISOString().split("T")[0]
+                : new Date().toISOString().split("T")[0],
               taxType: grn.taxType || "exclusive",
               notes: grn.notes || "",
               documents: grn.documents || [],
@@ -1941,20 +2136,23 @@ const GrnForm = () => {
               shippingCost: grn.shippingCost || 0,
               shipperId: grn.shipperId || "",
               shipperName: grn.shipperName || "",
-              items: recalculatedItems,  // ✅ Use recalculated items
+              items: recalculatedItems, // ✅ Use recalculated items
             };
-            
+
             console.log("📝 Loading GRN for edit:", {
               originalGrnNumber: grn.grnNumber,
               mappedGrnNo: mappedGrn.grnNo,
               vendorName: mappedGrn.vendorName,
               itemCount: mappedGrn.items.length,
               firstItem: mappedGrn.items[0],
-              focItems: mappedGrn.items.filter(i => i.foc || i.focQty > 0).length,
+              focItems: mappedGrn.items.filter((i) => i.foc || i.focQty > 0)
+                .length,
             });
-            
+
             setFormData(mappedGrn);
             setEditingId(grn._id);
+            setItemSearch(""); // ✅ Reset product search
+            setBarcodeValue(""); // ✅ Reset barcode input
             setShowNewGrnModal(true);
           }}
           onDelete={async (id) => {
@@ -1966,14 +2164,14 @@ const GrnForm = () => {
               });
               if (response.ok) {
                 setGrnList((prev) => prev.filter((g) => g._id !== id));
-                showToast('success', "GRN deleted successfully");
+                showToast("success", "GRN deleted successfully");
               }
             } catch (error) {
               console.error("Error deleting GRN:", error);
             }
           }}
         />
-        </div>
+      </div>
 
       {/* New/Edit GRN Modal */}
       {showNewGrnModal && (
@@ -1987,14 +2185,26 @@ const GrnForm = () => {
             <div className="sticky top-0 flex rounded-t-lg justify-between items-center gap-3 p-2 border-b bg-gray-50 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <h2 className="text-lg font-bold text-gray-900 whitespace-nowrap">
-                  {isViewMode ? "📖 View Purchase Entry" : (editingId ? "Edit Purchase Entry" : "New Purchase Entry")}
+                  {isViewMode
+                    ? "📖 View Purchase Entry"
+                    : editingId
+                      ? "Edit Purchase Entry"
+                      : "New Purchase Entry"}
                 </h2>
                 {!isViewMode && (
                   <div className="hidden xl:flex items-center gap-1 text-[11px] text-gray-600 flex-wrap">
-                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">Ctrl+F Search</span>
-                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">Ctrl+S Draft</span>
-                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">Ctrl+Enter Post</span>
-                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">Esc Close</span>
+                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">
+                      Ctrl+F Search
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">
+                      Ctrl+S Draft
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">
+                      Ctrl+Enter Post
+                    </span>
+                    <span className="px-1.5 py-0.5 bg-white border border-gray-300 rounded">
+                      Esc Close
+                    </span>
                   </div>
                 )}
               </div>
@@ -2014,8 +2224,10 @@ const GrnForm = () => {
                 formData={formData}
                 vendors={vendors}
                 isViewMode={isViewMode} // ✅ Pass view mode
-                onFormChange={(field, value) =>
-                  !isViewMode && setFormData((prev) => ({ ...prev, [field]: value })) // Disable changes in view mode
+                onFormChange={
+                  (field, value) =>
+                    !isViewMode &&
+                    setFormData((prev) => ({ ...prev, [field]: value })) // Disable changes in view mode
                 }
                 onVendorChange={(e) => {
                   const vendorId = e.target?.value || "";
@@ -2046,50 +2258,52 @@ const GrnForm = () => {
 
               {/* Item Search & Barcode Section - Hidden in View Mode */}
               {!isViewMode && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 flex-shrink-0 pb-1.5">
-                {/* Item Search */}
-                <div>
-                  <GrnItemSearch
-                    ref={itemSearchInputRef}
-                    itemSearch={itemSearch}
-                    searchResults={mergedSearchResults}
-                    searchLoading={searchLoading}
-                    onSearch={setItemSearch}
-                    onSelectItem={handleItemSelected}
-                    onCreateProduct={handleCreateProduct}
-                  />
-                  
-                  {/* ✅ PRODUCTION: Show indexing status to user */}
-                  {indexingStatus && (
-                    <div className={`mt-1 text-xs px-2 py-1 rounded ${
-                      indexingStatus === 'indexing' 
-                        ? 'bg-blue-50 text-blue-600 flex items-center gap-1' 
-                        : 'bg-green-50 text-green-600'
-                    }`}>
-                      {indexingStatus === 'indexing' && (
-                        <>
-                          <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                          Updating search index...
-                        </>
-                      )}
-                      {indexingStatus === 'complete' && '✅ Search updated'}
-                    </div>
-                  )}
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 flex-shrink-0 pb-1.5">
+                  {/* Item Search */}
+                  <div>
+                    <GrnItemSearch
+                      ref={itemSearchInputRef}
+                      itemSearch={itemSearch}
+                      searchResults={mergedSearchResults}
+                      searchLoading={searchLoading}
+                      onSearch={setItemSearch}
+                      onSelectItem={handleItemSelected}
+                      onCreateProduct={handleCreateProduct}
+                    />
 
-                {/* Barcode Input */}
-                <GrnBarcodeInput
-                  ref={barcodeInputRef}
-                  barcodeValue={barcodeValue}
-                  onChange={(e) => setBarcodeValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleBarcodeScanned(barcodeValue);
-                    }
-                  }}
-                />
-              </div>
+                    {/* ✅ PRODUCTION: Show indexing status to user */}
+                    {indexingStatus && (
+                      <div
+                        className={`mt-1 text-xs px-2 py-1 rounded ${
+                          indexingStatus === "indexing"
+                            ? "bg-blue-50 text-blue-600 flex items-center gap-1"
+                            : "bg-green-50 text-green-600"
+                        }`}
+                      >
+                        {indexingStatus === "indexing" && (
+                          <>
+                            <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                            Updating search index...
+                          </>
+                        )}
+                        {indexingStatus === "complete" && "✅ Search updated"}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Barcode Input */}
+                  <GrnBarcodeInput
+                    ref={barcodeInputRef}
+                    barcodeValue={barcodeValue}
+                    onChange={(e) => setBarcodeValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleBarcodeScanned(barcodeValue);
+                      }
+                    }}
+                  />
+                </div>
               )}
 
               {/* Items Table */}
@@ -2109,19 +2323,27 @@ const GrnForm = () => {
                   const { data, colDef } = event;
                   if (data && colDef.field) {
                     let newValue = event.newValue;
-                    if (["qty", "cost", "discount", "taxPercent", "focQty"].includes(
-                      colDef.field,
-                    )) {
+                    if (
+                      [
+                        "qty",
+                        "cost",
+                        "discount",
+                        "taxPercent",
+                        "focQty",
+                      ].includes(colDef.field)
+                    ) {
                       newValue = parseFloat(newValue) || 0;
                     }
-                    console.log(`📝 Cell edited: ${colDef.field} = ${newValue}`);
-                    
+                    console.log(
+                      `📝 Cell edited: ${colDef.field} = ${newValue}`,
+                    );
+
                     // ✅ If FOC checkbox is unchecked, clear focQty to 0
                     if (colDef.field === "foc" && newValue === false) {
                       console.log(`💙 FOC unchecked - clearing focQty to 0`);
                       updateItem(data.id, "focQty", 0);
                     }
-                    
+
                     updateItem(data.id, colDef.field, newValue);
                   }
                 }}
@@ -2135,13 +2357,17 @@ const GrnForm = () => {
                 {/* 1. Total Qty */}
                 <div className="flex items-center justify-between gap-0.5 w-24 bg-white px-1 py-0.5 rounded border border-gray-200">
                   <span className="font-semibold text-xs">Qty:</span>
-                  <span className="font-bold text-blue-600 text-xs">{grnTotals.totalQty}</span>
+                  <span className="font-bold text-blue-600 text-xs">
+                    {grnTotals.totalQty}
+                  </span>
                 </div>
 
                 {/* 2. Sub Total */}
                 <div className="flex items-center justify-between w-32 gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
                   <span className="font-semibold">Subtotal:</span>
-                  <span className="font-bold text-blue-600">{formatNumber(grnTotals.totalSubtotal || 0)}</span>
+                  <span className="font-bold text-blue-600">
+                    {formatNumber(grnTotals.totalSubtotal || 0)}
+                  </span>
                 </div>
 
                 {/* 3. Discount Amount */}
@@ -2154,7 +2380,10 @@ const GrnForm = () => {
                     value={formData.manualDiscountAmount || ""}
                     onChange={(e) => {
                       const amount = parseInput(e.target.value) || 0;
-                      const percent = grnTotals.totalSubtotal > 0 ? round((amount / grnTotals.totalSubtotal) * 100) : 0;
+                      const percent =
+                        grnTotals.totalSubtotal > 0
+                          ? round((amount / grnTotals.totalSubtotal) * 100)
+                          : 0;
                       setFormData((prev) => ({
                         ...prev,
                         manualDiscountAmount: amount,
@@ -2176,7 +2405,9 @@ const GrnForm = () => {
                     value={formData.manualDiscountPercent || ""}
                     onChange={(e) => {
                       const percent = parseInput(e.target.value) || 0;
-                      const amount = round((grnTotals.totalSubtotal * percent) / 100);
+                      const amount = round(
+                        (grnTotals.totalSubtotal * percent) / 100,
+                      );
                       setFormData((prev) => ({
                         ...prev,
                         manualDiscountPercent: percent,
@@ -2191,102 +2422,129 @@ const GrnForm = () => {
                 {/* 5. Total After Discount */}
                 <div className="flex items-center justify-between w-60  gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
                   <span className="font-semibold">Total Ex.Tax:</span>
-                  <span className="font-bold text-blue-600">{formatNumber(getTotalExTax())}</span>
+                  <span className="font-bold text-blue-600">
+                    {formatNumber(getTotalExTax())}
+                  </span>
                 </div>
 
                 {/* 6. Total Tax */}
                 <div className="flex items-center justify-between w-32 gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
                   <span className="font-semibold">Tax :</span>
-                  <span className="font-bold text-blue-600">{formatNumber(grnTotals.totalTaxAmount || 0)}</span>
+                  <span className="font-bold text-blue-600">
+                    {formatNumber(grnTotals.totalTaxAmount || 0)}
+                  </span>
                 </div>
 
                 {/* 7. Net Total (before shipping) */}
                 <div className="flex items-center justify-between w-48 gap-0.5 bg-yellow-100 px-1.5 py-0.5 rounded border border-yellow-300">
                   <span className="font-semibold">Net Total :</span>
-                  <span className="font-bold text-yellow-700">{formatNumber(getNetTotal())}</span>
+                  <span className="font-bold text-yellow-700">
+                    {formatNumber(getNetTotal())}
+                  </span>
                 </div>
               </div>
-
 
               {/* Shipper Selection - Right Aligned */}
 
               {/* Summary Row 2 - Shipping, FOC Items, Final Total */}
-              <div className="flex items-center justify-between pr-2 gap-2 text-xs">
-                {/* 1. Shipper Selection */}
-                {vendors && vendors.length > 0 && (
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={formData?.shipperId || ""}
-                      onChange={(e) => {
-                        const selectedShipper = vendors.find(v => v._id === e.target.value);
+              <div className="grid grid-cols-[35%_40%_24%] items-center gap-2 pr-2 text-xs">
+                <div className="flex items-center gap-2 bg  justify-between gap-0.5  ">
+                  {/* 1. Shipper Selection */}
+                  {vendors && vendors.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={formData?.shipperId || ""}
+                        onChange={(e) => {
+                          const selectedShipper = vendors.find(
+                            (v) => v._id === e.target.value,
+                          );
+                          setFormData((prev) => ({
+                            ...prev,
+                            shipperId: e.target.value,
+                            shipperName: selectedShipper?.name || "",
+                          }));
+                        }}
+                        className="h-6 px-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">📦 Shipper</option>
+                        {vendors
+                          .filter((v) => v.isShipper === true)
+                          .map((vendor) => (
+                            <option key={vendor._id} value={vendor._id}>
+                              {vendor.name}
+                            </option>
+                          ))}
+                      </select>
+                      {formData.shipperName && (
+                        <span className="text-xs bg-blue-100 px-1 py-0.5 rounded font-semibold">
+                          ✓ {formData.shipperName}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 2. Shipping Cost */}
+                  <div className="flex items-center w-40 justify-between gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
+                    <span className="font-semibold">Shipping:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.shippingCost}
+                      onChange={(e) =>
                         setFormData((prev) => ({
                           ...prev,
-                          shipperId: e.target.value,
-                          shipperName: selectedShipper?.name || ""
-                        }));
-                      }}
-                      className="h-6 px-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">📦 Shipper</option>
-                      {vendors.filter(v => v.isShipper === true).map(vendor => (
-                        <option key={vendor._id} value={vendor._id}>{vendor.name}</option>
-                      ))}
-                    </select>
-                    {formData.shipperName && (
-                      <span className="text-xs bg-blue-100 px-1 py-0.5 rounded font-semibold">✓ {formData.shipperName}</span>
-                    )}
+                          shippingCost: parseFloat(e.target.value) || 0,
+                        }))
+                      }
+                      className="w-16 px-0.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                    />
                   </div>
-                )}
-
-                {/* 2. Shipping Cost */}
-                <div className="flex items-center w-40 justify-between gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
-                  <span className="font-semibold">Shipping:</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.shippingCost}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        shippingCost: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                    className="w-16 px-0.5 py-0.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
-                  />
                 </div>
 
-                {/* 3. FOC Items Count Badge */}
-                {getTotalFocItems() > 0 && (
-                  <div className="flex items-center gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 text-xs">
-                    <span className="font-semibold text-blue-700">💙 {getTotalFocItems()} FOC Items</span>
-                  </div>
-                )}
+                <div className="flex items-center  gap-2 justify-end  ">
+                  {/* 3. FOC Items Count Badge */}
+                  {getTotalFocItems() > 0 && (
+                    <div className="flex items-center  gap-1 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 text-xs">
+                      <span className="font-semibold text-blue-700">
+                        💙 {getTotalFocItems()} FOC Items
+                      </span>
+                    </div>
+                  )}
 
-                {/* 4. Final Total (Grand Total) */}
-                <div className="flex-1 flex items-center justify-end gap-0.5 bg-green-200 px-1 py-0.5 rounded border border-green-400 text-xs">
-                  <span className="font-semibold">Final Total:</span>
-                  <span className="font-bold text-green-700 text-sm">{formatNumber(getFinalTotal())}</span>
+                  <div className="bg-yellow-100 text-yellow-800 p-2 rounded text-xs font-semibold">
+                    ⚠️ Ensure the Net total matches the invoice total .
+                  </div>
+                </div>
+
+                <div className="flex items-end justify-end  gap-2">
+                  {/* 4. Final Total (Grand Total) */}
+
+                  <div className="flex items-center justify-between w-48 gap-0.5 bg-yellow-100 px-1.5 py-0.5 rounded border border-green-300">
+                    <span className="font-semibold">Final Total:</span>
+                    <span className="font-bold text-green-700 text-sm">
+                      {formatNumber(getFinalTotal())}
+                    </span>
+                  </div>
                 </div>
               </div>
-              
+
               {/* Action Buttons Row - Hidden in View Mode */}
               {!isViewMode && (
-              <div className="flex gap-2 justify-end pr-2 pb-1">
-                
-                <button
-                  onClick={handleDraftSubmit}
-                  className="px-2 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 font-semibold transition"
-                >
-                  💾 Draft
-                </button>
-                <button
-                  onClick={handlePostSubmit}
-                  className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 font-semibold transition"
-                >
-                  ✓ Post
-                </button>
-              </div>
+                <div className="flex gap-2 justify-end pr-2 pb-1">
+                  <button
+                    onClick={handleDraftSubmit}
+                    className="px-2 py-1 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 font-semibold transition"
+                  >
+                    💾 Draft
+                  </button>
+                  <button
+                    onClick={handlePostSubmit}
+                    className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 font-semibold transition"
+                  >
+                    ✓ Post
+                  </button>
+                </div>
               )}
 
               {/* View Mode Info */}
@@ -2334,5 +2592,3 @@ const GrnForm = () => {
 };
 
 export default GrnForm;
-
-

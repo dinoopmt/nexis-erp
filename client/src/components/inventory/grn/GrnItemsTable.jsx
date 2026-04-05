@@ -136,10 +136,6 @@ const GrnItemsTable = ({
           suppressMenuHide={gridConfig.suppressMenuHide}
           stopEditingWhenCellsLoseFocus={gridConfig.stopEditingWhenCellsLoseFocus}
           suppressClickEdit={isViewMode} // ✅ Prevent edit mode on cell click when read-only
-          rowSelection={{
-            mode: 'multiRow',
-            enableClickSelection: !isViewMode, // ✅ AG Grid v32.2+ - Allow row selection only when not read-only
-          }}
           getRowClass={(params) => {
             const rowId = params.data?.id;
             const shouldHighlight = highlightedItemId && rowId === highlightedItemId;
