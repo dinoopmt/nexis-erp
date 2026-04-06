@@ -4,11 +4,11 @@
  */
 
 export const API_ENDPOINTS = {
-  FETCH_ACCOUNTS: "/api/v1/chart-of-accounts/getchartofaccounts",
-  FETCH_GROUPS: "/api/v1/account-groups/getaccountgroups",
-  ADD_ACCOUNT: "/api/v1/chart-of-accounts/addchartofaccount",
-  UPDATE_ACCOUNT: "/api/v1/chart-of-accounts/updatechartofaccount",
-  DELETE_ACCOUNT: "/api/v1/chart-of-accounts/deletechartofaccount"
+  FETCH_ACCOUNTS: "/chart-of-accounts/getchartofaccounts",
+  FETCH_GROUPS: "/account-groups/getaccountgroups",
+  ADD_ACCOUNT: "/chart-of-accounts/addchartofaccount",
+  UPDATE_ACCOUNT: "/chart-of-accounts/updatechartofaccount",
+  DELETE_ACCOUNT: "/chart-of-accounts/deletechartofaccount"
 };
 
 export const VIEW_MODES = {

@@ -47,7 +47,7 @@ export default function Receipt() {
       const query = new URLSearchParams();
       if (filterStatus) query.append("status", filterStatus);
 
-      const response = await fetch(`${API_URL}/api/v1/receipts?${query}`, {
+      const response = await fetch(`${API_URL}/receipts?${query}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -65,7 +65,7 @@ export default function Receipt() {
   // Fetch Accounts for dropdowns
   const fetchAccounts = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/chart-of-accounts/getchartofaccounts`, {
+      const response = await fetch(`${API_URL}/chart-of-accounts/getchartofaccounts`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -138,8 +138,8 @@ export default function Receipt() {
 
     try {
       const url = editingId
-        ? `${API_URL}/api/v1/receipts/${editingId}`
-        : `${API_URL}/api/v1/receipts`;
+        ? `${API_URL}/receipts/${editingId}`
+        : `${API_URL}/receipts`;
 
       const method = editingId ? "PUT" : "POST";
 
@@ -172,7 +172,7 @@ export default function Receipt() {
     if (!confirm("Are you sure you want to delete this receipt?")) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/receipts/${id}`, {
+      const response = await fetch(`${API_URL}/receipts/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" }
       });
@@ -194,7 +194,7 @@ export default function Receipt() {
 
   const handleStatusChange = async (id, action) => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/receipts/${id}/${action}`, {
+      const response = await fetch(`${API_URL}/receipts/${id}/${action}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" }
       });

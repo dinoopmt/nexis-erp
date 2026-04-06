@@ -45,7 +45,7 @@ export default function Contra() {
       if (filterStatus) query.append("status", filterStatus);
       if (filterType) query.append("transferType", filterType);
 
-      const response = await fetch(`${API_URL}/api/v1/contras?${query}`, {
+      const response = await fetch(`${API_URL}/contras?${query}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -63,7 +63,7 @@ export default function Contra() {
   // Fetch Accounts for dropdowns
   const fetchAccounts = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/chart-of-accounts/getchartofaccounts`, {
+      const response = await fetch(`${API_URL}/chart-of-accounts/getchartofaccounts`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -149,8 +149,8 @@ export default function Contra() {
 
     try {
       const url = editingId
-        ? `${API_URL}/api/v1/contras/${editingId}`
-        : `${API_URL}/api/v1/contras`;
+        ? `${API_URL}/contras/${editingId}`
+        : `${API_URL}/contras`;
 
       const method = editingId ? "PUT" : "POST";
 
@@ -183,7 +183,7 @@ export default function Contra() {
     if (!confirm("Are you sure you want to delete this contra voucher?")) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/contras/${id}`, {
+      const response = await fetch(`${API_URL}/contras/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" }
       });
@@ -205,7 +205,7 @@ export default function Contra() {
 
   const handleStatusChange = async (id, action) => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/contras/${id}/${action}`, {
+      const response = await fetch(`${API_URL}/contras/${id}/${action}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" }
       });

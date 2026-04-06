@@ -47,7 +47,7 @@ export default function Payment() {
       const query = new URLSearchParams();
       if (filterStatus) query.append("status", filterStatus);
 
-      const response = await fetch(`${API_URL}/api/v1/payments?${query}`, {
+      const response = await fetch(`${API_URL}/payments?${query}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -65,7 +65,7 @@ export default function Payment() {
   // Fetch Accounts for dropdowns
   const fetchAccounts = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/chart-of-accounts/getchartofaccounts`, {
+      const response = await fetch(`${API_URL}/chart-of-accounts/getchartofaccounts`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -138,8 +138,8 @@ export default function Payment() {
 
     try {
       const url = editingId
-        ? `${API_URL}/api/v1/payments/${editingId}`
-        : `${API_URL}/api/v1/payments`;
+        ? `${API_URL}/payments/${editingId}`
+        : `${API_URL}/payments`;
 
       const method = editingId ? "PUT" : "POST";
 
@@ -172,7 +172,7 @@ export default function Payment() {
     if (!confirm("Are you sure you want to delete this payment?")) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/payments/${id}`, {
+      const response = await fetch(`${API_URL}/payments/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" }
       });
@@ -194,7 +194,7 @@ export default function Payment() {
 
   const handleStatusChange = async (id, action) => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/payments/${id}/${action}`, {
+      const response = await fetch(`${API_URL}/payments/${id}/${action}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" }
       });

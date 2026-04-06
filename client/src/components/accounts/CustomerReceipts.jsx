@@ -71,7 +71,7 @@ const CustomerReceipts = () => {
     try {
       // Country isolation: Always filter by company's country
       const countryCode = company?.countryCode || 'AE';
-      const response = await axios.get(`${API_URL}/api/v1/customers/getcustomers?limit=1000&country=${countryCode}`);
+      const response = await axios.get(`${API_URL}/customers/getcustomers?limit=1000&country=${countryCode}`);
       setCustomers(response.data.customers || []);
     } catch (err) {
       console.error("Error fetching customers:", err);
@@ -81,7 +81,7 @@ const CustomerReceipts = () => {
   const fetchReceipts = async () => {
     try {
       setLoading(true);
-      let url = `${API_URL}/api/v1/customer-receipts/getcustomer-receipts?page=${currentPage}&limit=${itemsPerPage}`;
+      let url = `${API_URL}/customer-receipts/getcustomer-receipts?page=${currentPage}&limit=${itemsPerPage}`;
 
       if (filters.customerId) url += `&customerId=${filters.customerId}`;
       if (filters.receiptType !== "All") url += `&receiptType=${filters.receiptType}`;
@@ -112,13 +112,13 @@ const CustomerReceipts = () => {
     try {
       // Fetch outstanding invoices
       const invoiceResponse = await axios.get(
-        `${API_URL}/api/v1/customer-receipts/getcustomer-outstanding/${customerId}`
+        `${API_URL}/customer-receipts/getcustomer-outstanding/${customerId}`
       );
       setInvoices(invoiceResponse.data.outstanding || []);
 
       // Fetch customer advances
       const advanceResponse = await axios.get(
-        `${API_URL}/api/v1/customer-receipts/getcustomer-advances/${customerId}`
+        `${API_URL}/customer-receipts/getcustomer-advances/${customerId}`
       );
       console.log("Advances Response:", advanceResponse.data);
       setSelectedCustomerAdvances(advanceResponse.data || {});
@@ -238,7 +238,7 @@ const CustomerReceipts = () => {
         advanceAmountApplied: appliedAdvanceAmount || 0,
       };
 
-      await axios.post(`${API_URL}/api/v1/customer-receipts/addcustomer-receipt`, payload);
+      await axios.post(`${API_URL}/customer-receipts/addcustomer-receipt`, payload);
 
       setError("");
       setIsModalOpen(false);
@@ -255,7 +255,7 @@ const CustomerReceipts = () => {
     if (!window.confirm("Are you sure you want to delete this receipt?")) return;
 
     try {
-      await axios.delete(`${API_URL}/api/v1/customer-receipts/deletecustomer-receipt/${id}`);
+      await axios.delete(`${API_URL}/customer-receipts/deletecustomer-receipt/${id}`);
       fetchReceipts();
     } catch (err) {
       setError("Failed to delete receipt");
@@ -273,7 +273,7 @@ const CustomerReceipts = () => {
 
     try {
       setLoading(true);
-      await axios.post(`${API_URL}/api/v1/customer-receipts/reverse-receipt/${reversingId}`, {
+      await axios.post(`${API_URL}/customer-receipts/reverse-receipt/${reversingId}`, {
         reversalReason: reversalReason.trim(),
       });
 

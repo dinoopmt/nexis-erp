@@ -45,7 +45,7 @@ export default function Journal() {
       if (filterStatus) query.append("status", filterStatus);
       if (filterType) query.append("voucherType", filterType);
 
-      const response = await fetch(`${API_URL}/api/v1/journals/getjournalentries?${query}`, {
+      const response = await fetch(`${API_URL}/journals/getjournalentries?${query}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -63,7 +63,7 @@ export default function Journal() {
   // Fetch Accounts for dropdowns
   const fetchAccounts = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/chart-of-accounts/getchartofaccounts`, {
+      const response = await fetch(`${API_URL}/chart-of-accounts/getchartofaccounts`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
@@ -209,8 +209,8 @@ export default function Journal() {
 
     try {
       const url = editingId
-        ? `${API_URL}/api/v1/journals/updatejournalentry/${editingId}`
-        : `${API_URL}/api/v1/journals/addjournalentry`;
+        ? `${API_URL}/journals/updatejournalentry/${editingId}`
+        : `${API_URL}/journals/addjournalentry`;
 
       const method = editingId ? "PUT" : "POST";
 
@@ -240,7 +240,7 @@ export default function Journal() {
     if (!confirm("Are you sure you want to delete this entry?")) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/deletejournalentry/${id}`, {
+      const response = await fetch(`${API_URL}/journals/deletejournalentry/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" }
       });
@@ -264,7 +264,7 @@ export default function Journal() {
     if (!confirm("Post this entry? This will update account balances.")) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/journals/postjournalentry/${id}`, {
+      const response = await fetch(`${API_URL}/journals/postjournalentry/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" }
       });
@@ -288,7 +288,7 @@ export default function Journal() {
     if (!confirm("Reverse this entry? This will create a reversing entry.")) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/journals/reversejournalentry/${id}`, {
+      const response = await fetch(`${API_URL}/journals/reversejournalentry/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
