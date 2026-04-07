@@ -350,27 +350,31 @@ export const createGrn = async (req, res) => {
 
     console.log(`✅ GRN created successfully: ${grnNumber}`);
 
-    // ✅ Create vendor payment entries for tracking
+    // ✅ Create vendor payment entries ONLY for "Received" status (NOT for Draft)
     let paymentEntries = null;
-    try {
-      paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
-        grnId: newGrn._id,  // ✅ Pass MongoDB ObjectId for referential integrity
-        grnNumber,
-        grnDate,
-        vendorId,
-        vendorName,
-        paymentTerms: mapPaymentTermsToEnum(paymentTerms) || "NET_30",  // ✅ Map to enum format
-        subtotal: parseFloat(subtotal || 0),
-        discountAmount: parseFloat(discountAmount || 0),
-        taxAmount: parseFloat(taxAmount || 0),
-        netTotal: parseFloat(netTotal || 0),
-        shippingCost: parseFloat(shippingCost || 0),
-        createdBy,
-      });
-      console.log("💳 Vendor payment entries created:", paymentEntries);
-    } catch (paymentError) {
-      console.error("⚠️ Warning: Failed to create vendor payment entries:", paymentError.message);
-      // Don't fail GRN creation if payment entry fails - just log warning
+    if (status === "Received" || status === "received") {
+      try {
+        paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+          grnId: newGrn._id,  // ✅ Pass MongoDB ObjectId for referential integrity
+          grnNumber,
+          grnDate,
+          vendorId,
+          vendorName,
+          paymentTerms: mapPaymentTermsToEnum(paymentTerms) || "NET_30",  // ✅ Map to enum format
+          subtotal: parseFloat(subtotal || 0),
+          discountAmount: parseFloat(discountAmount || 0),
+          taxAmount: parseFloat(taxAmount || 0),
+          netTotal: parseFloat(netTotal || 0),
+          shippingCost: parseFloat(shippingCost || 0),
+          createdBy,
+        });
+        console.log("💳 Vendor payment entries created:", paymentEntries);
+      } catch (paymentError) {
+        console.error("⚠️ Warning: Failed to create vendor payment entries:", paymentError.message);
+        // Don't fail GRN creation if payment entry fails - just log warning
+      }
+    } else if (status === "Draft" || status === "draft") {
+      console.log("📋 GRN status is Draft - skipping vendor payment creation (payments created only on POST)");
     }
 
     res.status(201).json({
@@ -637,7 +641,7 @@ export const updateGrn = async (req, res) => {
           error: editError.message
         };
       }
-    } else if (grn.status === "Posted") {
+    } else if (grn.status === "Received") {
       console.log(`ℹ️ [EDIT] Posted GRN - no further edits allowed`);
       cascadeResult = {
         success: false,
@@ -694,6 +698,424 @@ export const updateGrn = async (req, res) => {
   }
 };
 
+// ============================================================================
+// 💾 SAVE GRN AS DRAFT - Dedicated endpoint (NO posting, NO stock changes)
+// ============================================================================
+export const saveDraftGrn = async (req, res) => {
+  try {
+    const {
+      id,
+      grnNumber,
+      grnDate,
+      vendorId,
+      vendorName,
+      shipperId,
+      shipperName,
+      invoiceNo,
+      lpoNo,
+      referenceNumber,
+      deliveryDate,
+      shippingCost,
+      items,
+      notes,
+      paymentTerms,
+      taxType,
+      totalQty,
+      subtotal,
+      discountAmount,
+      discountPercent,
+      totalExTax,
+      taxAmount,
+      netTotal,
+      finalTotal,
+      createdBy,
+    } = req.body;
+
+    console.log("📋 [DRAFT] Saving GRN as Draft:", {
+      grnNumber,
+      isNew: !id,
+      itemCount: items?.length,
+      finalTotal,
+    });
+
+    let grn;
+
+    if (id) {
+      // UPDATE existing Draft GRN
+      grn = await Grn.findById(id);
+      if (!grn) {
+        return res.status(404).json({ message: "GRN not found" });
+      }
+
+      console.log("✏️ Updating existing Draft GRN:", id);
+
+      grn.grnDate = new Date(grnDate);
+      grn.invoiceNo = invoiceNo || "";
+      grn.lpoNo = lpoNo || "";
+      grn.vendorId = vendorId;
+      grn.vendorName = vendorName;
+      grn.paymentTerms = paymentTerms || "due_on_receipt";
+      grn.shipperId = shipperId || null;
+      grn.shipperName = shipperName || "";
+      grn.referenceNumber = referenceNumber || "";
+      grn.deliveryDate = deliveryDate ? new Date(deliveryDate) : null;
+      grn.shippingCost = parseFloat(shippingCost || 0);
+      grn.taxType = taxType || "exclusive";
+      grn.items = items;
+      grn.notes = notes || "";
+      grn.totalQty = parseInt(totalQty || 0);
+      grn.subtotal = parseFloat(subtotal || 0);
+      grn.discountAmount = parseFloat(discountAmount || 0);
+      grn.discountPercent = parseFloat(discountPercent || 0);
+      grn.totalExTax = parseFloat(totalExTax || 0);
+      grn.taxAmount = parseFloat(taxAmount || 0);
+      grn.netTotal = parseFloat(netTotal || 0);
+      grn.finalTotal = parseFloat(finalTotal || 0);
+      grn.totalAmount = parseFloat(finalTotal || subtotal || 0);
+    } else {
+      // CREATE new Draft GRN
+      const existingGrn = await Grn.findOne({ grnNumber });
+      if (existingGrn) {
+        return res.status(400).json({
+          message: "GRN number already exists",
+          grnNumber,
+        });
+      }
+
+      grn = new Grn({
+        grnNumber,
+        grnDate: new Date(grnDate),
+        invoiceNo: invoiceNo || "",
+        lpoNo: lpoNo || "",
+        vendorId,
+        vendorName,
+        paymentTerms: paymentTerms || "due_on_receipt",
+        shipperId: shipperId || null,
+        shipperName: shipperName || "",
+        referenceNumber: referenceNumber || "",
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
+        shippingCost: parseFloat(shippingCost || 0),
+        taxType: taxType || "exclusive",
+        status: "Draft",
+        items,
+        notes: notes || "",
+        totalQty: parseInt(totalQty || 0),
+        subtotal: parseFloat(subtotal || 0),
+        discountAmount: parseFloat(discountAmount || 0),
+        discountPercent: parseFloat(discountPercent || 0),
+        totalExTax: parseFloat(totalExTax || 0),
+        taxAmount: parseFloat(taxAmount || 0),
+        netTotal: parseFloat(netTotal || 0),
+        finalTotal: parseFloat(finalTotal || 0),
+        totalAmount: parseFloat(finalTotal || subtotal || 0),
+        createdBy: createdBy,
+      });
+    }
+
+    // ✅ Validate and convert productIds to ObjectIds
+    const mongoose = (await import("mongoose")).default;
+    for (let i = 0; i < grn.items.length; i++) {
+      const item = grn.items[i];
+      if (!item.productId) {
+        return res.status(400).json({
+          message: `Item ${i + 1}: Missing productId`,
+          itemIndex: i,
+        });
+      }
+
+      if (typeof item.productId === "string") {
+        if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+          return res.status(400).json({
+            message: `Item ${i + 1}: Invalid product ID format`,
+            itemIndex: i,
+            receivedProductId: item.productId,
+          });
+        }
+        grn.items[i].productId = new mongoose.Types.ObjectId(item.productId);
+      }
+    }
+
+    await grn.save();
+
+    console.log(`✅ [DRAFT] GRN saved as Draft (NO vendor payments, NO stock updates): ${grn.grnNumber}`);
+
+    res.status(id ? 200 : 201).json({
+      message: id ? "Draft GRN updated successfully" : "Draft GRN created successfully",
+      _id: grn._id,
+      grnNumber: grn.grnNumber,
+      status: grn.status,
+      note: "Draft GRN - No stock updates or vendor payments created",
+    });
+  } catch (error) {
+    console.error("❌ Error saving Draft GRN:", error.message);
+    res.status(500).json({
+      message: "Failed to save Draft GRN",
+      error: error.message,
+    });
+  }
+};
+
+// ============================================================================
+// 📤 POST GRN WITH UPDATES - Dedicated endpoint (full posting with all updates)
+// ============================================================================
+export const postGrnWithUpdates = async (req, res) => {
+  try {
+    const {
+      id,
+      grnNumber,
+      grnDate,
+      vendorId,
+      vendorName,
+      shipperId,
+      shipperName,
+      invoiceNo,
+      lpoNo,
+      referenceNumber,
+      deliveryDate,
+      shippingCost,
+      items,
+      notes,
+      paymentTerms,
+      taxType,
+      totalQty,
+      subtotal,
+      discountAmount,
+      discountPercent,
+      totalExTax,
+      taxAmount,
+      netTotal,
+      finalTotal,
+      createdBy,
+    } = req.body;
+
+    console.log("📤 [POST] Posting GRN with full updates:", {
+      grnNumber,
+      isNew: !id,
+      itemCount: items?.length,
+      finalTotal,
+    });
+
+    let grn;
+    const isNew = !id;
+
+    if (id) {
+      // UPDATE existing GRN to Received status
+      grn = await Grn.findById(id);
+      if (!grn) {
+        return res.status(404).json({ message: "GRN not found" });
+      }
+
+      console.log("✏️ Updating existing GRN to Received:", id);
+
+      grn.grnDate = new Date(grnDate);
+      grn.invoiceNo = invoiceNo || "";
+      grn.lpoNo = lpoNo || "";
+      grn.vendorId = vendorId;
+      grn.vendorName = vendorName;
+      grn.paymentTerms = paymentTerms || "due_on_receipt";
+      grn.shipperId = shipperId || null;
+      grn.shipperName = shipperName || "";
+      grn.referenceNumber = referenceNumber || "";
+      grn.deliveryDate = deliveryDate ? new Date(deliveryDate) : null;
+      grn.shippingCost = parseFloat(shippingCost || 0);
+      grn.taxType = taxType || "exclusive";
+      grn.status = "Received";
+      grn.items = items;
+      grn.notes = notes || "";
+      grn.totalQty = parseInt(totalQty || 0);
+      grn.subtotal = parseFloat(subtotal || 0);
+      grn.discountAmount = parseFloat(discountAmount || 0);
+      grn.discountPercent = parseFloat(discountPercent || 0);
+      grn.totalExTax = parseFloat(totalExTax || 0);
+      grn.taxAmount = parseFloat(taxAmount || 0);
+      grn.netTotal = parseFloat(netTotal || 0);
+      grn.finalTotal = parseFloat(finalTotal || 0);
+      grn.totalAmount = parseFloat(finalTotal || subtotal || 0);
+    } else {
+      // CREATE new GRN with Received status
+      const existingGrn = await Grn.findOne({ grnNumber });
+      if (existingGrn) {
+        return res.status(400).json({
+          message: "GRN number already exists",
+          grnNumber,
+        });
+      }
+
+      grn = new Grn({
+        grnNumber,
+        grnDate: new Date(grnDate),
+        invoiceNo: invoiceNo || "",
+        lpoNo: lpoNo || "",
+        vendorId,
+        vendorName,
+        paymentTerms: paymentTerms || "due_on_receipt",
+        shipperId: shipperId || null,
+        shipperName: shipperName || "",
+        referenceNumber: referenceNumber || "",
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
+        shippingCost: parseFloat(shippingCost || 0),
+        taxType: taxType || "exclusive",
+        status: "Received",
+        items,
+        notes: notes || "",
+        totalQty: parseInt(totalQty || 0),
+        subtotal: parseFloat(subtotal || 0),
+        discountAmount: parseFloat(discountAmount || 0),
+        discountPercent: parseFloat(discountPercent || 0),
+        totalExTax: parseFloat(totalExTax || 0),
+        taxAmount: parseFloat(taxAmount || 0),
+        netTotal: parseFloat(netTotal || 0),
+        finalTotal: parseFloat(finalTotal || 0),
+        totalAmount: parseFloat(finalTotal || subtotal || 0),
+        createdBy: createdBy,
+      });
+    }
+
+    // ✅ Validate and convert productIds to ObjectIds
+    const mongoose = (await import("mongoose")).default;
+    for (let i = 0; i < grn.items.length; i++) {
+      const item = grn.items[i];
+      if (!item.productId) {
+        return res.status(400).json({
+          message: `Item ${i + 1}: Missing productId`,
+          itemIndex: i,
+        });
+      }
+
+      if (typeof item.productId === "string") {
+        if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+          return res.status(400).json({
+            message: `Item ${i + 1}: Invalid product ID format`,
+            itemIndex: i,
+            receivedProductId: item.productId,
+          });
+        }
+        grn.items[i].productId = new mongoose.Types.ObjectId(item.productId);
+      }
+    }
+
+    await grn.save();
+    console.log(`✅ [POST] GRN saved with status=Received: ${grn.grnNumber}`);
+
+    // Initialize result tracking
+    let journalEntry = null;
+    let journalEntryShipping = null;
+    let paymentEntries = null;
+    let stockUpdate = null;
+    const errors = [];
+
+    // 1. CREATE JOURNAL ENTRIES
+    try {
+      journalEntry = await GRNJournalService.createGrnJournalEntry({
+        grnNumber: grn.grnNumber,
+        grnDate: grn.grnDate,
+        vendorId: grn.vendorId,
+        vendorName: grn.vendorName,
+        netTotal: grn.netTotal,
+        shippingCost: 0,
+        totalQty: grn.totalQty,
+        createdBy: createdBy || "System",
+      });
+
+      console.log("✅ Goods received journal entry created:", journalEntry?.voucherNumber);
+
+      if (grn.shippingCost && grn.shippingCost > 0) {
+        journalEntryShipping = await GRNJournalService.createShippingJournalEntry(
+          {
+            grnNumber: grn.grnNumber,
+            grnDate: grn.grnDate,
+            vendorId: grn.vendorId,
+            vendorName: grn.vendorName,
+            createdBy: createdBy || "System",
+          },
+          grn.shippingCost
+        );
+
+        console.log("✅ Shipping journal entry created:", journalEntryShipping?.voucherNumber);
+      }
+    } catch (journalError) {
+      console.error("❌ Error creating journal entries:", journalError.message);
+      errors.push({ type: "JOURNAL", error: journalError.message });
+    }
+
+    // 2. UPDATE STOCK & BATCHES
+    try {
+      stockUpdate = await GRNStockUpdateService.processGrnStockUpdate(grn, createdBy || "System");
+
+      console.log("✅ Stock updates completed:", {
+        itemsProcessed: stockUpdate.processedItems.length,
+        batchesCreated: stockUpdate.createdBatches.length,
+        costUpdates: stockUpdate.costUpdates.length,
+      });
+
+      if (stockUpdate.errors && stockUpdate.errors.length > 0) {
+        errors.push(...stockUpdate.errors.map((e) => ({ type: "STOCK", ...e })));
+      }
+    } catch (stockError) {
+      console.error("❌ Error updating stock:", stockError.message);
+      errors.push({ type: "STOCK", error: stockError.message });
+    }
+
+    // 3. CREATE VENDOR PAYMENT ENTRIES
+    try {
+      paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+        grnId: grn._id,
+        grnNumber: grn.grnNumber,
+        grnDate: grn.grnDate,
+        vendorId: grn.vendorId,
+        vendorName: grn.vendorName,
+        paymentTerms: mapPaymentTermsToEnum(grn.paymentTerms) || "NET_30",
+        subtotal: grn.subtotal || 0,
+        discountAmount: grn.discountAmount || 0,
+        taxAmount: grn.taxAmount || 0,
+        netTotal: grn.netTotal || 0,
+        shippingCost: grn.shippingCost || 0,
+        createdBy: createdBy || "System",
+      });
+
+      console.log("💳 Vendor payment entries created:", paymentEntries);
+    } catch (paymentError) {
+      console.error("⚠️ Warning: Failed to create vendor payment entries:", paymentError.message);
+      errors.push({ type: "PAYMENT", error: paymentError.message });
+    }
+
+    console.log(`✅ [POST] GRN posted successfully with all updates: ${grn.grnNumber}`);
+
+    res.status(isNew ? 201 : 200).json({
+      message: isNew
+        ? "GRN created & posted successfully with all updates"
+        : "GRN updated & posted successfully with all updates",
+      grn: {
+        _id: grn._id,
+        grnNumber: grn.grnNumber,
+        status: grn.status,
+        netTotal: grn.netTotal,
+        totalItems: grn.items?.length,
+      },
+      accounting: {
+        journals: {
+          items: journalEntry || null,
+          shipping: journalEntryShipping || null,
+        },
+        paymentEntries: paymentEntries || null,
+      },
+      inventory: {
+        itemsProcessed: stockUpdate?.processedItems?.length || 0,
+        batchesCreated: stockUpdate?.createdBatches?.length || 0,
+        currentStockUpdates: stockUpdate?.currentStockUpdates?.length || 0,
+        costUpdates: stockUpdate?.costUpdates?.length || 0,
+      },
+      errors: errors.length > 0 ? errors : null,
+    });
+  } catch (error) {
+    console.error("❌ Error posting GRN with updates:", error.message);
+    res.status(500).json({
+      message: "Failed to post GRN with updates",
+      error: error.message,
+    });
+  }
+};
+
 // ✅ NEW: Post GRN and create double-entry accounting journals + stock updates
 export const postGrn = async (req, res) => {
   try {
@@ -723,7 +1145,7 @@ export const postGrn = async (req, res) => {
       } : "NO ITEMS"
     });
 
-    if (grn.status === "Posted") {
+    if (grn.status === "Received") {
       console.warn(`⚠️ GRN already posted: ${grn.grnNumber}`);
       return res.status(400).json({
         message: "GRN already posted",
@@ -817,7 +1239,30 @@ export const postGrn = async (req, res) => {
       errors.push({ type: "STOCK", error: stockError.message });
     }
 
-    // 3. UPDATE GRN STATUS TO RECEIVED (triggers stock update)
+    // 3. CREATE VENDOR PAYMENT ENTRIES when posting
+    let paymentEntries = null;
+    try {
+      paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+        grnId: grn._id,
+        grnNumber: grn.grnNumber,
+        grnDate: grn.grnDate,
+        vendorId: grn.vendorId,
+        vendorName: grn.vendorName,
+        paymentTerms: mapPaymentTermsToEnum(grn.paymentTerms) || "NET_30",
+        subtotal: grn.subtotal || 0,
+        discountAmount: grn.discountAmount || 0,
+        taxAmount: grn.taxAmount || 0,
+        netTotal: grn.netTotal || 0,
+        shippingCost: grn.shippingCost || 0,
+        createdBy: createdBy || "System",
+      });
+      console.log("💳 Vendor payment entries created during posting:", paymentEntries);
+    } catch (paymentError) {
+      console.error("⚠️ Warning: Failed to create vendor payment entries:", paymentError.message);
+      errors.push({ type: "PAYMENT", error: paymentError.message });
+    }
+
+    // 4. UPDATE GRN STATUS TO RECEIVED (triggers stock update)
     grn.status = "Received";
     grn.postedDate = new Date();
     grn.postedBy = createdBy || "System";
@@ -825,7 +1270,7 @@ export const postGrn = async (req, res) => {
 
     console.log(`✅ GRN Posted successfully: ${grn.grnNumber}`);
 
-    // 4. SEND COMPREHENSIVE RESPONSE
+    // 5. SEND COMPREHENSIVE RESPONSE
     res.status(200).json({
       message: "GRN posted successfully with all updates",
       grn: {
@@ -839,7 +1284,8 @@ export const postGrn = async (req, res) => {
         journals: {
           items: journalEntry,
           shipping: journalEntryShipping || null
-        }
+        },
+        paymentEntries: paymentEntries
       },
       inventory: {
         itemsProcessed: stockUpdate?.processedItems?.length || 0,

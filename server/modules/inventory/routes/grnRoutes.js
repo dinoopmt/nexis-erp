@@ -6,6 +6,8 @@ import {
   createGrn,
   updateGrn,
   postGrn,
+  saveDraftGrn,
+  postGrnWithUpdates,
   deleteGrn,
   getGrnReport,
 } from "../controllers/grnController.js";
@@ -13,14 +15,14 @@ import {
 const router = express.Router();
 
 /**
- * @route   GET /api/grn
+ * @route   GET /api/v1/grn
  * @desc    Get all GRNs
  * @access  Public
  */
 router.get("/", getAllGrns);
 
 /**
- * @route   GET /api/grn/next-number
+ * @route   GET /api/v1/grn/next-number
  * @desc    Get next GRN number from sequence table (FIFO method)
  * @access  Public
  * @query   {financialYear: "2025-26"}
@@ -28,57 +30,114 @@ router.get("/", getAllGrns);
 router.get("/next-number", getNextGrnNumber);
 
 /**
- * @route   GET /api/grn/report
+ * @route   GET /api/v1/grn/report
  * @desc    Get GRN report with statistics
  * @access  Public
  */
 router.get("/report", getGrnReport);
 
 /**
- * @route   GET /api/grn/:id
+ * @route   GET /api/v1/grn/:id
  * @desc    Get GRN by ID
  * @access  Public
  */
 router.get("/:id", getGrnById);
 
 /**
- * @route   POST /api/grn
+ * @route   POST /api/v1/grn
  * @desc    Create new GRN
  * @access  Public
- * @body    {
- *   "grnNumber": "GRN-001",
- *   "grnDate": "2024-03-04",
- *   "vendorId": "vendor_id",
- *   "vendorName": "Vendor Name",
- *   "referenceNumber": "PO-2024-001",
- *   "deliveryDate": "2024-03-05",
- *   "status": "Received",
- *   "items": [
- *     {
- *       "productId": "product_id",
- *       "itemName": "Item Name",
- *       "itemCode": "ITEM-001",
- *       "quantity": 10,
- *       "unitCost": 50,
- *       "totalCost": 500,
- *       "batchNumber": "BATCH-001",
- *       "expiryDate": "2025-03-04"
- *     }
- *   ],
- *   "notes": "Sample notes"
- * }
  */
 router.post("/", createGrn);
 
 /**
- * @route   PUT /api/grn/:id
+ * @route   POST /api/v1/grn/:id/can-edit
+ * @desc    Check if GRN can be edited (batch validation)
+ * @access  Public
+ */
+router.post("/:id/can-edit", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const GRNBatchEditValidator = (await import("../../accounting/services/GRNBatchEditValidator.js")).default;
+    
+    const result = await GRNBatchEditValidator.canEditGrn(id);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error checking edit eligibility:", error);
+    res.status(500).json({
+      canEdit: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PATCH /api/v1/grn/:id/apply-edit
+ * @desc    Apply delta-based edits to POSTED GRN (strict batch validation)
+ * @access  Public
+ * @body    { "items": [...], "createdBy": "userId" }
+ */
+router.patch("/:id/apply-edit", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { items, createdBy } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Items array is required"
+      });
+    }
+
+    const GRNBatchEditValidator = (await import("../../accounting/services/GRNBatchEditValidator.js")).default;
+    
+    const result = await GRNBatchEditValidator.applyGrnEdit(id, items, createdBy || "System");
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: "GRN edited successfully",
+        data: result
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.error || "Failed to apply edits",
+        data: result
+      });
+    }
+  } catch (error) {
+    console.error("Error applying GRN edit:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/v1/grn/save-draft
+ * @desc    Save GRN as Draft (NO vendor payments, NO stock updates)
+ * @access  Public
+ */
+router.post("/save-draft", saveDraftGrn);
+
+/**
+ * @route   POST /api/v1/grn/post-with-updates
+ * @desc    Post GRN with all updates (vendor payments, journal entries, stock updates)
+ * @access  Public
+ */
+router.post("/post-with-updates", postGrnWithUpdates);
+
+/**
+ * @route   PUT /api/v1/grn/:id
  * @desc    Update GRN
  * @access  Public
  */
 router.put("/:id", updateGrn);
 
 /**
- * @route   POST /api/grn/:id/post
+ * @route   POST /api/v1/grn/:id/post
  * @desc    Post GRN and create double-entry accounting journals
  * @access  Public
  * @body    { "createdBy": "username" }
@@ -86,7 +145,7 @@ router.put("/:id", updateGrn);
 router.post("/:id/post", postGrn);
 
 /**
- * @route   DELETE /api/grn/:id
+ * @route   DELETE /api/v1/grn/:id
  * @desc    Delete GRN
  * @access  Public
  */

@@ -72,6 +72,16 @@ class GRNTransactionValidator {
         );
       }
 
+      // ✅ 2.5 NEW: Check Batch Availability (STRICT - Per new spec)
+      console.log(`\n📦 Checking batch availability...`);
+      checks.batchAvailability = await this.checkBatchAvailability(grnId, grn.items);
+      if (!checks.batchAvailability.allBatchesAvailable) {
+        checks.canEditDueToTransactions = false;
+        checks.reasons.push(
+          `${checks.batchAvailability.reason}`
+        );
+      }
+
       // ✅ 3. Check RTV Returns
       console.log(`\n📦 Checking returns to vendor...`);
       checks.rtvReturns = await this.checkRtvReturns(grnId);
@@ -306,6 +316,91 @@ class GRNTransactionValidator {
     } catch (error) {
       console.warn(`⚠️ RTV check error:`, error.message);
       return { totalReturned: 0, error: error.message };
+    }
+  }
+
+  /**
+   * ✅ BATCH AVAILABILITY CHECK (NEW - Per user spec)
+   * 
+   * Strict validation: Batch is "AVAILABLE" ONLY if:
+   * - availableQty === originalQty
+   * - NO stock has been consumed/sold/transferred
+   * 
+   * This prevents editing GRN items where stock batches have been touched
+   * 
+   * @private
+   * @param {ObjectId} grnId
+   * @param {Array} grnItems
+   * @returns {Promise<Object>} - Batch availability details
+   */
+  static async checkBatchAvailability(grnId, grnItems) {
+    try {
+      console.log(`\n📦 Checking batch availability for GRN ${grnId}`);
+
+      const batchDetails = [];
+      let allBatchesAvailable = true;
+      let batchesAvailable = 0;
+      let batchesConsumed = 0;
+
+      for (const item of grnItems) {
+        // Find all batches created from this GRN item
+        const batches = await StockBatch.find({
+          productId: item.productId,
+          grnId: grnId.toString()
+        });
+
+        for (const batch of batches) {
+          const originalQty = batch.quantity || batch.originalQuantity || 0;
+          const availableQty = batch.availableQuantity || 0;
+          const isAvailable = availableQty === originalQty;
+
+          if (!isAvailable) {
+            allBatchesAvailable = false;
+            batchesConsumed++;
+          } else {
+            batchesAvailable++;
+          }
+
+          batchDetails.push({
+            batchId: batch._id.toString(),
+            batchNumber: batch.batchNumber,
+            productId: item.productId.toString(),
+            itemName: item.itemName,
+            originalQty,
+            availableQty,
+            consumedQty: originalQty - availableQty,
+            isAvailable,
+            status: isAvailable ? "✅ AVAILABLE" : "❌ CONSUMED"
+          });
+
+          console.log(`  ${isAvailable ? "✅" : "❌"} Batch ${batch.batchNumber}: ${availableQty}/${originalQty} available`);
+        }
+      }
+
+      const result = {
+        grnId: grnId.toString(),
+        allBatchesAvailable,  // ← CRITICAL: true only if ALL batches untouched
+        batchesAvailable,
+        batchesConsumed,
+        totalBatches: batchDetails.length,
+        details: batchDetails,
+        reason: allBatchesAvailable
+          ? "All stock batches are fully available - GRN can be edited"
+          : `${batchesConsumed} batch(es) have consumed stock - GRN cannot be edited`
+      };
+
+      console.log(`\n  📊 Batch Summary: ${batchesAvailable} available, ${batchesConsumed} consumed`);
+      console.log(`  ✅ Can Edit (Batch): ${allBatchesAvailable ? "YES" : "NO"}`);
+
+      return result;
+
+    } catch (error) {
+      console.warn(`⚠️ Batch availability check error:`, error.message);
+      return { 
+        allBatchesAvailable: false, 
+        error: error.message,
+        reason: `Error checking batch availability: ${error.message}`
+      };
     }
   }
 

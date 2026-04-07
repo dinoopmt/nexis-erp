@@ -168,7 +168,7 @@ class GRNStockUpdateService {
             item,
             grnData,
             userId,
-            stockUpdate,
+            currentStockUpdate,
             costUpdate,
             productPricingUpdate,
             variantPricingUpdate
@@ -305,6 +305,16 @@ class GRNStockUpdateService {
       const isExpiryTracked = product.trackExpiry || false;
       const BatchModel = isExpiryTracked ? StockBatch : InventoryBatch;
 
+      console.log(`\n🔍 [BATCH] Creating batch for ${item.itemCode}:`, {
+        productId: product._id.toString(),
+        trackExpiry: product.trackExpiry,
+        isExpiryTracked,
+        batchModel: BatchModel.modelName,
+        itemBatchNumber: item.batchNumber,
+        itemQuantity: item.quantity,
+        itemCost: item.unitCost
+      });
+
       // ✅ ADD: Get conversion factor for unit variants
       const conversionFactor = item.conversionFactor || 1;
       const actualQuantity = (item.quantity || 0) * conversionFactor;  // Base units
@@ -312,8 +322,12 @@ class GRNStockUpdateService {
       // Generate batch number from GRN if not provided
       const batchNumber = item.batchNumber || `${grnData.grnNumber}-${Date.now()}`;
 
+      console.log(`🏷️ [BATCH] Using batch number: ${batchNumber}`);
+
       if (isExpiryTracked) {
         // Create StockBatch for expiry-tracked products
+        console.log(`📝 [BATCH] Creating StockBatch for expiry-tracked product...`);
+        
         const batch = new StockBatch({
           grnId: grnData._id,  // ✅ ADD: Link to GRN
           productId: product._id,
@@ -331,7 +345,12 @@ class GRNStockUpdateService {
 
         await batch.save();
 
-        console.log(`✅ StockBatch created: ${batch.batchNumber} (${actualQuantity} base units = ${item.quantity} variant units × factor ${conversionFactor} @ ${batch.costPerUnit})`);
+        console.log(`✅ [BATCH] StockBatch created successfully:`, {
+          batchId: batch._id.toString(),
+          batchNumber: batch.batchNumber,
+          quantity: batch.quantity,
+          expiryDate: batch.expiryDate
+        });
 
         return {
           batchId: batch._id.toString(),
@@ -345,8 +364,10 @@ class GRNStockUpdateService {
         };
       } else {
         // Create InventoryBatch for non-expiry-tracked products
+        console.log(`📝 [BATCH] Creating InventoryBatch for non-expiry-tracked product...`);
+        
         const batch = new InventoryBatch({
-          grnId: grnData._id,  // ✅ ADD: Link to GRN
+          grnId: grnData._id,  // ✅ Note: grnId won't save (schema doesn't have it), using invoiceNumber instead
           productId: product._id,
           batchNumber,
           purchasePrice: item.unitCost,
@@ -356,13 +377,25 @@ class GRNStockUpdateService {
           vendorId: grnData.vendorId,
           expiryDate: item.expiryDate || null,
           lotNumber: item.batchNumber || null,
-          invoiceNumber: grnData.invoiceNo,
+          invoiceNumber: grnData.grnNumber,  // ✅ CHANGED: Store GRN number (for batch lookup during edit)
           batchStatus: "ACTIVE"
+        });
+
+        console.log(`💾 [BATCH] Attempting to save InventoryBatch...`, {
+          batchNumber: batch.batchNumber,
+          productId: batch.productId.toString(),
+          quantity: batch.quantity,
+          purchasePrice: batch.purchasePrice
         });
 
         await batch.save();
 
-        console.log(`✅ InventoryBatch created: ${batch.batchNumber} (${actualQuantity} base units = ${item.quantity} variant units × factor ${conversionFactor} @ ${batch.purchasePrice})`);
+        console.log(`✅ [BATCH] InventoryBatch created successfully:`, {
+          batchId: batch._id.toString(),
+          batchNumber: batch.batchNumber,
+          quantity: batch.quantity,
+          purchasePrice: batch.purchasePrice
+        });
 
         return {
           batchId: batch._id.toString(),
@@ -376,8 +409,22 @@ class GRNStockUpdateService {
       }
 
     } catch (error) {
-      console.error("❌ Error creating batch:", error);
-      // Don't throw - batching is optional
+      console.error(`❌ [BATCH] Error creating batch for ${item.itemCode}:`, {
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        validationErrors: error.errors ? Object.keys(error.errors) : null
+      });
+      
+      // Log the error details for debugging
+      if (error.errors) {
+        Object.entries(error.errors).forEach(([field, err]) => {
+          console.error(`  ❌ Field "${field}": ${err.message}`);
+        });
+      }
+      
+      // Don't throw - batching is optional, but log that it failed
+      console.warn(`⚠️ [BATCH] Batch creation failed for ${item.itemCode} - continuing without batch`);
       return null;
     }
   }
@@ -673,18 +720,19 @@ class GRNStockUpdateService {
         action: "GRN_STOCK_RECEIVED",
         grnNumber: grnData.grnNumber,
         vendor: grnData.vendorName,
-        ...stockUpdate,
-        ...costUpdate,
+        ...(stockUpdate && { ...stockUpdate }),      // ✅ Defensive: only spread if defined
+        ...(costUpdate && { ...costUpdate }),        // ✅ Defensive: only spread if defined
         ...(productPricingUpdate && { productPricingUpdate }),  // ✅ NEW: Add pricing updates
         ...(variantPricingUpdate && { variantPricingUpdate })   // ✅ NEW: Add variant pricing updates
       };
 
       let description = `Stock received for ${product.itemcode}: +${item.quantity} units from GRN ${grnData.grnNumber}`;
       
-      // ✅ NEW: Enhance description with pricing changes
+      // ✅ NEW: Enhance description with pricing changes (defensive null checks)
       if (productPricingUpdate?.pricingUpdate) {
         const { marginPercent, previousPrice, newPrice } = productPricingUpdate.pricingUpdate;
-        description += `; Pricing updated: margin ${marginPercent.toFixed(2)}%, price ${previousPrice} → ${newPrice}`;
+        const marginStr = typeof marginPercent === 'number' ? marginPercent.toFixed(2) : marginPercent || 'N/A';
+        description += `; Pricing updated: margin ${marginStr}%, price ${previousPrice} → ${newPrice}`;
       }
 
       const log = new ActivityLog({

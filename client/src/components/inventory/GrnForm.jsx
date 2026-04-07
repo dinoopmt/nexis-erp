@@ -91,6 +91,13 @@ const GrnForm = () => {
   const [isAutoSearching, setIsAutoSearching] = useState(false); // Track if this is auto-search after product update
   const [isProcessing, setIsProcessing] = useState(false); // 🔴 Prevent double scan race condition
 
+  // ✅ GRN Editability Check States
+  const [showEditabilityWarning, setShowEditabilityWarning] = useState(false); // Show warning modal for non-editable GRN
+  const [editabilityWarning, setEditabilityWarning] = useState(null); // { canEdit, reason, grnData }
+  const [isCheckingEditability, setIsCheckingEditability] = useState(false); // Loading state during check
+  const [grnPendingLoad, setGrnPendingLoad] = useState(null); // Store GRN data pending editability check
+  const [editingGrnStatus, setEditingGrnStatus] = useState(null); // Track status of GRN being edited (for delta vs normal post)
+
   // ✅ Track last added item for quantity increment support
   const lastAddedItemRef = useRef(null); // { productId, barcode, itemId }
 
@@ -1114,6 +1121,7 @@ const GrnForm = () => {
     setItemSearch(""); // ✅ Reset product search
     setBarcodeValue(""); // ✅ Reset barcode input
     setGrnSearch(""); // ✅ Reset GRN list search
+    setEditingGrnStatus(null); // ✅ Reset status when closing
     await resetForm();
   }, [resetForm]);
 
@@ -1160,21 +1168,431 @@ const GrnForm = () => {
     return true;
   }, [formData, showToast]);
 
+  // ============================================================================
+  // 🔨 PAYLOAD BUILDER - Shared logic for both draft and post flows
+  // ============================================================================
+  const buildGrnPayload = async () => {
+    let grnNumber;
+    try {
+      grnNumber = await fetchNextGrnNo();
+      setFormData((prev) => ({ ...prev, grnNo: grnNumber }));
+      console.log("✅ Fresh GRN number generated:", grnNumber);
+    } catch (error) {
+      console.error("Error generating GRN number:", error);
+      showToast("error", "Failed to generate GRN number");
+      return null;
+    }
+
+    const userData = localStorage.getItem("user");
+    const currentUser = userData ? JSON.parse(userData) : null;
+    const currentUserId = currentUser?._id || null;
+
+    if (!currentUserId) {
+      showToast("error", "User information not found. Please login again.");
+      return null;
+    }
+
+    try {
+      const itemsWithFocCalculated = formData.items.map((item) => {
+        const processedItem = { ...item };
+        calculateFocOnPost(processedItem);
+        return processedItem;
+      });
+
+      console.log("🎯 FOC calculations applied:", {
+        itemCount: itemsWithFocCalculated.length,
+        focItems: itemsWithFocCalculated.filter((i) => i.foc || i.focQty > 0)
+          .length,
+      });
+
+      const transformedItems = itemsWithFocCalculated.map((item, index) => {
+        try {
+          const productId = item.productId;
+          const productName = item.productName || item.itemName;
+          const itemCode = item.itemCode;
+          const qty = parseFloat(item.qty || item.quantity || 0) || 0;
+          const cost = parseFloat(item.cost || item.unitCost || 0) || 0;
+          const finalCost =
+            parseFloat(item.finalCost || item.totalCost || qty * cost) || 0;
+
+          if (!productId) throw new Error(`Item ${index + 1}: Missing productId`);
+          if (!productName || !productName.trim()) throw new Error(`Item ${index + 1}: Missing itemName`);
+          if (!itemCode || !itemCode.trim()) throw new Error(`Item ${index + 1}: Missing itemCode`);
+          if (!qty || qty <= 0) throw new Error(`Item ${index + 1}: Invalid quantity`);
+          if (typeof cost !== "number" || cost < 0) throw new Error(`Item ${index + 1}: Invalid cost`);
+          if (cost === 0 && !item.foc) throw new Error(`Item ${index + 1}: Cost cannot be 0 for non-FOC items`);
+
+          const totalCost = finalCost || qty * cost;
+          if (typeof totalCost !== "number" || totalCost < 0) throw new Error(`Item ${index + 1}: Invalid total cost`);
+
+          let batchDetails = {
+            batchNumber: (item.batchNumber || "").trim(),
+            expiryDate: item.expiryDate || null,
+            daysToExpiry: null,
+            batchStatus: "ACTIVE",
+            expiryStatus: "FRESH",
+            hasExpirtTracking: false,
+          };
+
+          if (item.expiryDate) {
+            batchDetails.hasExpirtTracking = true;
+            const today = new Date();
+            const expiry = new Date(item.expiryDate);
+            const daysRemaining = Math.floor((expiry - today) / (1000 * 60 * 60 * 24));
+            batchDetails.daysToExpiry = daysRemaining;
+
+            if (daysRemaining < 0) {
+              batchDetails.batchStatus = "EXPIRED";
+              batchDetails.expiryStatus = "EXPIRED";
+            } else if (daysRemaining <= 30) {
+              batchDetails.batchStatus = "EXPIRING_SOON";
+              batchDetails.expiryStatus = "EXPIRING_SOON";
+            }
+          }
+
+          const quantity = parseFloat(qty);
+          const unitCost = parseFloat(cost);
+          const totalCostValue = parseFloat(totalCost);
+          const discount = parseFloat(item.discount || 0);
+          const discountPercent = parseFloat(item.discountPercent || 0);
+          const taxPercent = parseFloat(item.taxPercent || 0);
+          const taxAmount = parseFloat(item.taxAmount || 0);
+
+          if (isNaN(quantity)) throw new Error(`Item ${index + 1}: Invalid quantity`);
+          if (isNaN(unitCost)) throw new Error(`Item ${index + 1}: Invalid unitCost`);
+          if (isNaN(totalCostValue)) throw new Error(`Item ${index + 1}: Invalid totalCost`);
+          if (discount < 0 || discountPercent < 0 || taxPercent < 0 || taxAmount < 0) throw new Error(`Item ${index + 1}: Negative values not allowed`);
+
+          return {
+            productId,
+            itemName: productName.trim(),
+            itemCode: itemCode.trim(),
+            quantity,
+            unitType: item.unitType || "PC",
+            foc: item.foc || false,
+            focQty: Math.max(0, parseFloat(item.focQty || 0)),
+            unitCost,
+            itemDiscount: discount,
+            itemDiscountPercent: discountPercent,
+            netCost: Math.max(0, quantity * unitCost - discount),
+            focCost: item.focCost || Math.max(0, parseFloat(item.focQty || 0)) * unitCost,
+            paidAmount: item.focCost ? Math.max(0, quantity * unitCost - discount - item.focCost) : Math.max(0, quantity * unitCost - discount),
+            taxType: item.taxType || formData.taxType || "exclusive",
+            taxPercent,
+            taxAmount,
+            totalCost: totalCostValue,
+            batchDetails,
+            batchNumber: batchDetails.batchNumber,
+            expiryDate: batchDetails.expiryDate,
+            daysToExpiry: batchDetails.daysToExpiry,
+            batchStatus: batchDetails.batchStatus,
+            expiryStatus: batchDetails.expiryStatus,
+            hasExpirtTracking: batchDetails.hasExpirtTracking,
+            notes: (item.notes || "").trim(),
+          };
+        } catch (itemError) {
+          console.error(`❌ Error transforming item ${index + 1}:`, itemError.message);
+          throw itemError;
+        }
+      });
+
+      const shippingCost = Math.max(0, parseFloat(formData.shippingCost || 0));
+      if (shippingCost < 0) throw new Error("Shipping cost cannot be negative");
+
+      const grnTotals = calculateGrnTotals(formData.items, shippingCost);
+      const totalDiscountAmount = Math.max(0, grnTotals.totalDiscount || 0);
+      const totalDiscountPercent = grnTotals.totalSubtotal > 0 ? round((totalDiscountAmount / grnTotals.totalSubtotal) * 100) : 0;
+      const totalExTax = grnTotals.totalSubtotal - totalDiscountAmount;
+      const finalTotal = grnTotals.netTotal + shippingCost;
+
+      const batchExpiryTracking = {
+        itemsWithBatchTracking: transformedItems.filter((i) => i.batchNumber && i.batchNumber.trim()).length,
+        itemsWithExpiryTracking: transformedItems.filter((i) => i.hasExpirtTracking).length,
+        expiringItems: transformedItems.filter((i) => i.batchStatus === "EXPIRING_SOON").length,
+        expiredItems: transformedItems.filter((i) => i.batchStatus === "EXPIRED").length,
+        earliestExpiryDate: transformedItems.filter((i) => i.expiryDate).map((i) => new Date(i.expiryDate)).reduce((earliest, date) => (date < earliest ? date : earliest), new Date("2099-12-31")).toISOString().split("T")[0],
+        expiryTrackingEnabled: transformedItems.some((i) => i.hasExpirtTracking),
+      };
+
+      const payload = {
+        grnNumber,
+        grnDate: formData.grnDate,
+        invoiceNo: formData.invoiceNo || "",
+        lpoNo: formData.lpoNo || "",
+        vendorId: formData.vendorId,
+        vendorName: formData.vendorName,
+        paymentTerms: formData.paymentTerms || "due_on_receipt",
+        shipperId: formData.shipperId || null,
+        shipperName: formData.shipperName || "",
+        shippingCost: parseFloat(formData.shippingCost || 0),
+        taxType: formData.taxType || "exclusive",
+        totalQty: grnTotals.totalQty || 0,
+        subtotal: parseFloat(grnTotals.totalSubtotal || 0),
+        discountAmount: parseFloat(totalDiscountAmount),
+        discountPercent: parseFloat(totalDiscountPercent),
+        totalExTax: parseFloat(totalExTax),
+        taxAmount: parseFloat(grnTotals.totalTaxAmount || 0),
+        netTotal: parseFloat(grnTotals.netTotal || 0),
+        finalTotal: parseFloat(finalTotal),
+        batchExpiryTracking,
+        focTracking: {
+          totalFocQty: getTotalFocQty(),
+          focItems: getTotalFocItems(),
+          regularQty: getRegularQty(),
+          hasFoc: getTotalFocQty() > 0,
+        },
+        deliveryDate: new Date().toISOString().split("T")[0],
+        referenceNumber: formData.lpoNo || "",
+        notes: formData.notes || "",
+        createdBy: currentUserId,
+        items: transformedItems,
+      };
+
+      console.log("📋 Payload built successfully:", { grnNumber: payload.grnNumber, totalQty: payload.totalQty, itemCount: payload.items.length });
+      return payload;
+    } catch (error) {
+      console.error("❌ Error building payload:", error.message);
+      showToast("error", error.message);
+      return null;
+    }
+  };
+
+  // ============================================================================
+  // ✅ CHECK GRN EDITABILITY - Validate batch availability before allowing edits
+  // ============================================================================
+  const checkGrnEditability = async (grnId, grnData) => {
+    setIsCheckingEditability(true);
+    try {
+      const response = await axios.post(`${API_URL}/grn/${grnId}/can-edit`);
+      console.log("✅ Editability check result:", response.data);
+
+      const { canEdit, reason } = response.data;
+
+      if (!canEdit) {
+        // ❌ GRN not editable - show warning
+        console.warn("❌ GRN not editable:", reason);
+        setEditabilityWarning({
+          canEdit: false,
+          reason: reason || "This GRN cannot be edited. Please check transaction dependencies.",
+          grnData,
+          grnId,
+        });
+        setShowEditabilityWarning(true);
+        return false;
+      }
+
+      // ✅ GRN editable - proceed with loading
+      console.log("✅ GRN is editable, loading form...");
+      return true;
+    } catch (error) {
+      console.error("❌ Error checking editability:", error);
+      const errorMsg = error.response?.data?.message || error.message || "Failed to check edit eligibility";
+      showToast("error", "Error: " + errorMsg);
+      return false;
+    } finally {
+      setIsCheckingEditability(false);
+    }
+  };
+
+  // ============================================================================
+  // 💾 SAVE AS DRAFT - Dedicated function (NO posting, NO stock updates)
+  // ============================================================================
+  const handleSaveDraft = async () => {
+    console.log("📋 [DRAFT] Starting save draft process...");
+
+    // ✅ NEW: If editing a POSTED/Received GRN, use delta-based edit instead (even for draft save)
+    if (editingId && (editingGrnStatus === "POSTED" || editingGrnStatus === "Received")) {
+      console.log("ℹ️ Editing POSTED GRN - using delta-based edit endpoint (not draft save)");
+      return handleApplyPostedGrnEdit();
+    }
+
+    const payload = await buildGrnPayload();
+    if (!payload) return;
+
+    try {
+      const draftPayload = { ...payload, status: "Draft", id: editingId || null };
+
+      console.log("📤 Submitting DRAFT GRN:", { grnNumber: draftPayload.grnNumber, status: draftPayload.status, endpoint: "/grn/save-draft" });
+
+      const response = await axios({
+        method: "POST",
+        url: `${API_URL}/grn/save-draft`,
+        data: draftPayload,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        console.log("✅ Draft GRN saved successfully (NO auto-posting)");
+
+        if (editingId) {
+          showToast("success", "✅ GRN updated as Draft (no stock updates)");
+        } else {
+          showToast("success", "✅ GRN saved as DRAFT - Status: Draft");
+        }
+
+        clearAllCache();
+        const listResponse = await axios.get(`${API_URL}/grn`);
+        setGrnList(Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.data || []);
+
+        setItemSearch("");
+        setBarcodeValue("");
+        setGrnSearch("");
+        await resetForm();
+        setShowNewGrnModal(false);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || "Failed to save draft";
+      showToast("error", errorMsg);
+      console.error("❌ Draft Save Error:", error);
+    }
+  };
+
+  // ============================================================================
+  // ✅ APPLY DELTA-BASED EDIT TO POSTED GRN - Strict batch validation
+  // ============================================================================
+  const handleApplyPostedGrnEdit = async () => {
+    console.log("✏️ [EDIT POSTED] Starting delta-based edit for posted GRN...");
+
+    // ✅ Extract current user ID from localStorage
+    const userData = localStorage.getItem("user");
+    const currentUser = userData ? JSON.parse(userData) : null;
+    const currentUserId = currentUser?._id || null;
+
+    if (!currentUserId) {
+      showToast("error", "User information not found. Please login again.");
+      return;
+    }
+    
+    // Transform items to match backend format
+    const editItems = formData.items.map((item) => ({
+      productId: item.productId,
+      itemName: item.productName,
+      itemCode: item.itemCode,
+      quantity: parseFloat(item.qty) || 0,
+      unitCost: parseFloat(item.cost) || 0,
+      totalCost: parseFloat(item.finalCost || item.qty * item.cost) || 0,
+      unitType: item.unitType || "PC",
+      foc: item.foc || false,
+      focQty: parseFloat(item.focQty) || 0,
+      itemDiscount: parseFloat(item.discount) || 0,
+      itemDiscountPercent: parseFloat(item.discountPercent) || 0,
+      taxType: item.taxType || "exclusive",
+      taxPercent: parseFloat(item.taxPercent) || 0,
+      netCost: parseFloat(item.netCost) || 0,
+      trackExpiry: item.trackExpiry || false,
+      batchNumber: item.batchNumber || "",
+      expiryDate: item.expiryDate || null,
+    }));
+
+    try {
+      console.log("📤 Submitting POSTED GRN EDIT (delta-based):", {
+        grnId: editingId,
+        itemCount: editItems.length,
+        endpoint: `/grn/${editingId}/apply-edit`
+      });
+
+      const response = await axios({
+        method: "PATCH",
+        url: `${API_URL}/grn/${editingId}/apply-edit`,
+        data: {
+          items: editItems,
+          createdBy: currentUserId,
+        },
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (response.status === 200) {
+        console.log("✅ Posted GRN edited successfully with delta calculations");
+        showToast("success", "✅ GRN updated successfully - Stock adjusted by delta amounts");
+
+        clearAllCache();
+        const listResponse = await axios.get(`${API_URL}/grn`);
+        setGrnList(Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.data || []);
+
+        setItemSearch("");
+        setBarcodeValue("");
+        setGrnSearch("");
+        await resetForm();
+        setShowNewGrnModal(false);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || "Failed to apply edit";
+      showToast("error", "❌ " + errorMsg);
+      console.error("❌ Posted GRN Edit Error:", error);
+    }
+  };
+
+  // ============================================================================
+  // 📤 POST GRN - Dedicated function (auto-posts, updates stock & vendor payments)
+  // ============================================================================
+  const handlePostGrn = async () => {
+    console.log("✓ [POST] Starting post GRN process...");
+
+    // ✅ NEW: If editing a POSTED/Received GRN, use delta-based edit instead
+    if (editingId && (editingGrnStatus === "POSTED" || editingGrnStatus === "Received")) {
+      console.log("ℹ️ Editing POSTED GRN - using delta-based edit endpoint");
+      return handleApplyPostedGrnEdit();
+    }
+
+    const payload = await buildGrnPayload();
+    if (!payload) return;
+
+    try {
+      const postPayload = { ...payload, status: "Received", id: editingId || null };
+
+      console.log("📤 Submitting POST GRN:", { grnNumber: postPayload.grnNumber, status: postPayload.status, endpoint: "/grn/post-with-updates" });
+
+      const response = await axios({
+        method: "POST",
+        url: `${API_URL}/grn/post-with-updates`,
+        data: postPayload,
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        const isNewGrn = !editingId;
+        const inventoryData = response.data?.inventory;
+
+        console.log(`✅ GRN Posted successfully with all updates`);
+
+        const toastMessage = isNewGrn
+          ? `✅ GRN created & posted - Stock updated (${inventoryData?.currentStockUpdates || 0} entries, ${inventoryData?.costUpdates || 0} costs)`
+          : `✅ GRN updated & posted - Stock updated`;
+
+        showToast("success", toastMessage);
+
+        clearAllCache();
+        const listResponse = await axios.get(`${API_URL}/grn`);
+        setGrnList(Array.isArray(listResponse.data) ? listResponse.data : listResponse.data?.data || []);
+
+        setItemSearch("");
+        setBarcodeValue("");
+        setGrnSearch("");
+        await resetForm();
+        setShowNewGrnModal(false);
+      }
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message || "Failed to post GRN";
+      showToast("error", errorMsg);
+      console.error("❌ Post GRN Error:", error);
+    }
+  };
+
   const handleDraftSubmit = useCallback(() => {
     if (!validateBeforeSubmit()) {
       return;
     }
 
-    handleSubmit("draft");
-  }, [validateBeforeSubmit]);
+    handleSaveDraft();
+  }, [validateBeforeSubmit, handleSaveDraft]);
 
   const handlePostSubmit = useCallback(() => {
     if (!validateBeforeSubmit()) {
       return;
     }
 
-    handleSubmit("post");
-  }, [validateBeforeSubmit]);
+    handlePostGrn();
+  }, [validateBeforeSubmit, handlePostGrn]);
 
   const focusBarcodeInput = useCallback(() => {
     if (!isGlobalGrnContextActive) {
@@ -1334,616 +1752,6 @@ const GrnForm = () => {
     };
   }, [isGlobalGrnContextActive, isGrnRoute, registerShortcut]);
 
-  // Submit GRN
-  const handleSubmit = async (action) => {
-    // ✅ FIXED: Always generate FRESH GRN number on submit (prevents duplicates on retry)
-    let grnNumber;
-    try {
-      grnNumber = await fetchNextGrnNo();
-      setFormData((prev) => ({ ...prev, grnNo: grnNumber }));
-      console.log("✅ Fresh GRN number generated:", grnNumber);
-    } catch (error) {
-      console.error("Error generating GRN number:", error);
-      showToast("error", "Failed to generate GRN number");
-      return;
-    }
-
-    try {
-      // ✅ Get user info for createdBy field
-      const userData = localStorage.getItem("user");
-      const currentUser = userData ? JSON.parse(userData) : null;
-      const currentUserId = currentUser?._id || null;
-
-      if (!currentUserId) {
-        showToast("error", "User information not found. Please login again.");
-        return;
-      }
-
-      // ✅ NEW: Apply FOC calculations before posting
-      const itemsWithFocCalculated = formData.items.map((item) => {
-        const processedItem = { ...item };
-        calculateFocOnPost(processedItem);
-        return processedItem;
-      });
-
-      console.log("🎯 FOC calculations applied during posting:", {
-        itemCount: itemsWithFocCalculated.length,
-        focItems: itemsWithFocCalculated.filter((i) => i.foc || i.focQty > 0)
-          .length,
-      });
-
-      // ✅ Transform items to match backend schema with validation
-      const transformedItems = itemsWithFocCalculated.map((item, index) => {
-        try {
-          // ✅ Handle both frontend and backend field names (for edit mode)
-          const productId = item.productId;
-          const productName = item.productName || item.itemName;
-          const itemCode = item.itemCode;
-          const qty = parseFloat(item.qty || item.quantity || 0) || 0;
-          const cost = parseFloat(item.cost || item.unitCost || 0) || 0;
-          const finalCost =
-            parseFloat(item.finalCost || item.totalCost || qty * cost) || 0;
-
-          // ✅ DIAGNOSTIC: Log the raw item and extracted productId
-          console.log(`🔗 [DIAG] Item ${index + 1} productId extraction:`, {
-            rawItem: item,
-            extractedProductId: productId,
-            productIdType: typeof productId,
-            productIdValid: !!productId,
-            productName: productName,
-            itemcode: itemCode,
-          });
-
-          // Validate required fields
-          if (!productId) {
-            throw new Error(`Item ${index + 1}: Missing productId`);
-          }
-          if (!productName || !productName.trim()) {
-            throw new Error(`Item ${index + 1}: Missing itemName`);
-          }
-          if (!itemCode || !itemCode.trim()) {
-            throw new Error(`Item ${index + 1}: Missing itemCode`);
-          }
-          if (!qty || qty <= 0) {
-            throw new Error(`Item ${index + 1}: Invalid quantity (${qty})`);
-          }
-          if (typeof cost !== "number" || cost < 0) {
-            throw new Error(`Item ${index + 1}: Invalid unit cost (${cost})`);
-          }
-          // ✅ Check for 0 cost on non-FOC items
-          if (cost === 0 && !item.foc) {
-            throw new Error(
-              `Item ${index + 1}: Cost cannot be 0 for non-FOC items`,
-            );
-          }
-
-          const totalCost = finalCost || qty * cost;
-          if (typeof totalCost !== "number" || totalCost < 0) {
-            throw new Error(
-              `Item ${index + 1}: Invalid total cost (${totalCost})`,
-            );
-          }
-
-          // ✅ Calculate batch & expiry details
-          let batchDetails = {
-            batchNumber: (item.batchNumber || "").trim(),
-            expiryDate: item.expiryDate || null,
-            daysToExpiry: null,
-            batchStatus: "ACTIVE",
-            expiryStatus: "FRESH",
-            hasExpirtTracking: false,
-          };
-
-          // ✅ Calculate days to expiry if expiry date provided
-          if (item.expiryDate) {
-            batchDetails.hasExpirtTracking = true;
-            const today = new Date();
-            const expiry = new Date(item.expiryDate);
-            const daysRemaining = Math.floor(
-              (expiry - today) / (1000 * 60 * 60 * 24),
-            );
-            batchDetails.daysToExpiry = daysRemaining;
-
-            // Determine batch status and expiry status
-            if (daysRemaining < 0) {
-              batchDetails.batchStatus = "EXPIRED";
-              batchDetails.expiryStatus = "EXPIRED";
-            } else if (daysRemaining <= 30) {
-              batchDetails.batchStatus = "EXPIRING_SOON";
-              batchDetails.expiryStatus = "EXPIRING_SOON";
-            } else {
-              batchDetails.batchStatus = "ACTIVE";
-              batchDetails.expiryStatus = "FRESH";
-            }
-          }
-
-          // ✅ Enhanced item details including tax, discount, and batch info
-          const quantity = parseFloat(qty);
-          const unitCost = parseFloat(cost);
-          const totalCostValue = parseFloat(totalCost);
-          const discount = parseFloat(item.discount || 0);
-          const discountPercent = parseFloat(item.discountPercent || 0);
-          const taxPercent = parseFloat(item.taxPercent || 0);
-          const taxAmount = parseFloat(item.taxAmount || 0);
-
-          // ✅ Validate numeric fields are not NaN
-          if (isNaN(quantity)) {
-            throw new Error(
-              `Item ${index + 1}: quantity is not a valid number (${qty})`,
-            );
-          }
-          if (isNaN(unitCost)) {
-            throw new Error(
-              `Item ${index + 1}: unitCost is not a valid number (${cost})`,
-            );
-          }
-          if (isNaN(totalCostValue)) {
-            throw new Error(
-              `Item ${index + 1}: totalCost is not a valid number (${totalCost})`,
-            );
-          }
-
-          // ✅ Validate no negative values
-          if (discount < 0) {
-            throw new Error(
-              `Item ${index + 1}: Discount cannot be negative (${discount})`,
-            );
-          }
-          if (discountPercent < 0) {
-            throw new Error(
-              `Item ${index + 1}: Discount percentage cannot be negative (${discountPercent}%)`,
-            );
-          }
-          if (taxPercent < 0) {
-            throw new Error(
-              `Item ${index + 1}: Tax percentage cannot be negative (${taxPercent}%)`,
-            );
-          }
-          if (taxAmount < 0) {
-            throw new Error(
-              `Item ${index + 1}: Tax amount cannot be negative (${taxAmount})`,
-            );
-          }
-
-          const transformedItem = {
-            productId: productId,
-            itemName: productName.trim(),
-            itemCode: itemCode.trim(),
-            quantity: quantity,
-            unitType: item.unitType || "PC",
-            foc: item.foc || false,
-            focQty: Math.max(0, parseFloat(item.focQty || 0)),
-            unitCost: unitCost,
-            itemDiscount: discount,
-            itemDiscountPercent: discountPercent,
-
-            // ✅ Include calculated amounts for backend
-            netCost: Math.max(
-              0,
-              parseFloat(quantity * unitCost - discount || 0),
-            ),
-            focCost:
-              item.focCost ||
-              Math.max(0, parseFloat(item.focQty || 0)) * unitCost, // ✅ NEW: Include FOC cost
-            paidAmount: item.focCost
-              ? Math.max(
-                  0,
-                  parseFloat(quantity * unitCost - discount || 0) -
-                    (item.focCost || 0),
-                )
-              : Math.max(0, parseFloat(quantity * unitCost - discount || 0)), // ✅ NEW: Amount actually paid after FOC
-
-            taxType: item.taxType || formData.taxType || "exclusive",
-            taxPercent: taxPercent,
-            taxAmount: taxAmount,
-            totalCost: totalCostValue,
-            // Batch & Expiry Details
-            batchDetails: batchDetails,
-            batchNumber: batchDetails.batchNumber,
-            expiryDate: batchDetails.expiryDate,
-            daysToExpiry: batchDetails.daysToExpiry,
-            batchStatus: batchDetails.batchStatus,
-            expiryStatus: batchDetails.expiryStatus,
-            hasExpirtTracking: batchDetails.hasExpirtTracking,
-            notes: (item.notes || "").trim(),
-          };
-
-          console.log(`✅ Item ${index + 1} validated:`, transformedItem);
-          return transformedItem;
-        } catch (itemError) {
-          console.error(
-            `❌ Error transforming item ${index + 1}:`,
-            itemError.message,
-          );
-          throw itemError;
-        }
-      });
-
-      // ✅ Calculate all GRN totals with country-based decimal control
-      const shippingCost = Math.max(0, parseFloat(formData.shippingCost || 0));
-
-      // ✅ Validate header-level numeric fields
-      if (shippingCost < 0) {
-        throw new Error("Shipping cost cannot be negative");
-      }
-
-      const grnTotals = calculateGrnTotals(formData.items, shippingCost);
-
-      // Calculate discount totals with proper decimal handling
-      const totalDiscountAmount = Math.max(0, grnTotals.totalDiscount || 0);
-      const totalDiscountPercent =
-        grnTotals.totalSubtotal > 0
-          ? round((totalDiscountAmount / grnTotals.totalSubtotal) * 100)
-          : 0;
-
-      const totalExTax = grnTotals.totalSubtotal - totalDiscountAmount;
-      const finalTotal = grnTotals.netTotal + shippingCost;
-
-      // ✅ Calculate batch & expiry tracking summary
-      const batchExpiryTracking = {
-        itemsWithBatchTracking: transformedItems.filter(
-          (i) => i.batchNumber && i.batchNumber.trim(),
-        ).length,
-        itemsWithExpiryTracking: transformedItems.filter(
-          (i) => i.hasExpirtTracking,
-        ).length,
-        expiringItems: transformedItems.filter(
-          (i) => i.batchStatus === "EXPIRING_SOON",
-        ).length,
-        expiredItems: transformedItems.filter(
-          (i) => i.batchStatus === "EXPIRED",
-        ).length,
-        earliestExpiryDate: transformedItems
-          .filter((i) => i.expiryDate)
-          .map((i) => new Date(i.expiryDate))
-          .reduce(
-            (earliest, date) => (date < earliest ? date : earliest),
-            new Date("2099-12-31"),
-          )
-          .toISOString()
-          .split("T")[0],
-        expiryTrackingEnabled: transformedItems.some(
-          (i) => i.hasExpirtTracking,
-        ),
-      };
-
-      // ✅ Enhanced GRN Payload with all details
-      const submitData = {
-        // GRN Header
-        grnNumber: grnNumber,
-        grnDate: formData.grnDate,
-        invoiceNo: formData.invoiceNo || "",
-        lpoNo: formData.lpoNo || "",
-
-        // Vendor Details
-        vendorId: formData.vendorId,
-        vendorName: formData.vendorName,
-        paymentTerms: formData.paymentTerms || "due_on_receipt",
-
-        // Shipper Details
-        shipperId: formData.shipperId || null,
-        shipperName: formData.shipperName || "",
-        shippingCost: parseFloat(formData.shippingCost || 0),
-
-        // Tax & Discount Info
-        taxType: formData.taxType || "exclusive",
-
-        // GRN Level Totals
-        totalQty: grnTotals.totalQty || 0,
-        subtotal: parseFloat(grnTotals.totalSubtotal || 0),
-        discountAmount: parseFloat(totalDiscountAmount),
-        discountPercent: parseFloat(totalDiscountPercent),
-        totalExTax: parseFloat(totalExTax),
-        taxAmount: parseFloat(grnTotals.totalTaxAmount || 0),
-        netTotal: parseFloat(grnTotals.netTotal || 0),
-        finalTotal: parseFloat(finalTotal),
-
-        // Batch & Expiry Tracking Summary
-        batchExpiryTracking: batchExpiryTracking,
-
-        // ✅ FOC (Free Of Charge) Summary
-        focTracking: {
-          totalFocQty: getTotalFocQty(),
-          focItems: getTotalFocItems(),
-          regularQty: getRegularQty(),
-          hasFoc: getTotalFocQty() > 0,
-        },
-
-        // Metadata
-        status: action === "draft" ? "Draft" : "Received",
-        deliveryDate: new Date().toISOString().split("T")[0],
-        referenceNumber: formData.lpoNo || "",
-        notes: formData.notes || "",
-        createdBy: currentUserId,
-
-        // Items with full details
-        items: transformedItems,
-      };
-
-      console.log("📤 Submitting GRN to backend:", {
-        grnNumber: submitData.grnNumber,
-        totalQty: submitData.totalQty,
-        subtotal: submitData.subtotal,
-        discountAmount: submitData.discountAmount,
-        taxAmount: submitData.taxAmount,
-        finalTotal: submitData.finalTotal,
-        itemCount: submitData.items.length,
-        itemsWithProductIds: submitData.items.map((item, idx) => ({
-          index: idx + 1,
-          productId: item.productId,
-          itemName: item.itemName,
-          itemCode: item.itemCode,
-          quantity: item.quantity,
-          unitCost: item.unitCost,
-        })),
-      });
-
-      // ✅ Log each item for debugging
-      submitData.items.forEach((item, idx) => {
-        console.log(`📦 Item ${idx + 1}:`, {
-          productId: item.productId,
-          productIdType: typeof item.productId,
-          itemName: item.itemName,
-          itemCode: item.itemCode,
-          quantity: item.quantity,
-          quantityType: typeof item.quantity,
-          unitCost: item.unitCost,
-          unitCostType: typeof item.unitCost,
-          totalCost: item.totalCost,
-          totalCostType: typeof item.totalCost,
-        });
-      });
-
-      console.log("📋 Full submitData:", submitData);
-      console.log("✅ Submitting with createdBy:", {
-        currentUserId,
-        submitDataCreatedBy: submitData.createdBy,
-        userData: localStorage.getItem("user"),
-      });
-
-      // ✅ NEW: Validate invoice/LPO duplication (same vendor, same financial year)
-      const grnDate = new Date(submitData.grnDate);
-      const grnYear = grnDate.getFullYear();
-      const grnMonth = grnDate.getMonth(); // 0-11
-      const grnFinancialYear =
-        grnMonth >= 3
-          ? `${grnYear}-${grnYear + 1}`
-          : `${grnYear - 1}-${grnYear}`;
-
-      // Check existing GRNs in the list
-      const existingGrns = grnList || [];
-
-      // Check for duplicate invoice number
-      if (submitData.invoiceNo && submitData.invoiceNo.trim()) {
-        const duplicateInvoice = existingGrns.find((grn) => {
-          // Skip if it's the same GRN being edited
-          if (editingId && grn._id === editingId) return false;
-
-          // Check if same vendor
-          if (
-            grn.vendorId?.toString() !== submitData.vendorId?.toString() &&
-            grn.vendorId !== submitData.vendorId
-          ) {
-            return false;
-          }
-
-          // Check if same financial year
-          if (grn.grnDate) {
-            const existingDate = new Date(grn.grnDate);
-            const existingYear = existingDate.getFullYear();
-            const existingMonth = existingDate.getMonth();
-            const existingFY =
-              existingMonth >= 3
-                ? `${existingYear}-${existingYear + 1}`
-                : `${existingYear - 1}-${existingYear}`;
-            if (existingFY !== grnFinancialYear) return false;
-          }
-
-          // Check if same invoice number
-          return grn.invoiceNo === submitData.invoiceNo.trim();
-        });
-
-        if (duplicateInvoice) {
-          showToast(
-            "error",
-            `⚠️ Invoice number "${submitData.invoiceNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateInvoice.grnNumber})`,
-          );
-          return;
-        }
-      }
-
-      // Check for duplicate LPO number
-      if (submitData.lpoNo && submitData.lpoNo.trim()) {
-        const duplicateLpo = existingGrns.find((grn) => {
-          // Skip if it's the same GRN being edited
-          if (editingId && grn._id === editingId) return false;
-
-          // Check if same vendor
-          if (
-            grn.vendorId?.toString() !== submitData.vendorId?.toString() &&
-            grn.vendorId !== submitData.vendorId
-          ) {
-            return false;
-          }
-
-          // Check if same financial year
-          if (grn.grnDate) {
-            const existingDate = new Date(grn.grnDate);
-            const existingYear = existingDate.getFullYear();
-            const existingMonth = existingDate.getMonth();
-            const existingFY =
-              existingMonth >= 3
-                ? `${existingYear}-${existingYear + 1}`
-                : `${existingYear - 1}-${existingYear}`;
-            if (existingFY !== grnFinancialYear) return false;
-          }
-
-          // Check if same LPO number
-          return grn.lpoNo === submitData.lpoNo.trim();
-        });
-
-        if (duplicateLpo) {
-          showToast(
-            "error",
-            `⚠️ LPO number "${submitData.lpoNo}" already exists for this vendor in FY ${grnFinancialYear} (GRN: ${duplicateLpo.grnNumber})`,
-          );
-          return;
-        }
-      }
-
-      const response = await axios({
-        method: editingId ? "PUT" : "POST",
-        url: `${API_URL}/grn${editingId ? `/${editingId}` : ""}`,
-        data: submitData,
-        headers: { "Content-Type": "application/json" },
-      });
-
-      console.log(`✅ GRN Save Response:`, {
-        status: response.status,
-        statusText: response.statusText,
-        hasData: !!response.data,
-        dataId: response.data?._id,
-        editingId: editingId,
-      });
-
-      if (response.status === 200 || response.status === 201) {
-        // ✅ Track completion status for combined message
-        let completionStatus = {
-          saved: true,
-          posted: false,
-          postError: null,
-          inventoryUpdates: null,
-        };
-
-        // ✅ NEW: If GRN was CREATED (not edited), automatically POST it to trigger stock updates
-        if (!editingId && response.data?._id) {
-          console.log(
-            `📤 Auto-posting new GRN to trigger stock updates: ${response.data._id}`,
-          );
-
-          try {
-            const postResponse = await axios.post(
-              `${API_URL}/grn/${response.data._id}/post`,
-              { createdBy: submitData.createdBy || currentUserId },
-            );
-
-            console.log(`✅ GRN Posted successfully:`, {
-              status: postResponse.status,
-              statusText: postResponse.statusText,
-              currentStockUpdates:
-                postResponse.data?.inventory?.currentStockUpdates || 0,
-              batchesCreated: postResponse.data?.inventory?.batchesCreated || 0,
-              costUpdates: postResponse.data?.inventory?.costUpdates || 0,
-            });
-
-            completionStatus.posted = true;
-            completionStatus.inventoryUpdates = {
-              currentStock:
-                postResponse.data?.inventory?.currentStockUpdates || 0,
-              batches: postResponse.data?.inventory?.batchesCreated || 0,
-              costUpdates: postResponse.data?.inventory?.costUpdates || 0,
-            };
-          } catch (postError) {
-            console.error(
-              `❌ Error posting GRN:`,
-              postError.response?.data || postError.message,
-            );
-            completionStatus.postError =
-              postError.response?.data?.message || postError.message;
-          }
-        }
-
-        // ✅ Show SINGLE combined toast message
-        let toastMessage = "";
-        if (editingId) {
-          toastMessage = "✅ GRN updated successfully";
-        } else if (completionStatus.posted) {
-          toastMessage = `✅ GRN created & posted successfully - Stock updated (${completionStatus.inventoryUpdates.currentStock} entries, ${completionStatus.inventoryUpdates.costUpdates} costs updated)`;
-        } else if (completionStatus.postError) {
-          toastMessage = `✅ GRN created successfully\n⚠️ Auto-post failed: ${completionStatus.postError}`;
-        } else {
-          toastMessage = "✅ GRN created successfully";
-        }
-
-        console.log(`📢 Showing combined toast: ${toastMessage}`);
-        showToast("success", toastMessage);
-
-        // ✅ Clear product search cache to ensure fresh costs display in dropdown
-        clearAllCache();
-        console.log("🧹 Cleared product search cache after GRN save");
-
-        // Refresh list
-        const listResponse = await axios.get(`${API_URL}/grn`);
-        setGrnList(
-          Array.isArray(listResponse.data)
-            ? listResponse.data
-            : listResponse.data?.data || [],
-        );
-
-        // ✅ Reset search states when closing modal
-        setItemSearch("");
-        setBarcodeValue("");
-        setGrnSearch("");
-
-        await resetForm();
-        setShowNewGrnModal(false);
-      }
-    } catch (error) {
-      // Parse sent data for logging
-      let sentData = {};
-      try {
-        sentData = JSON.parse(error.config?.data || "{}");
-      } catch {
-        sentData = error.config?.data;
-      }
-
-      // Check if it's an API error or JavaScript error
-      if (error.response) {
-        // API error
-        console.error("❌ GRN Submission Error Summary:", {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          errorMessage: error.response?.data?.message,
-          errorDetails: error.response?.data?.error,
-          validationErrors: error.response?.data?.errors,
-          details: error.response?.data?.details,
-        });
-        console.error("📤 SENT DATA:", sentData);
-        console.error(
-          "📥 FULL RESPONSE DATA:",
-          JSON.stringify(error.response?.data, null, 2),
-        );
-      } else {
-        // JavaScript error (during transformation or data building)
-        console.error("❌ GRN Processing Error (before API call):", {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
-        });
-      }
-
-      // Extract detailed error message
-      let errorMessage =
-        error.response?.data?.message || error.message || "Error saving GRN";
-
-      // If there are validation errors, include them in the message
-      if (
-        error.response?.data?.errors &&
-        Array.isArray(error.response.data.errors)
-      ) {
-        errorMessage = error.response.data.errors.join(" | ");
-      }
-
-      // ✅ Clear GRN number on error so next submit gets a fresh one
-      setFormData((prev) => ({ ...prev, grnNo: "" }));
-
-      showToast(
-        "error",
-        errorMessage + " (Try submitting again for a fresh GRN number)",
-      );
-    }
-  };
-
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* HEADER - Fixed at top */}
@@ -2075,7 +1883,7 @@ const GrnForm = () => {
             setIsViewMode(true); // ✅ Enable view mode
             setShowNewGrnModal(true);
           }}
-          onEdit={(grn) => {
+          onEdit={async (grn) => {
             // ✅ Map backend GRN data to frontend form format
             const mappedItems = (grn.items || []).map((item) => ({
               id: item._id || Math.random().toString(36), // ✅ NEW: Ensure item has ID for tracking
@@ -2149,17 +1957,30 @@ const GrnForm = () => {
                 .length,
             });
 
+            // ✅ NEW: Check GRN editability before allowing edit
+            console.log("🔍 Checking GRN editability...");
+            const canEdit = await checkGrnEditability(grn._id, mappedGrn);
+
+            if (!canEdit) {
+              // ❌ Not editable - warning modal is shown by checkGrnEditability
+              console.warn("❌ GRN edit blocked - not eligible for editing");
+              return;
+            }
+
+            // ✅ Editable - proceed with loading form
             setFormData(mappedGrn);
             setEditingId(grn._id);
+            setEditingGrnStatus(grn.status); // ✅ Store the status for edit routing
             setItemSearch(""); // ✅ Reset product search
             setBarcodeValue(""); // ✅ Reset barcode input
+            setIsViewMode(false); // ✅ Enable edit mode
             setShowNewGrnModal(true);
           }}
           onDelete={async (id) => {
             if (!window.confirm("Are you sure you want to delete this GRN?"))
               return;
             try {
-              const response = await fetch(`${API_URL}/api/v1/grn/${id}`, {
+              const response = await fetch(`${API_URL}/grn/${id}`, {
                 method: "DELETE",
               });
               if (response.ok) {
@@ -2587,6 +2408,51 @@ const GrnForm = () => {
         }}
         onSave={handleBatchExpirySave}
       />
+
+      {/* ✅ GRN Editability Warning Modal */}
+      {showEditabilityWarning && editabilityWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Header */}
+            <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3 rounded-t-lg">
+              <h2 className="text-lg font-bold text-yellow-900 flex items-center gap-2">
+                <span className="text-2xl">⚠️</span>
+                GRN Cannot Be Edited
+              </h2>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-gray-700">
+                <strong>GRN {editabilityWarning.grnData?.grnNo || "—"}:</strong> This GRN cannot be edited because:
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded p-3">
+                <p className="text-sm text-red-800 font-medium">
+                  {editabilityWarning.reason}
+                </p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                <p className="text-xs text-blue-700">
+                  <strong>💡 Next Steps:</strong> If you need to modify this receipt, please cancel the transaction that is blocking the edit, or create a new GRN with the updated quantities.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 px-4 py-3 border-t bg-gray-50 rounded-b-lg">
+              <button
+                onClick={() => {
+                  setShowEditabilityWarning(false);
+                  setEditabilityWarning(null);
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded font-medium hover:bg-gray-700 transition"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
