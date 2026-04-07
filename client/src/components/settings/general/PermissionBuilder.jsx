@@ -206,6 +206,7 @@ const PermissionBuilder = ({ selectedPermissions, onPermissionsChange }) => {
           <div key={module} className="border border-gray-200 rounded-lg overflow-hidden">
             {/* Module Header */}
             <button
+              type="button"
               onClick={() => toggleModule(module)}
               className="w-full bg-gray-50 hover:bg-gray-100 transition p-2 flex items-center justify-between"
             >

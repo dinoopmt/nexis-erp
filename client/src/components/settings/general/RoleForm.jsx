@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Save, X } from 'lucide-react'
 import PermissionBuilder from './PermissionBuilder'
 
@@ -10,10 +10,23 @@ const RoleForm = ({ role, onSave, onCancel }) => {
     permissions: [],
   })
 
+  const [expandedSections, setExpandedSections] = useState({})
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
+  const previousRoleIdRef = React.useRef(null)
+  const hasInitializedRef = React.useRef(false)
+  const expandedSectionsRef = React.useRef({})
 
   useEffect(() => {
+    const currentRoleId = role?._id
+    const hasRoleChanged = previousRoleIdRef.current !== currentRoleId
+    
+    if (!hasRoleChanged) return
+    
+    // Role changed - reset tracking
+    previousRoleIdRef.current = currentRoleId
+    
+    // Load form data
     if (role) {
       setFormData({
         name: role.name || '',
@@ -21,8 +34,26 @@ const RoleForm = ({ role, onSave, onCancel }) => {
         activityLevel: role.activityLevel || 'Basic',
         permissions: role.permissions || [],
       })
+    } else {
+      setFormData({ name: '', description: '', activityLevel: 'Basic', permissions: [] })
     }
-  }, [role])
+    
+    // Clear expanded sections when switching roles
+    setExpandedSections({})
+    expandedSectionsRef.current = {}
+  }, [role?._id])
+
+  const handleExpandedSectionsChange = useCallback((newExpanded) => {
+    setExpandedSections(newExpanded)
+    expandedSectionsRef.current = newExpanded
+  }, [])
+
+  const handlePermissionsChange = useCallback((perms) => {
+    setFormData((prev) => ({ ...prev, permissions: perms }))
+    if (errors.permissions) {
+      setErrors((prev) => ({ ...prev, permissions: '' }))
+    }
+  }, [errors.permissions])
 
   const validateForm = () => {
     const newErrors = {}
@@ -148,32 +179,24 @@ const RoleForm = ({ role, onSave, onCancel }) => {
           </div>
         </div>
 
-        {/* Activity Level Guide */}
-        <div className="bg-blue-50 rounded-lg p-2 border border-blue-200">
-          <p className="text-xs font-medium text-blue-900 mb-1">Activity Level Guide:</p>
-          <ul className="text-xs text-blue-800 space-y-0.5">
-            <li>• <strong>Basic:</strong> View-only access to reports and dashboards</li>
-            <li>• <strong>Intermediate:</strong> Can create and edit transactions</li>
-            <li>• <strong>Advanced:</strong> Full module control with delete permissions</li>
-            <li>• <strong>Full Admin:</strong> System-wide access including settings</li>
-          </ul>
-        </div>
+    
+       
 
         {/* Granular Permissions Builder */}
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
           <h4 className="text-sm font-semibold text-gray-900 mb-2">
-            Granular Permissions ({formData.permissions.length} selected)
+            Granular Permissions  ({formData.permissions.length} selected)
           </h4>
           {errors.permissions && <p className="text-xs text-red-600 mb-2">{errors.permissions}</p>}
           
           <PermissionBuilder
+            roleId={role?._id}
             selectedPermissions={formData.permissions}
-            onPermissionsChange={(perms) => {
-              setFormData((prev) => ({ ...prev, permissions: perms }))
-              if (errors.permissions) {
-                setErrors((prev) => ({ ...prev, permissions: '' }))
-              }
-            }}
+            onPermissionsChange={handlePermissionsChange}
+            expandedSections={expandedSections}
+            setExpandedSections={handleExpandedSectionsChange}
+         
+            isNewRole={!role}
           />
         </div>
 

@@ -51,7 +51,7 @@ const GeneralSettings = () => {
       {/* Header */}
       <div className="mb-2">
         <h1 className="text-lg font-bold text-gray-900">General Settings</h1>
-        <p className="text-gray-600 text-xs mt-0">Manage users, roles, store settings, printer configurations, unit types, bulk uploads, stock reconciliation and permissions</p>
+        
       </div>
 
       {/* Tabs */}
