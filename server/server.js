@@ -41,7 +41,24 @@ await connectDB();
 await initializeMeilisearch();
 await setupIndex();
 
-// ✅ Auto-sync products to Meilisearch on startup (takes ~2-5s for 50k products)
+// ✅ STEP 1: Clean orphan products from Meilisearch (removes products that don't exist in DB)
+console.log('🧹 Cleaning orphan products from Meilisearch...');
+try {
+  const { cleanupOrphanProducts } = await import('./services/OrphanProductCleanup.js');
+  const cleanupResult = await cleanupOrphanProducts();
+  if (cleanupResult.orphanFound > 0) {
+    console.log(`✅ Cleanup complete: Removed ${cleanupResult.orphanRemoved} orphan products`);
+    if (cleanupResult.orphanErrors > 0) {
+      console.warn(`⚠️  ${cleanupResult.orphanErrors} errors during cleanup`);
+    }
+  } else {
+    console.log('✅ No orphan products found');
+  }
+} catch (cleanupErr) {
+  console.warn('⚠️  Orphan cleanup skipped:', cleanupErr.message);
+}
+
+// ✅ STEP 2: Auto-sync products to Meilisearch on startup (takes ~2-5s for 50k products)
 // This ensures search works fast even after server restart
 console.log('🔄 Auto-syncing products to Meilisearch index after startup...');
 try {

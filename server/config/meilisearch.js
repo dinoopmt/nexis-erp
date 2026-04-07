@@ -425,3 +425,4 @@ export {
 
 export const getConnectionStatus = () => isConnected;
 export const getClient = () => meilisearchClient;
+export const getMeilisearchClient = () => meilisearchClient;

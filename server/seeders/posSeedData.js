@@ -15,7 +15,7 @@ async function seedPOS() {
       cashierRole = new Role({
         name: 'Cashier',
         description: 'POS operator role',
-        permissions: ['pos:sale', 'pos:return', 'pos:payment'],
+        permissions: ['CREATE_SALES_INVOICE', 'MANAGE_SALES_RETURN', 'CREATE_JOURNAL_ENTRY'],
       });
       await cashierRole.save();
       console.log('✓ Created Cashier role');
