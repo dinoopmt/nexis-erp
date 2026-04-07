@@ -15,6 +15,7 @@ import { useRtvItemManagement } from "../../hooks/useRtvItemManagement";
 import { useRtvApi } from "../../hooks/useRtvApi";
 import { useRtvGridConfig } from "../../hooks/useRtvGridConfig.jsx";
 import { useDecimalFormat } from "../../hooks/useDecimalFormat";
+import { useGrnGridDimensions } from "../../hooks/useGrnGridDimensions";
 
 const RtvForm = ({ onNavigate }) => {
   const { formatCurrency, formatNumber } = useDecimalFormat();
@@ -31,11 +32,16 @@ const RtvForm = ({ onNavigate }) => {
   const [editingId, setEditingId] = useState(null);
   const [grnList, setGrnList] = useState([]);
   
+  // ✅ Grid display state using dimensions hook
+  const { gridContainerRef, gridHeight } = useGrnGridDimensions(showNewRtvModal);
+  const [highlightedItemId, setHighlightedItemId] = useState(null);
+  const [editTargetItemId, setEditTargetItemId] = useState(null);
+  
   // Form hooks
   const { formData, setFormData, fetchNextRtvNo } = useRtvFormData();
   const itemMgmt = useRtvItemManagement(formData, setFormData);
   const api = useRtvApi();
-  const { columnDefs } = useRtvGridConfig((id) => {
+  const { columns, gridConfig } = useRtvGridConfig((id) => {
     setFormData({
       ...formData,
       items: formData.items.filter(i => i.id !== id)
@@ -272,86 +278,85 @@ const RtvForm = ({ onNavigate }) => {
   const isEditable = formData.status === "Draft";
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+    <div className="absolute inset-0 flex flex-col bg-gray-50 overflow-hidden">
+      {/* HEADER - Fixed at top */}
+      <div className="flex-shrink-0 bg-white text-gray-900 px-3 py-2 shadow-md z-10">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Return to Vendor</h1>
-            <p className="text-sm text-gray-600">Manage goods returns to suppliers</p>
+            <h1 className="text-lg font-bold text-gray-900">Return to Vendor</h1>
+            <p className="text-xs text-gray-600 mt-0.5">Manage goods returned to vendors</p>
           </div>
           <button
             onClick={handleNewRtv}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+            className="flex items-center gap-1 bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700 transition font-medium"
           >
-            <Plus size={18} />
-            New RTV
+            <Plus size={12} /> New RTV
           </button>
         </div>
       </div>
 
-      {/* Search & Filter Bar */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex gap-4">
-            <input
-              type="text"
-              placeholder="Search RTV #, Vendor, GRN..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Status</option>
-              <option value="Draft">Draft</option>
-              <option value="Submitted">Submitted</option>
-              <option value="Approved">Approved</option>
-              <option value="Posted">Posted</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-            <button
-              onClick={loadRtvList}
-              className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-900 rounded-lg font-medium transition"
-            >
-              Refresh
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* CONTENT - Scrollable */}
+      <div className="flex-1 flex flex-col p-2 min-h-0 overflow-hidden">
+        {/* Search & Filters Bar */}
+        <div className="flex-shrink-0 flex flex-col lg:flex-row gap-1.5 mb-1.5 items-stretch lg:items-center lg:justify-between">
+          {/* Search Input */}
+          <input
+            type="text"
+            placeholder="Search RTV #, Vendor, GRN..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="border border-gray-300 rounded px-2 text-xs bg-white h-7 w-64 outline-none focus:ring-2 focus:ring-blue-500"
+          />
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="border border-gray-300 rounded px-2 text-xs bg-white flex-shrink-0 h-7 outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Status</option>
+            <option value="Draft">Draft</option>
+            <option value="Submitted">Submitted</option>
+            <option value="Approved">Approved</option>
+            <option value="Posted">Posted</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+
+          {/* Refresh Button */}
+          <button
+            onClick={loadRtvList}
+            className="border border-gray-300 rounded px-2 text-xs bg-white h-7 hover:bg-gray-50 flex-shrink-0 font-medium transition"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {/* RTV List Table - Takes remaining space */}
         {isLoading && rtvList.length === 0 ? (
-          <div className="flex items-center justify-center h-96">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow">
-            <RtvListTable
-              rtvList={filteredRtvs}
-              loading={false}
-              onEdit={handleEditRtv}
-              onDelete={handleDeleteRtv}
-              onSubmit={(id) => handleWorkflowAction(id, "submit")}
-              onApprove={(id) => handleWorkflowAction(id, "approve")}
-              onPost={(id) => handleWorkflowAction(id, "post")}
-            />
-          </div>
+          <RtvListTable
+            rtvList={filteredRtvs}
+            loading={false}
+            onEdit={handleEditRtv}
+            onDelete={handleDeleteRtv}
+            onSubmit={(id) => handleWorkflowAction(id, "submit")}
+            onApprove={(id) => handleWorkflowAction(id, "approve")}
+            onPost={(id) => handleWorkflowAction(id, "post")}
+          />
         )}
       </div>
 
       {/* New/Edit RTV Modal */}
       {showNewRtvModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-lg w-4/5 max-h-screen overflow-hidden flex flex-col">
-            {/* Modal Header */}
-            <div className="bg-white border-b border-gray-200 px-4 py-2 flex justify-between items-center">
+          <div className="bg-white rounded-lg shadow-lg flex flex-col max-h-[95vh]" style={{ width: "90vw" }}>
+            {/* Modal Header - Fixed */}
+            <div className="sticky top-0 flex justify-between items-center gap-3 px-3 py-1.5 border-b bg-gray-50 flex-shrink-0">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-base font-bold text-gray-900">
                   {editingId ? "Edit RTV" : "Create New RTV"}
                 </h2>
                 <p className="text-xs text-gray-600 mt-0.5">{formData.rtvNumber}</p>
@@ -360,14 +365,14 @@ const RtvForm = ({ onNavigate }) => {
                 onClick={handleCloseModal}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <X size={24} />
+                <X size={18} />
               </button>
             </div>
 
             {/* Modal Content - Scrollable */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Form Header */}
-              <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+            <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 p-2 min-h-0">
+              {/* Form Header - Non-scrolling */}
+              <div className="bg-gray-50 border border-gray-200 px-3 py-2 rounded flex-shrink-0">
                 <RtvFormHeader
                   formData={formData}
                   setFormData={setFormData}
@@ -376,154 +381,99 @@ const RtvForm = ({ onNavigate }) => {
                 />
               </div>
 
-              {/* Items Section */}
-              <div className="px-4 py-3">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-base font-semibold text-gray-900">Items to Return</h3>
-                  <button
-                    onClick={handleOpenGrnSelection}
-                    disabled={!isEditable}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition"
-                  >
-                    <Plus size={14} />
-                    Add Items
-                  </button>
-                </div>
+              {/* Items Section Header */}
+              <div className="flex justify-between items-center px-1 flex-shrink-0">
+                <h3 className="text-sm font-semibold text-gray-900">Items to Return</h3>
+                <button
+                  onClick={handleOpenGrnSelection}
+                  disabled={!isEditable}
+                  className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  <Plus size={12} />
+                  Add Items
+                </button>
+              </div>
 
+              {/* Items Table - Takes remaining space */}
+              <div className="flex-1 min-h-0 border border-gray-200 rounded bg-white">
                 {formData.items.length > 0 ? (
                   <RtvItemsTable
                     items={formData.items}
-                    columnDefs={columnDefs}
-                    isEditable={isEditable}
-                    onUpdateQuantity={(id, qty) => {
-                      const item = formData.items.find(i => i.id === id);
-                      if (item) {
-                        // ✅ Calculate max return quantity and enforce it
-                        const remainingQty = calculateRemainingQty(item);
-                        const limitedQty = Math.min(qty, remainingQty);
-                        
-                        if (qty > remainingQty) {
-                          showToast('warning',
-                            `⚠️ ${item.itemCode}: Cannot return ${formatNumber(qty)}. Max available: ${formatNumber(remainingQty)} (Already returned: ${formatNumber(item.rtvReturnedQuantity || item.returnedQuantity || 0)})`
-                          );
+                    columns={columns}
+                    gridConfig={gridConfig}
+                    gridHeight={gridHeight}
+                    gridContainerRef={gridContainerRef}
+                    highlightedItemId={highlightedItemId}
+                    editTargetItemId={editTargetItemId}
+                    onEditTargetHandled={() => setEditTargetItemId(null)}
+                    isViewMode={!isEditable}
+                    onCellValueChanged={(event) => {
+                      const { data, colDef, newValue } = event;
+                      if (colDef.field === "quantity") {
+                        const item = formData.items.find(i => i.id === data.id);
+                        if (item) {
+                          const remainingQty = calculateRemainingQty(item);
+                          const limitedQty = Math.min(newValue, remainingQty);
+                          
+                          if (newValue > remainingQty) {
+                            showToast('warning',
+                              `⚠️ ${item.itemCode}: Cannot return ${formatNumber(newValue)}. Max available: ${formatNumber(remainingQty)}`
+                            );
+                          }
+                          
+                          item.quantity = limitedQty;
+                          setFormData({ ...formData });
                         }
-                        
-                        item.quantity = limitedQty;
-                        setFormData({ ...formData });
                       }
-                    }}
-                    onUpdateReturnReason={(id, reason) => {
-                      const item = formData.items.find(i => i.id === id);
-                      if (item) {
-                        item.returnReason = reason;
-                        setFormData({ ...formData });
-                      }
-                    }}
-                    onUpdateNotes={(id, notes) => {
-                      const item = formData.items.find(i => i.id === id);
-                      if (item) {
-                        item.returnReasonNotes = notes;
-                        setFormData({ ...formData });
-                      }
-                    }}
-                    onRemoveItem={(id) => {
-                      setFormData({
-                        ...formData,
-                        items: formData.items.filter(i => i.id !== id)
-                      });
                     }}
                   />
                 ) : (
-                  <div className="text-center py-8 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">No items selected. Click "Add Items" to get started.</p>
+                  <div className="flex items-center justify-center h-32 text-gray-500">
+                    <p className="text-xs">No items selected. Click "Add Items" to get started.</p>
                   </div>
                 )}
               </div>
 
-              {/* Return Reason & Notes Section */}
+              {/* Return Reason & Notes Section - Not scrolling */}
               {formData.items.length > 0 && (
-                <div className="bg-blue-50 border-t border-blue-200 px-4 py-2">
-                  <p className="text-xs font-semibold text-blue-900 mb-2">📝 Return Reason & Notes</p>
-                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                <div className="bg-blue-50 border border-blue-200 px-2 py-1.5 rounded max-h-24 overflow-y-auto flex-shrink-0">
+                  <p className="text-xs font-semibold text-blue-900 mb-1">Return Reason & Notes</p>
+                  <div className="space-y-0.5 text-xs">
                     {formData.items.map((item) => (
-                      <div key={item.id} className="text-xs bg-white p-2 rounded border border-blue-100">
-                        <p className="font-medium text-gray-800">{item.itemCode} - {item.itemName}</p>
-                        <div className="flex gap-4 mt-1">
-                          <div>
-                            <span className="text-gray-600">Reason: </span>
-                            <span className="font-semibold text-blue-700">
-                              {item.returnReason === "DAMAGE" ? "🔴 Damage" :
-                               item.returnReason === "DEFECTIVE" ? "❌ Defective" :
-                               item.returnReason === "EXCESS" ? "📦 Excess" :
-                               item.returnReason === "WRONG_ITEM" ? "❓ Wrong Item" :
-                               item.returnReason === "NOT_REQUIRED" ? "❌ Not Required" :
-                               item.returnReason === "QUALITY_ISSUE" ? "⚠️ Quality" :
-                               "📝 Other"}
-                            </span>
-                          </div>
-                          {item.returnReasonNotes && (
-                            <div>
-                              <span className="text-gray-600">Notes: </span>
-                              <span className="text-gray-700 italic">{item.returnReasonNotes}</span>
-                            </div>
-                          )}
-                        </div>
+                      <div key={item.id} className="bg-white p-1 rounded border border-blue-100">
+                        <p className="font-medium text-gray-800">{item.itemCode}</p>
+                        <span className="text-blue-700  font-semibold">{item.returnReason || "N/A"}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* ✅ Remaining Quantities Section */}
+              {/* Remaining Quantities Section - Not scrolling */}
               {formData.items.length > 0 && (
-                <div className="bg-green-50 border-t border-green-200 px-4 py-2">
-                  <p className="text-xs font-semibold text-green-900 mb-2">📊 Return Quantity Status</p>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                <div className="bg-green-50 border border-green-200 px-2 py-1.5 rounded max-h-24 overflow-y-auto flex-shrink-0">
+                  <p className="text-xs font-semibold text-green-900 mb-1">Return Qty Status</p>
+                  <div className="space-y-0.5 text-xs">
                     {formData.items.map((item) => {
                       const remainingQty = calculateRemainingQty(item);
                       const returnQty = item.quantity || 0;
-                      const alreadyReturned = item.rtvReturnedQuantity || item.returnedQuantity || 0;
                       const isAtMax = returnQty === remainingQty;
                       const exceedsMax = returnQty > remainingQty;
                       
                       return (
                         <div 
                           key={item.id} 
-                          className={`text-xs p-2 rounded border ${
+                          className={`p-1 rounded border line ${
                             exceedsMax ? 'bg-red-100 border-red-300' : 
                             isAtMax ? 'bg-yellow-100 border-yellow-300' : 
                             'bg-white border-green-100'
                           }`}
                         >
-                          <div className="flex justify-between items-start mb-1">
-                            <p className="font-medium text-gray-800">
-                              {item.itemCode} - {item.itemName}
-                            </p>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                              exceedsMax ? 'bg-red-600 text-white' :
-                              isAtMax ? 'bg-yellow-600 text-white' :
-                              'bg-green-600 text-white'
-                            }`}>
-                              {exceedsMax ? '⚠️ Exceeds' : isAtMax ? '⚡ Full Amount' : '✓ OK'}
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">{item.itemCode}</span>
+                            <span className="text-xs font-bold">
+                              {!exceedsMax && !isAtMax && '✓'} {formatNumber(returnQty)}/{formatNumber(remainingQty)}
                             </span>
-                          </div>
-                          <div className="grid grid-cols-4 gap-2 text-xs">
-                            <div>
-                              <span className="text-gray-600">Requesting:</span>
-                              <p className="font-bold text-gray-900">{formatNumber(returnQty)}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Available:</span>
-                              <p className="font-bold text-green-700">{formatNumber(remainingQty)}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Already Returned:</span>
-                              <p className="font-bold text-orange-700">{formatNumber(alreadyReturned)}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Originally Received:</span>
-                              <p className="font-bold text-blue-700">{formatNumber(item.originalQuantity || item.quantity || 0)}</p>
-                            </div>
                           </div>
                         </div>
                       );
@@ -532,39 +482,29 @@ const RtvForm = ({ onNavigate }) => {
                 </div>
               )}
 
-              {/* Subtotal Details & Totals */}
+              {/* Totals Section - Not scrolling */}
               {formData.items.length > 0 && (
-                <div className="bg-gray-50 border-t border-gray-200 px-4 py-2">
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-xs text-gray-600 mb-0.5">Total Items</p>
-                        <p className="text-base font-bold text-gray-900">{totals.itemCount}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 mb-0.5">Total Quantity</p>
-                        <p className="text-base font-bold text-gray-900">
-                          {formatNumber(totals.quantity || totals.totalQty)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 mb-0.5">Subtotal (Ex Tax)</p>
-                        <p className="text-base font-bold text-gray-900">
-                          {formatCurrency(totals.subtotal)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-600 mb-0.5">💰 Total Tax</p>
-                        <p className="text-base font-bold text-purple-600">
-                          {formatCurrency(totals.totalTax || 0)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-t border-gray-300 mt-2 pt-2">
+                <div className="bg-gray-50 border border-gray-200 px-2 py-1 rounded flex-shrink-0">
+                  <div className="grid grid-cols-4 gap-2 text-xs">
                     <div>
-                      <p className="text-xs text-gray-600 mb-0.5">💰 Total Amount (Inc. Tax)</p>
-                      <p className="text-lg font-bold text-green-600">
+                      <p className="text-gray-600 mb-0.5">Total Items</p>
+                      <p className="text-sm font-bold text-gray-900">{totals.itemCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600 mb-0.5">Total Quantity</p>
+                      <p className="text-sm font-bold text-gray-900">
+                        {formatNumber(totals.quantity || totals.totalQty)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600 mb-0.5">Subtotal (Ex Tax)</p>
+                      <p className="text-sm font-bold text-gray-900">
+                        {formatCurrency(totals.subtotal)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600 mb-0.5">Total (Inc. Tax)</p>
+                      <p className="text-sm font-bold text-green-600">
                         {formatCurrency(totals.total || totals.subtotal)}
                       </p>
                     </div>
@@ -573,21 +513,59 @@ const RtvForm = ({ onNavigate }) => {
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="bg-gray-50 border-t border-gray-200 px-4 py-2 flex justify-end gap-2">
-              <button
-                onClick={handleCloseModal}
-                className="px-4 py-1.5 border border-gray-300 text-gray-700 text-sm rounded-lg font-medium hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveRtv}
-                disabled={isLoading || formData.items.length === 0}
-                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium disabled:opacity-50 transition"
-              >
-                {editingId ? "Update RTV" : "Save as Draft"}
-              </button>
+            {/* Modal Footer - Fixed at Bottom with Summary Values */}
+            <div className="bg-gray-50 border-t border-gray-200 px-2 py-1 flex items-center justify-between gap-2 flex-shrink-0">
+              {/* Summary Values - Left Side */}
+              {formData.items.length > 0 && (
+                <div className="flex items-center gap-1 flex-1">
+                  {/* Total Items */}
+                  <div className="flex items-center justify-between gap-0.5 bg-white px-2 py-1 rounded border border-gray-200 text-xs">
+                    <span className="font-semibold">Items:</span>
+                    <span className="font-bold text-blue-600">{totals.itemCount}</span>
+                  </div>
+
+                  {/* Total Quantity */}
+                  <div className="flex items-center justify-between gap-0.5 bg-white px-2 py-1 rounded border border-gray-200 text-xs">
+                    <span className="font-semibold">Qty:</span>
+                    <span className="font-bold text-blue-600">{formatNumber(totals.quantity || totals.totalQty)}</span>
+                  </div>
+
+                  {/* Subtotal */}
+                  <div className="flex items-center justify-between gap-0.5 bg-white px-2 py-1 rounded border border-gray-200 text-xs">
+                    <span className="font-semibold">Subtotal (Ex.Tax):</span>
+                    <span className="font-bold text-blue-600">{formatCurrency(totals.subtotal)}</span>
+                  </div>
+
+                  {/* Total Tax */}
+                  <div className="flex items-center justify-between gap-0.5 bg-white px-2 py-1 rounded border border-gray-200 text-xs">
+                    <span className="font-semibold">Tax:</span>
+                    <span className="font-bold text-purple-600">{formatCurrency(totals.totalTax || 0)}</span>
+                  </div>
+
+                  {/* Total Amount */}
+                  <div className="flex items-center justify-between gap-0.5 bg-yellow-100 px-2 py-1 rounded border border-yellow-300 text-xs">
+                    <span className="font-semibold">Total (Inc.Tax):</span>
+                    <span className="font-bold text-yellow-700">{formatCurrency(totals.total || totals.subtotal)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons - Right Side */}
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={handleCloseModal}
+                  className="px-3 py-1 border border-gray-300 text-gray-700 text-xs rounded-lg font-medium hover:bg-gray-100 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveRtv}
+                  disabled={isLoading || formData.items.length === 0}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-medium disabled:opacity-50 transition"
+                >
+                  {editingId ? "Update RTV" : "Save as Draft"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

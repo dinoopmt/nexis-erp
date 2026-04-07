@@ -1,141 +1,227 @@
 /**
  * useRtvGridConfig Hook
- * AG Grid column definitions for RTV items table
+ * AG Grid column definitions for RTV items table (MATCHING GrnGridConfig structure)
  */
-import React, { useMemo, useCallback } from "react";
-import { Trash2 } from "lucide-react";
+import React, { useMemo } from "react";
+import { Trash2, Package, Edit2 } from "lucide-react";
 import useDecimalFormat from "./useDecimalFormat";
 
-export const useRtvGridConfig = (onRemoveItem) => {
-  // ✅ Get decimal formatting hook
+export const useRtvGridConfig = (removeItemFromRtv, onEditProduct = null) => {
+  // ✅ Get global decimal formatter (respects company settings)
   const { formatNumber, formatPercentage } = useDecimalFormat();
 
-  // ✅ Custom cell renderer for delete button (returns JSX, not DOM element)
-  const DeleteButtonRenderer = useCallback((params) => {
-    return (
-      <button
-        onClick={() => onRemoveItem?.(params.data.id)}
-        className="text-red-600 hover:text-red-800 font-bold text-lg cursor-pointer hover:bg-red-50 px-2 py-1 rounded transition"
-        title="Remove from return"
-      >
-        ✕
-      </button>
-    );
-  }, [onRemoveItem]);
-
-  // ✅ Column definitions for RTV items table
-  const columnDefs = useMemo(() => [
-    {
-      headerName: "Product Code",
-      field: "itemCode",
-      width: 120,
-      pinned: "left",
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-gray-100",
-    },
-    {
-      headerName: "Product Name",
-      field: "itemName",
-      width: 200,
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-gray-100",
-    },
-    {
-      headerName: "Original Qty",
-      field: "originalQuantity",
-      width: 110,
-      type: "numericColumn",
-      valueFormatter: (params) => formatNumber(params.value || 0),
-      cellClass: "text-right",
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-gray-100 text-right",
-    },
-    {
-      headerName: "Return Qty",
-      field: "quantity",
-      width: 100,
-      type: "numericColumn",
-      valueFormatter: (params) => formatNumber(params.value || 0),
-      cellClass: "text-right font-semibold",
-      cellStyle: { "background-color": "#fef3c7" },
-      headerClass: "ag-header-cell-compact font-bold text-xs bg-yellow-100 text-right",
-    },
-    {
-      headerName: "Unit Cost",
-      field: "unitCost",
-      width: 100,
-      type: "numericColumn",
-      valueFormatter: (params) => formatNumber(params.value || 0),
-      cellClass: "text-right",
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-gray-100 text-right",
-    },
-    {
-      headerName: "Batch #",
-      field: "originalBatchNumber",
-      width: 110,
-      cellClass: "text-xs",
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-gray-100",
-    },
-    {
-      headerName: "Tax Type",
-      field: "taxType",
-      width: 100,
-      cellClass: "text-center text-xs",
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-purple-100 text-center",
-      valueFormatter: (params) => {
-        const taxTypes = {
-          "exclusive": "Exclusive",
-          "inclusive": "Inclusive",
-          "notax": "No Tax",
-        };
-        return taxTypes[params.value] || params.value || "N/A";
+  /**
+   * AG Grid Column Definitions
+   * Matching GrnItemsTable structure with flex sizing
+   */
+  const columns = useMemo(() => {
+    return [
+      {
+        headerName: "S.No",
+        flex: 0.6,
+        minWidth: 50,
+        cellStyle: { textAlign: "center", fontSize: '10px' },
+        headerClass: "ag-center-aligned-header",
+        headerStyle: { fontSize: '10px' },
+        cellRenderer: function (params) {
+          // ✅ Display index number with Edit button
+          return React.createElement(
+            'div',
+            {
+              style: {
+                display: 'flex',
+                gap: '1px',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                paddingLeft: '2px',
+                width: '100%',
+              },
+            },
+            // Index Number
+            React.createElement(
+              'span',
+              {
+                style: {
+                  fontSize: '9px',
+                  color: '#374151',
+                  minWidth: '14px',
+                  textAlign: 'center',
+                },
+              },
+              params.node?.rowIndex !== undefined ? params.node.rowIndex + 1 : ""
+            ),
+            // Edit Product Button
+            React.createElement(
+              'button',
+              {
+                onClick: () => {
+                  if (onEditProduct && params.data?.productId) {
+                    onEditProduct(params.data.productId);
+                  }
+                },
+                style: {
+                  padding: '1px 1px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: 0.6,
+                  transition: 'opacity 0.2s',
+                },
+                onMouseEnter: (e) => { e.target.style.opacity = '1'; },
+                onMouseLeave: (e) => { e.target.style.opacity = '0.6'; },
+                title: 'Edit Product',
+              },
+              React.createElement(Edit2, { size: 11, color: '#8b5cf6' })
+            )
+          );
+        },
       },
-      tooltipField: "taxType",
-    },
-    {
-      headerName: "Tax %",
-      field: "taxPercent",
-      width: 80,
-      type: "numericColumn",
-      valueFormatter: (params) => {
-        const value = params.value || 0;
-        return `${formatPercentage(value)}%`;
+      {
+        headerName: "Product Name",
+        field: "itemName",
+        flex: 2,
+        minWidth: 250,
+        cellStyle: { fontSize: '10px' },
+        headerStyle: { fontSize: '10px' },
       },
-      cellClass: "text-right font-semibold text-purple-700",
-      cellStyle: { "background-color": "#ede9fe" },
-      headerClass: "ag-header-cell-compact font-bold text-xs bg-purple-100 text-right",
-    },
-    {
-      headerName: "Tax Amount",
-      field: "taxAmount",
-      width: 100,
-      type: "numericColumn",
-      valueFormatter: (params) => formatNumber(params.value || 0),
-      cellClass: "text-right font-semibold",
-      cellStyle: { "background-color": "#ede9fe" },
-      headerClass: "ag-header-cell-compact font-bold text-xs bg-purple-100 text-right",
-    },
-    {
-      headerName: "Total Cost",
-      field: "totalCost",
-      width: 100,
-      type: "numericColumn",
-      valueFormatter: (params) => formatNumber(params.value || 0),
-      cellClass: "text-right font-semibold",
-      cellStyle: { "background-color": "#dbeafe" },
-      headerClass: "ag-header-cell-compact font-bold text-xs bg-blue-100 text-right",
-    },
-    {
-      headerName: "Action",
-      field: "id",
-      width: 80,
-      pinned: "right",
-      cellClass: "text-center",
-      headerClass: "ag-header-cell-compact font-semibold text-xs bg-gray-100 text-center",
-      filter: false,
-      sortable: false,
-      cellRenderer: DeleteButtonRenderer,
-    },
-  ], [formatNumber, formatPercentage, DeleteButtonRenderer]);
+      {
+        headerName: "Unit",
+        field: "unitType",
+        flex: 0.5,
+        minWidth: 45,
+        cellStyle: { fontSize: '10px' },
+        headerStyle: { fontSize: '10px' },
+      },
+      {
+        headerName: "Orig Qty",
+        field: "originalQuantity",
+        flex: 0.6,
+        minWidth: 60,
+        cellStyle: { textAlign: "right", fontSize: '10px', fontWeight: 'bold' },
+        headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px' },
+        valueFormatter: (params) => formatNumber(params.value || 0),
+      },
+      {
+        headerName: "Return Qty",
+        field: "quantity",
+        flex: 0.6,
+        minWidth: 60,
+        cellStyle: { textAlign: "right", fontSize: '10px', fontWeight: 'bold', backgroundColor: '#fef3c7', padding: '2px' },
+        headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px', backgroundColor: '#fef3c7', fontWeight: 'bold' },
+        editable: true,
+        valueFormatter: (params) => formatNumber(params.value || 0),
+      },
+      {
+        headerName: "Unit Cost",
+        field: "unitCost",
+        flex: 0.7,
+        minWidth: 80,
+        cellStyle: { textAlign: "right", fontSize: '10px', fontWeight: 'bold' },
+        headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px' },
+        valueFormatter: (params) => formatNumber(params.value || 0),
+      },
+      {
+        headerName: "Tax %",
+        field: "taxPercent",
+        flex: 0.5,
+        minWidth: 50,
+        cellStyle: { textAlign: "right", fontSize: '10px' },
+        headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px' },
+        valueFormatter: (params) => formatPercentage(params.value || 0),
+      },
+      {
+        headerName: "Tax Amt",
+        field: "taxAmount",
+        flex: 0.6,
+        minWidth: 60,
+        cellStyle: { textAlign: "right", fontSize: '10px' },
+        headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px' },
+        valueFormatter: (params) => formatNumber(params.value || 0),
+      },
+      {
+        headerName: "Total",
+        field: "totalCost",
+        flex: 0.6,
+        minWidth: 60,
+        cellStyle: { textAlign: "right", fontSize: '10px', fontWeight: 'bold' },
+        headerClass: "ag-right-aligned-header",
+        headerStyle: { fontSize: '10px', fontWeight: 'bold' },
+        valueFormatter: (params) => formatNumber(params.value || 0),
+      },
+      {
+        headerName: "Action",
+        headerStyle: { fontSize: '10px' },
+        field: "id",
+        flex: 0.5,
+        minWidth: 50,
+        sortable: false,
+        filter: false,
+        cellRenderer: function (params) {
+          // ✅ Delete button
+          return React.createElement(
+            'div',
+            {
+              style: {
+                display: 'flex',
+                gap: '2px',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+              },
+            },
+            React.createElement(
+              'button',
+              {
+                onClick: () => removeItemFromRtv(params.data.id),
+                style: {
+                  padding: '1px 2px',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+                title: 'Delete',
+                onMouseEnter: (e) => e.target.style.color = '#991b1b',
+                onMouseLeave: (e) => e.target.style.color = '#dc2626',
+              },
+              React.createElement(Trash2, { size: 14 })
+            )
+          );
+        },
+      },
+    ];
+  }, [removeItemFromRtv, formatNumber, formatPercentage]);
 
-  return { columnDefs };
+  const gridConfig = useMemo(() => {
+    return {
+      domLayout: "normal",
+      animateRows: true,
+      defaultColDef: {
+        resizable: true,
+        sortable: false,
+        filter: false,
+      },
+      rowHeight: 24,
+      headerHeight: 28,
+      suppressMenuHide: true,
+      stopEditingWhenCellsLoseFocus: true,
+    };
+  }, []);
+
+  return {
+    columns,
+    gridConfig,
+  };
 };
 
-
+export default useRtvGridConfig;

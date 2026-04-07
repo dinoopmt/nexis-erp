@@ -153,8 +153,18 @@ const GrnItemSearch = forwardRef(({ itemSearch, searchResults, searchLoading, on
                   </div>
                   <div>
                     <span className="text-gray-500 text-[10px]">Stock</span>
-                    <div className={`font-medium ${(product.currentStock?.availableQuantity || product.currentStock?.totalQuantity || product.currentStock || 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {typeof product.currentStock === 'object' ? (product.currentStock?.availableQuantity ?? product.currentStock?.totalQuantity ?? '-') : (product.currentStock !== undefined ? product.currentStock : product.stock !== undefined ? product.stock : '-')}
+                    <div className={`font-medium ${(() => {
+                      let stock = 0;
+                      if (typeof product.currentStock === 'object') {
+                        stock = product.currentStock?.availableQuantity || product.currentStock?.totalQuantity || product.currentStock?.quantity || product.stock || 0;
+                      } else {
+                        stock = product.currentStock || product.stock || 0;
+                      }
+                      return stock > 0 ? 'text-green-600' : 'text-red-600';
+                    })()}`}>
+                      {typeof product.currentStock === 'object' 
+                        ? (product.currentStock?.availableQuantity || product.currentStock?.totalQuantity || product.currentStock?.quantity || product.stock || '-') 
+                        : (product.currentStock || product.stock || '-')}
                     </div>
                   </div>
                 </div>

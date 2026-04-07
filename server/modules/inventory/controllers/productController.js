@@ -2682,6 +2682,38 @@ export const cleanupMeilisearchOrphans = async (req, res) => {
   }
 };
 
+// ================= HELPER FUNCTION: Join CurrentStock with Products =================
+// ✅ Fetches CurrentStock records and merges them with product data
+const attachCurrentStockToProducts = async (products) => {
+  if (!products || products.length === 0) return products;
+
+  try {
+    const productIds = products.map(p => p._id);
+    
+    // Fetch all CurrentStock records in one query
+    const stockRecords = await CurrentStock.find({
+      productId: { $in: productIds },
+      isDeleted: { $ne: true }
+    }).lean();
+
+    // Create a Map for O(1) lookup
+    const stockMap = new Map();
+    stockRecords.forEach(stock => {
+      stockMap.set(stock.productId.toString(), stock);
+    });
+
+    // Merge currentStock into each product
+    return products.map(product => ({
+      ...product,
+      currentStock: stockMap.get(product._id.toString()) || null
+    }));
+  } catch (err) {
+    console.error('⚠️ Error attaching CurrentStock to products:', err.message);
+    // Return products without stock data if join fails
+    return products.map(p => ({ ...p, currentStock: null }));
+  }
+};
+
 // ✅ NEW: Meilisearch-powered server-side search
 // Purpose: Fast full-text search for 100k+ products with typo tolerance
 // Returns: Top results with pagination
@@ -2779,7 +2811,7 @@ export const searchProducts = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
 
         const products = await Product.find(mongoQuery)
-          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')  // ✅ Added tax fields (taxPercent, taxType, taxAmount, taxInPrice)
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')
           .populate('vendor', 'name')
           .populate('categoryId', 'name')
           .populate('unitType', 'unitName unitSymbol unitDecimal category')
@@ -2809,9 +2841,12 @@ export const searchProducts = async (req, res) => {
       }
     }
 
+    // ✅ JOIN CurrentStock with products
+    const productsWithStock = await attachCurrentStockToProducts(results.products);
+
     // ✅ Return results with metadata about search source
     res.json({
-      products: results.products,
+      products: productsWithStock,
       totalCount: results.totalCount,
       page: results.page,
       pageSize: results.pageSize,

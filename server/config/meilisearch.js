@@ -4,6 +4,7 @@
  */
 
 import { MeiliSearch } from 'meilisearch';
+import CurrentStock from '../Models/CurrentStock.js';
 
 let meilisearchClient = null;
 let isConnected = false;
@@ -66,6 +67,7 @@ const searchProducts = async (query, options = {}) => {
         'finalPrice',  // ✅ ADDED - Final price including tax
         'cost',
         'stock',
+        'currentStock',  // ✅ ADDED - CurrentStock object with availableQuantity, totalQuantity
         'tax',
         'taxPercent',  // ✅ ADDED - Tax percentage for GRN
         'taxType',     // ✅ ADDED - Tax type for GRN
@@ -117,6 +119,12 @@ const indexProduct = async (product) => {
   }
 
   try {
+    // ✅ Fetch CurrentStock for this product
+    const currentStock = await CurrentStock.findOne({
+      productId: product._id,
+      isDeleted: { $ne: true }
+    }).lean();
+
     const documents = [{
       _id: product._id.toString(),
       name: product.name,
@@ -126,6 +134,12 @@ const indexProduct = async (product) => {
       finalPrice: parseFloat(product.finalPrice) || 0,  // ✅ ADDED - Final price including tax
       cost: parseFloat(product.cost) || 0,
       stock: product.stock || 0,
+      currentStock: currentStock ? {
+        totalQuantity: currentStock.totalQuantity || 0,
+        availableQuantity: currentStock.availableQuantity || 0,
+        allocatedQuantity: currentStock.allocatedQuantity || 0,
+        grnReceivedQuantity: currentStock.grnReceivedQuantity || 0
+      } : null,  // ✅ ADDED - Include CurrentStock object
       tax: product.tax || 0,
       taxPercent: parseFloat(product.taxPercent) || 0,  // ✅ ADDED - Tax percentage from product
       taxType: product.taxType || '',  // ✅ ADDED - Tax type from product
@@ -179,7 +193,23 @@ const bulkIndexProducts = async (products) => {
   }
 
   try {
+    // ✅ Fetch all CurrentStock records for these products in one query
+    const productIds = products.map(p => p._id);
+    const currentStocks = await CurrentStock.find({
+      productId: { $in: productIds },
+      isDeleted: { $ne: true }
+    }).lean();
+
+    // Create a Map for O(1) lookup
+    const stockMap = new Map();
+    currentStocks.forEach(stock => {
+      stockMap.set(stock.productId.toString(), stock);
+    });
+
     const documents = products.map((product) => {
+      // ✅ Get CurrentStock for this product
+      const currentStock = stockMap.get(product._id.toString());
+
       const doc = {
         _id: product._id.toString(),
         name: product.name,
@@ -188,6 +218,12 @@ const bulkIndexProducts = async (products) => {
         price: parseFloat(product.price) || 0,
         cost: parseFloat(product.cost) || 0,
         stock: product.stock || 0,
+        currentStock: currentStock ? {
+          totalQuantity: currentStock.totalQuantity || 0,
+          availableQuantity: currentStock.availableQuantity || 0,
+          allocatedQuantity: currentStock.allocatedQuantity || 0,
+          grnReceivedQuantity: currentStock.grnReceivedQuantity || 0
+        } : null,  // ✅ ADDED - Include CurrentStock object
         tax: product.tax || 0,
         taxPercent: parseFloat(product.taxPercent) || 0,  // ✅ ADDED - Tax percentage from product
         taxType: product.taxType || '',  // ✅ ADDED - Tax type from product
