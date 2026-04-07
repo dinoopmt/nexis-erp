@@ -170,12 +170,6 @@ app.use(`${apiV1}/stock-batches`, stockBatchRoutes);
 // Organization module (Branch Management)
 app.use(`${apiV1}/organizations`, organizationRoutes);
 
-// Test route
-console.log('🔥 TEST ROUTE REGISTRATION - Version 2');
-app.get(`${apiV1}/test`, (req, res) => {
-  res.json({ message: 'Test route works' });
-});
-
 // Health check endpoints
 app.get('/', (req, res) => {
   res.json({
