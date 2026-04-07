@@ -56,7 +56,7 @@ const RoleForm = ({ role, onSave, onCancel }) => {
     setLoading(true)
 
     try {
-      const endpoint = role ? `/api/v1/roles/${role.id}` : '/api/v1/roles'
+      const endpoint = role ? `http://localhost:5000/api/v1/roles/${role._id}` : 'http://localhost:5000/api/v1/roles'
       const method = role ? 'PUT' : 'POST'
 
       const response = await fetch(endpoint, {

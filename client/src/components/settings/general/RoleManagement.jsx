@@ -1,50 +1,38 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2 } from 'lucide-react'
 import RoleForm from './RoleForm'
 
 const RoleManagement = () => {
-  const [roles, setRoles] = useState([
-    {
-      id: 1,
-      name: 'Administrator',
-      description: 'Full system access',
-      activityLevel: 'Full Admin',
-      permissions: [
-        'MANAGE_USERS',
-        'MANAGE_ROLES',
-        'VIEW_SALES',
-        'CREATE_SALES_INVOICE',
-        'VIEW_INVENTORY',
-        'MANAGE_PRODUCTS',
-        'VIEW_ACCOUNTS',
-        'CREATE_JOURNAL_ENTRY',
-        'VIEW_REPORTS',
-        'MANAGE_COMPANY_SETTINGS',
-      ],
-      userCount: 1,
-    },
-    {
-      id: 2,
-      name: 'Sales Manager',
-      description: 'Sales and customer management',
-      activityLevel: 'Advanced',
-      permissions: ['VIEW_SALES', 'CREATE_SALES_INVOICE', 'VIEW_REPORTS'],
-      userCount: 1,
-    },
-    {
-      id: 3,
-      name: 'Inventory Officer',
-      description: 'Inventory management only',
-      activityLevel: 'Intermediate',
-      permissions: ['VIEW_INVENTORY', 'MANAGE_PRODUCTS'],
-      userCount: 1,
-    },
-  ])
+  const [roles, setRoles] = useState([])
+  const [initialLoading, setInitialLoading] = useState(true)
 
   const [showForm, setShowForm] = useState(false)
   const [editingRole, setEditingRole] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+
+  // Fetch roles from database
+  const fetchRoles = async () => {
+    try {
+      setInitialLoading(true)
+      const response = await fetch('http://localhost:5000/api/v1/roles')
+      if (response.ok) {
+        const data = await response.json()
+        setRoles(data)
+      } else {
+        setMessage('Error fetching roles')
+      }
+    } catch (error) {
+      setMessage('Error fetching roles')
+      console.error('Error:', error)
+    } finally {
+      setInitialLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchRoles()
+  }, [])
 
   const handleAddRole = () => {
     setEditingRole(null)
@@ -61,14 +49,16 @@ const RoleManagement = () => {
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/v1/roles/${roleId}`, {
+      const response = await fetch(`http://localhost:5000/api/v1/roles/${roleId}`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
-        setRoles(roles.filter((r) => r.id !== roleId))
+        setRoles(roles.filter((r) => r._id !== roleId))
         setMessage('Role deleted successfully!')
         setTimeout(() => setMessage(''), 3000)
+      } else {
+        setMessage('Error deleting role')
       }
     } catch (error) {
       setMessage('Error deleting role')
@@ -80,9 +70,9 @@ const RoleManagement = () => {
 
   const handleSaveRole = (updatedRole) => {
     if (editingRole) {
-      setRoles(roles.map((r) => (r.id === updatedRole.id ? updatedRole : r)))
+      setRoles(roles.map((r) => (r._id === updatedRole._id ? updatedRole : r)))
     } else {
-      setRoles([...roles, { ...updatedRole, id: roles.length + 1, userCount: 0 }])
+      setRoles([...roles, updatedRole])
     }
     setShowForm(false)
     setMessage(editingRole ? 'Role updated successfully!' : 'Role created successfully!')
@@ -91,6 +81,10 @@ const RoleManagement = () => {
 
   if (showForm) {
     return <RoleForm role={editingRole} onSave={handleSaveRole} onCancel={() => setShowForm(false)} />
+  }
+
+  if (initialLoading) {
+    return <div className="text-center py-4 text-gray-600">Loading roles...</div>
   }
 
   return (
@@ -117,7 +111,7 @@ const RoleManagement = () => {
       {/* Roles Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
         {roles.map((role) => (
-          <div key={role.id} className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition">
+          <div key={role._id} className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition">
             <div className="flex justify-between items-start mb-2">
               <div>
                 <h4 className="text-sm font-bold text-gray-900">{role.name}</h4>
@@ -147,7 +141,7 @@ const RoleManagement = () => {
                   <Edit size={14} className="text-blue-600" />
                 </button>
                 <button
-                  onClick={() => handleDeleteRole(role.id)}
+                  onClick={() => handleDeleteRole(role._id)}
                   disabled={loading}
                   className="p-1 hover:bg-red-50 rounded transition disabled:opacity-50"
                   title="Delete"
@@ -177,7 +171,7 @@ const RoleManagement = () => {
             {/* User Count */}
             <div className="pt-2 border-t border-gray-200">
               <p className="text-xs text-gray-600">
-                <span className="font-medium">{role.userCount}</span> user(s) assigned
+                <span className="font-medium">{role.userCount || 0}</span> user(s) assigned
               </p>
             </div>
           </div>

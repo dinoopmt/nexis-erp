@@ -8,15 +8,35 @@ const UserForm = ({ user, onSave, onCancel }) => {
     fullName: '',
     password: '',
     confirmPassword: '',
-    role: 'Staff',
+    role: '',
     status: 'active',
     phone: '',
   })
 
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
+  const [roles, setRoles] = useState([])
 
-  const roles = ['Administrator', 'Manager', 'Sales Manager', 'Inventory Officer', 'Accountant', 'Staff']
+  // Fetch roles from backend
+  useEffect(() => {
+    fetchRoles()
+  }, [])
+
+  const fetchRoles = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/v1/roles')
+      if (response.ok) {
+        const rolesData = await response.json()
+        setRoles(rolesData)
+        // Set default role to first role if creating new user
+        if (!user && rolesData.length > 0) {
+          setFormData((prev) => ({ ...prev, role: rolesData[0]._id }))
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching roles:', error)
+    }
+  }
 
   useEffect(() => {
     if (user) {
@@ -26,7 +46,7 @@ const UserForm = ({ user, onSave, onCancel }) => {
         fullName: user.fullName || '',
         password: '',
         confirmPassword: '',
-        role: user.role || 'Staff',
+        role: typeof user.role === 'object' ? user.role._id : user.role || 'Staff',
         status: user.status || 'active',
         phone: user.phone || '',
       })
@@ -39,6 +59,7 @@ const UserForm = ({ user, onSave, onCancel }) => {
     if (!formData.username.trim()) newErrors.username = 'Username is required'
     if (!formData.email.trim()) newErrors.email = 'Email is required'
     if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required'
+    if (!formData.role) newErrors.role = 'Role is required'
 
     if (!user && !formData.password) newErrors.password = 'Password is required'
     if (!user && formData.password !== formData.confirmPassword) {
@@ -71,20 +92,43 @@ const UserForm = ({ user, onSave, onCancel }) => {
     setLoading(true)
 
     try {
-      const endpoint = user ? `/api/v1/users/${user.id}` : '/api/v1/users'
+      const endpoint = user 
+        ? `http://localhost:5000/api/v1/users/${user._id}` 
+        : 'http://localhost:5000/api/v1/users'
       const method = user ? 'PUT' : 'POST'
+
+      // Prepare data - exclude password fields if updating
+      const dataToSend = user
+        ? {
+            username: formData.username,
+            email: formData.email,
+            fullName: formData.fullName,
+            role: formData.role,
+            status: formData.status,
+            phone: formData.phone,
+          }
+        : {
+            username: formData.username,
+            email: formData.email,
+            fullName: formData.fullName,
+            password: formData.password,
+            role: formData.role,
+            status: formData.status,
+            phone: formData.phone,
+          }
 
       const response = await fetch(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(dataToSend),
       })
 
       if (response.ok) {
         const savedUser = await response.json()
         onSave(savedUser)
       } else {
-        setErrors({ submit: 'Error saving user' })
+        const errorData = await response.json().catch(() => ({}))
+        setErrors({ submit: errorData.message || 'Error saving user' })
       }
     } catch (error) {
       setErrors({ submit: 'Error saving user' })
@@ -192,14 +236,18 @@ const UserForm = ({ user, onSave, onCancel }) => {
                 name="role"
                 value={formData.role}
                 onChange={handleInputChange}
-                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  errors.role ? 'border-red-500' : 'border-gray-300'
+                }`}
               >
+                <option value="">Select a role</option>
                 {roles.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
+                  <option key={role._id} value={role._id}>
+                    {role.name}
                   </option>
                 ))}
               </select>
+              {errors.role && <p className="text-xs text-red-600 mt-0">{errors.role}</p>}
             </div>
 
             <div>

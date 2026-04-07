@@ -92,8 +92,12 @@ const apiV1 = '/api/v1';
 
 // Auth routes (separate from v1 for immediate access)
 app.use(`${apiV1}/auth`, authRoutes.authRoutes);
-app.use(`${apiV1}/auth`, authRoutes.userRoutes);
-app.use(`${apiV1}/auth`, authRoutes.roleRoutes);
+
+// User management routes
+app.use(`${apiV1}/users`, authRoutes.userRoutes);
+
+// Role management routes
+app.use(`${apiV1}/roles`, authRoutes.roleRoutes);
 
 // Sales module
 app.use(`${apiV1}/sales-invoices`, salesRoutes.salesInvoiceRoutes);
@@ -165,6 +169,12 @@ app.use(`${apiV1}/stock-batches`, stockBatchRoutes);
 
 // Organization module (Branch Management)
 app.use(`${apiV1}/organizations`, organizationRoutes);
+
+// Test route
+console.log('🔥 TEST ROUTE REGISTRATION - Version 2');
+app.get(`${apiV1}/test`, (req, res) => {
+  res.json({ message: 'Test route works' });
+});
 
 // Health check endpoints
 app.get('/', (req, res) => {
