@@ -1,6 +1,6 @@
 /**
  * ProductNamingSettings.jsx
- * Store settings component for configuring product naming conventions
+ * Full page component for configuring product naming conventions
  * 
  * Allows admins to configure:
  * - Naming convention (Title Case, lowercase, UPPERCASE, Sentence Case)
@@ -11,12 +11,11 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { API_URL } from '../config/config';
-import { NAMING_RULES } from '../utils/productNamingConvention';
-import Modal from './Modal';
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { API_URL } from '../../../config/config';
+import { NAMING_RULES } from '../../../utils/productNamingConvention';
+import { AlertCircle, CheckCircle, Settings } from 'lucide-react';
 
-const ProductNamingSettings = ({ isOpen, onClose }) => {
+const ProductNamingSettings = () => {
   const [settings, setSettings] = useState({
     enabled: true,
     convention: NAMING_RULES.TITLE_CASE,
@@ -26,16 +25,14 @@ const ProductNamingSettings = ({ isOpen, onClose }) => {
     checkDuplicates: true,
   });
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
-  // ✅ Load current settings
+  // ✅ Load current settings on mount
   useEffect(() => {
-    if (isOpen) {
-      loadSettings();
-    }
-  }, [isOpen]);
+    loadSettings();
+  }, []);
 
   const loadSettings = async () => {
     setIsLoading(true);
@@ -56,13 +53,19 @@ const ProductNamingSettings = ({ isOpen, onClose }) => {
     try {
       await axios.put(`${API_URL}/settings/naming-rules`, settings);
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
-      setTimeout(() => onClose(), 1500);
+      setTimeout(() => setMessage(null), 3000);
     } catch (error) {
       console.error('Error saving settings:', error);
       setMessage({ type: 'error', text: 'Failed to save settings' });
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleReset = () => {
+    loadSettings();
+    setMessage({ type: 'info', text: 'Settings reset to last saved values' });
+    setTimeout(() => setMessage(null), 3000);
   };
 
   const handleChange = (field, value) => {
@@ -81,39 +84,56 @@ const ProductNamingSettings = ({ isOpen, onClose }) => {
 
   if (isLoading) {
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Product Naming Settings">
-        <div className="p-6 text-center">
-          <p className="text-gray-600">Loading settings...</p>
+      <div className="p-2 space-y-2">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+            <p className="text-gray-600">Loading settings...</p>
+          </div>
         </div>
-      </Modal>
+      </div>
     );
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="⚙️ Product Naming Convention Settings" width="max-w-2xl">
-      <div className="p-6 space-y-6">
+    <div className="p-2 space-y-2">
+      {/* Header */}
+      <div className="mb-2">
+        <div className="flex items-center gap-2">
+          <Settings size={24} className="text-blue-600" />
+          <h1 className="text-lg font-bold text-gray-900">Product Naming Convention</h1>
+        </div>
+        <p className="text-gray-600 text-xs mt-1">Configure naming standards for product names across your ERP system</p>
+      </div>
+
+      {/* Content */}
+      <div className="bg-white rounded-lg shadow-md p-4 space-y-6">
+        {/* Message */}
+        {message && (
+          <div className={`p-3 rounded-lg flex items-center gap-2 ${
+            message.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-700'
+              : message.type === 'error'
+              ? 'bg-red-50 border border-red-200 text-red-700'
+              : 'bg-blue-50 border border-blue-200 text-blue-700'
+          }`}>
+            {message.type === 'success' ? (
+              <CheckCircle size={16} />
+            ) : message.type === 'error' ? (
+              <AlertCircle size={16} />
+            ) : (
+              <CheckCircle size={16} />
+            )}
+            <p className="text-xs">{message.text}</p>
+          </div>
+        )}
+
         {/* Info Box */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-xs text-blue-700">
             ℹ️ Configure product naming standards for your ERP system. These rules ensure consistent product naming across the database.
           </p>
         </div>
-
-        {/* Message */}
-        {message && (
-          <div className={`p-3 rounded flex items-center gap-2 ${
-            message.type === 'success'
-              ? 'bg-green-50 border border-green-200 text-green-700'
-              : 'bg-red-50 border border-red-200 text-red-700'
-          }`}>
-            {message.type === 'success' ? (
-              <CheckCircle size={16} />
-            ) : (
-              <AlertCircle size={16} />
-            )}
-            <p className="text-xs">{message.text}</p>
-          </div>
-        )}
 
         {/* Enable/Disable */}
         <div className="space-y-2">
@@ -236,11 +256,11 @@ const ProductNamingSettings = ({ isOpen, onClose }) => {
         {/* Action Buttons */}
         <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
           <button
-            onClick={onClose}
+            onClick={handleReset}
             disabled={isSaving}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
           >
-            Cancel
+            Reset
           </button>
           <button
             onClick={handleSave}
@@ -251,7 +271,7 @@ const ProductNamingSettings = ({ isOpen, onClose }) => {
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 };
 

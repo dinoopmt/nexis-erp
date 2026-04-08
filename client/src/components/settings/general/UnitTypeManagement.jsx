@@ -36,7 +36,7 @@ const UnitTypeManagement = () => {
     try {
       setLoading(true);
       const params = filterCategory ? `?category=${filterCategory}` : '';
-      const response = await axios.get(`${API_URL}/api/v1/unit-types${params}`);
+      const response = await axios.get(`${API_URL}/unit-types${params}`);
       setUnits(response.data.data || []);
       setError('');
     } catch (err) {
@@ -91,7 +91,7 @@ const UnitTypeManagement = () => {
       if (editingUnit) {
         // Update
         const response = await axios.put(
-          `${API_URL}/api/v1/unit-types/update/${editingUnit._id}`,
+          `${API_URL}/unit-types/update/${editingUnit._id}`,
           formData
         );
         setUnits(units.map(u => u._id === editingUnit._id ? response.data.data : u));
@@ -99,7 +99,7 @@ const UnitTypeManagement = () => {
       } else {
         // Create
         const response = await axios.post(
-          `${API_URL}/api/v1/unit-types/create`,
+          `${API_URL}/unit-types/create`,
           formData
         );
         setUnits([...units, response.data.data]);
@@ -119,7 +119,7 @@ const UnitTypeManagement = () => {
 
     setLoading(true);
     try {
-      await axios.delete(`${API_URL}/api/v1/unit-types/delete/${id}`);
+      await axios.delete(`${API_URL}/unit-types/delete/${id}`);
       setUnits(units.filter(u => u._id !== id));
       setSuccess('Unit type deleted successfully');
       setTimeout(() => setSuccess(''), 3000);
@@ -135,7 +135,7 @@ const UnitTypeManagement = () => {
 
     setLoading(true);
     try {
-      await axios.post(`${API_URL}/api/v1/unit-types/default/create`);
+      await axios.post(`${API_URL}/unit-types/default/create`);
       setSuccess('Default units created successfully');
       fetchUnits();
       setTimeout(() => setSuccess(''), 3000);

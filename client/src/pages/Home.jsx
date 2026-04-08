@@ -11,8 +11,19 @@ import RtvForm from "../components/inventory/RtvForm";
 import InventoryAdjust from "../components/inventory/InventoryAdjust";
 import StockTracking from "../components/inventory/StockTracking";
 
-import GeneralSettings from "../components/settings/GeneralSettings";
-import CompanySettings from "../components/settings/CompanySettings";
+import BasicSettings from "../components/settings/company/BasicSettings";
+import CompanySettings from "../components/settings/company/CompanyMaster";
+import LicenseManagement from "../components/settings/company/LicenseManagement";
+import HSNmanagement from "../components/settings/company/HSNManagement";
+import OrganizationManagement from "../components/settings/company/OrganizationManagement";
+import RollManagement from "../components/settings/general/RoleManagement";
+import UserManagement from "../components/settings/general/UserManagement";
+import StoreSettings from "../components/settings/general/StoreSettings";
+import UnitTypeManagement from "../components/settings/general/UnitTypeManagement";
+import BulkProductUpload from "../components/settings/general/BulkProductUpload";
+import PrinterConfigurationManagement from "../components/settings/general/PrinterConfigurationManagement";
+import StockReconciliation from "../components/settings/general/StockReconciliation";
+import ProductNamingSettings from "../components/settings/general/ProductNamingSettings";
 
 import Payment from "../components/accounts/Payment";
 
@@ -78,7 +89,11 @@ const menus = [
       { name: "Delivery Note", id: "DeliveryNote", path: "/delivery-note" },
       { name: "Sales Return", id: "SalesReturn", path: "/sales-return" },
       { name: "Customers", id: "Customers", path: "/customers" },
-      {name: "Sales Invoice New", id: "SalesInvoiceNew", path: "/sales-invoice-refactored" },
+      {
+        name: "Sales Invoice New",
+        id: "SalesInvoiceNew",
+        path: "/sales-invoice-refactored",
+      },
     ],
   },
 
@@ -99,7 +114,7 @@ const menus = [
     children: [
       { name: "Vendors", id: "Vendors", path: "/vendors" },
       { name: "Purchase Order", id: "PurchaseOrder", path: "/purchase-order" },
-      
+
       { name: "Goods Receipt ", id: "GrnForm", path: "/grn-form" },
       { name: "Goods Return ", id: "RtvForm", path: "/rtv-form" },
       {
@@ -108,7 +123,11 @@ const menus = [
         path: "/inventory-adjust",
       },
       { name: "Stock Tracking", id: "StockTracking", path: "/stock-tracking" },
-      { name: "Stock Variance Report", id: "StockVarianceReport", path: "/stock-variance" },
+      {
+        name: "Stock Variance Report",
+        id: "StockVarianceReport",
+        path: "/stock-variance",
+      },
     ],
   },
   {
@@ -345,15 +364,39 @@ const menus = [
     type: "group",
     children: [
       {
-        name: "General Settings",
-        id: "GeneralSettings",
-        path: "/general-settings",
+        name: "License Management",
+        id: "LicenseManagement",
+        path: "/company-settings/license-management",
       },
       {
-        name: "Company Settings",
+        name: "Company Master",
         id: "CompanySettings",
         path: "/company-settings",
       },
+      {
+        name: "Organization",
+        id: "OrganizationManagement",
+        path: "/company-settings/organization-management",
+      },
+      {
+        name: "HSN Management",
+        id: "HSNManagement",
+        path: "/company-settings/hsn-management",
+      },
+      {
+        name: "Basic Settings",
+        id: "BasicSettings",
+        path: "/company-settings/basic-settings",
+      },
+      { name: "Role Management", id: "RoleManagement", path: "/role-management" },
+      { name: "User Management", id: "UserManagement", path: "/user-management" },
+      { name: "Store Settings", id: "StoreSettings", path: "/store-settings" },
+      { name: "Unit Type Management", id: "UnitTypeManagement", path: "/unit-type-management" },
+      { name: "Bulk Product Upload", id: "BulkProductUpload", path: "/bulk-product-upload" },
+      { name: "Printer Management", id: "PrinterManagement", path: "/printer-configuration-management" },
+      { name: "Stock Reconciliation", id: "StockReconciliation", path: "/stock-reconciliation" },
+      { name: "Product Naming Settings", id: "ProductNamingSettings", path: "/product-naming-settings" },
+
     ],
   },
 ];
@@ -597,7 +640,10 @@ function Home() {
             <Route path="/quotation" element={<Quotation />} />
             <Route path="/sales-order" element={<SalesOrder />} />
             <Route path="/sales-invoice" element={<SalesInvoice />} />
-            <Route path="/sales-invoice-refactored" element={<SalesInvoiceNew />} />
+            <Route
+              path="/sales-invoice-refactored"
+              element={<SalesInvoiceNew />}
+            />
             <Route path="/delivery-note" element={<DeliveryNote />} />
             <Route path="/sales-return" element={<SalesReturn />} />
             <Route path="/customers" element={<Customers />} />
@@ -627,8 +673,33 @@ function Home() {
             <Route path="/account-settings" element={<Accountsettings />} />
 
             {/* Settings */}
-            <Route path="/general-settings" element={<GeneralSettings />} />
+
             <Route path="/company-settings" element={<CompanySettings />} />
+            <Route
+              path="/company-settings/hsn-management"
+              element={<HSNmanagement />}
+            />
+            <Route
+              path="/company-settings/organization-management"
+              element={<OrganizationManagement />}
+            />
+            <Route
+              path="/company-settings/license-management"
+              element={<LicenseManagement />}
+            />
+            <Route
+              path="/company-settings/basic-settings"
+              element={<BasicSettings />}
+             />
+              <Route path="/role-management" element={<RollManagement />} />
+              <Route path="/user-management" element={<UserManagement />} />
+              <Route path="/store-settings" element={<StoreSettings />} />
+              <Route path="/unit-type-management" element={<UnitTypeManagement />} />
+              <Route path="/bulk-product-upload" element={<BulkProductUpload />} />
+              <Route path="/printer-configuration-management" element={<PrinterConfigurationManagement />} />
+              <Route path="/stock-reconciliation" element={<StockReconciliation />} />
+              <Route path="/product-naming-settings" element={<ProductNamingSettings />} />
+              
 
             {/* Report routes - lazy loaded */}
             {reportRoutes.map((route) => (
@@ -650,5 +721,3 @@ function Home() {
 }
 
 export default Home;
-
-
