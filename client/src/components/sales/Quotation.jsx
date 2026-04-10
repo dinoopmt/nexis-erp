@@ -935,7 +935,19 @@ const Quotation = () => {
                             </div>
                             <div className="text-right mr-3">
                               <p className="font-bold text-blue-600 text-sm">{product.salesprice?.toFixed(2)}</p>
-                              <p className="text-xs text-gray-400">Stock: {product.stock || 0}</p>
+                              <p className={`text-xs font-medium ${(() => {
+                                let stock = 0;
+                                if (typeof product.currentStock === 'object') {
+                                  stock = product.currentStock?.availableQuantity || product.currentStock?.totalQuantity || product.currentStock?.quantity || product.stock || 0;
+                                } else {
+                                  stock = product.currentStock || product.stock || 0;
+                                }
+                                return stock > 0 ? 'text-green-600' : 'text-red-600';
+                              })()}`}>
+                                Stock: {typeof product.currentStock === 'object' 
+                                  ? (product.currentStock?.availableQuantity || product.currentStock?.totalQuantity || product.currentStock?.quantity || product.stock || '-') 
+                                  : (product.currentStock || product.stock || '-')}
+                              </p>
                             </div>
                           </div>
                         </div>

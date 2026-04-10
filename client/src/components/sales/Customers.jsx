@@ -3,6 +3,7 @@ import { Search, Plus, Edit, Trash2 } from "lucide-react";
 import axios from "axios";
 import { API_URL } from "../../config/config";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
+import { showToast } from "../../components/shared/AnimatedCenteredToast.jsx";
 
 const Customers = () => {
   // Get company data for country-based tax type control
@@ -40,7 +41,6 @@ const Customers = () => {
   const [errors, setErrors] = useState({});
   const [activeTab, setActiveTab] = useState("basic");
   const [previewPdf, setPreviewPdf] = useState(null);
-  const [toasts, setToasts] = useState([]);
 
   // ✅ Fetch Customers
   useEffect(() => {
@@ -52,7 +52,7 @@ const Customers = () => {
       setLoading(true);
       // Country isolation: Always filter by company's country (NOT international sales)
       const companyCountry = company?.countryCode || 'AE';
-      const url = `${API_URL}/api/v1/customers/getcustomers?page=${currentPage}&limit=${itemsPerPage}&country=${companyCountry}${
+      const url = `${API_URL}/customers/getcustomers?page=${currentPage}&limit=${itemsPerPage}&country=${companyCountry}${
         search ? `&search=${search}` : ""
       }`;
       const response = await axios.get(url);
@@ -67,15 +67,7 @@ const Customers = () => {
     }
   };
 
-  // ✅ Toast Notification
-  const showToast = (message, type = "error", duration = 4000) => {
-    const id = Date.now();
-    const toast = { id, message, type };
-    setToasts((prev) => [...prev, toast]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, duration);
-  };
+
 
   // ✅ Clear Field Error on User Interaction
   const clearFieldError = (fieldName) => {
@@ -103,7 +95,7 @@ const Customers = () => {
     // Show validation errors as toast if there are any
     if (Object.keys(newErrors).length > 0) {
       const errorMessages = Object.values(newErrors).join(" • ");
-      showToast(errorMessages, "error");
+      showToast("error", errorMessages);
     }
     
     return Object.keys(newErrors).length === 0;
@@ -136,7 +128,7 @@ const Customers = () => {
       if (isEdit && editId) {
         // Update
         const response = await axios.put(
-          `${API_URL}/api/v1/customers/updatecustomer/${editId}`,
+          `${API_URL}/customers/updatecustomer/${editId}`,
           customerData
         );
         setCustomers(
@@ -145,7 +137,7 @@ const Customers = () => {
       } else {
         // Add
         const response = await axios.post(
-          `${API_URL}/api/v1/customers/addcustomer`,
+          `${API_URL}/customers/addcustomer`,
           customerData
         );
         setCustomers([response.data.customer, ...customers]);
@@ -153,11 +145,11 @@ const Customers = () => {
       resetForm();
       setIsModalOpen(false);
       setError("");
-      showToast(isEdit ? "Customer updated successfully" : "Customer created successfully", "success");
+      showToast("success", isEdit ? "Customer updated successfully" : "Customer created successfully");
     } catch (err) {
       const errorMsg = err.response?.data?.message || "Failed to save customer";
       setError(errorMsg);
-      showToast(errorMsg, "error");
+      showToast("error", errorMsg);
       console.error(err);
     } finally {
       setLoading(false);
@@ -170,7 +162,7 @@ const Customers = () => {
 
     try {
       setLoading(true);
-      await axios.delete(`${API_URL}/api/v1/customers/deletecustomer/${id}`);
+      await axios.delete(`${API_URL}/customers/deletecustomer/${id}`);
       setCustomers(customers.filter((c) => c._id !== id));
       setError("");
     } catch (err) {
@@ -260,9 +252,9 @@ const Customers = () => {
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-100 overflow-hidden">
       {/* HEADER - Fixed at top */}
-      <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 shadow-lg z-10">
+      <div className="flex-shrink-0 bg-gradient-to-r from-white-600 to-blue-700 text-white px-6 py-4 shadow-lg z-10">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">👥 Customers</h1>
+          <h1 className="text-2xl text-black font-bold">👥 Customers</h1>
           <button
             onClick={handleOpenModal}
             className="bg-white hover:bg-gray-100 text-blue-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition shadow-md"
@@ -475,11 +467,11 @@ const Customers = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[70vh] flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-6 rounded-t-2xl flex-shrink-0">
-              <h2 className="text-2xl font-bold">
+            <div className="bg-gradient-to-r from-white-600 to-blue-700 text-white px-8 py-6 rounded-t-2xl flex-shrink-0">
+              <h2 className="text-2xl text-black font-bold">
                 {isEdit ? "✏️ Edit Customer" : "➕ Add New Customer"}
               </h2>
-              <p className="text-blue-100 text-sm mt-1">
+              <p className="text-blue-500 text-sm mt-1">
                 {isEdit ? "Update customer details" : "Create a new customer profile"}
               </p>
             </div>
@@ -1067,31 +1059,7 @@ const Customers = () => {
         </div>
       )}
 
-      {/* Floating Toast Notifications */}
-      {toasts.length > 0 && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col gap-2 max-w-md">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`px-4 py-3 rounded-lg text-sm font-medium transition-all flex items-start gap-3 shadow-lg ${
-                toast.type === "success"
-                  ? "bg-green-500 text-white"
-                  : toast.type === "error"
-                  ? "bg-red-500 text-white"
-                  : "bg-blue-500 text-white"
-              }`}
-              style={{
-                animation: "slideDown 0.3s ease-out"
-              }}
-            >
-              <span className="text-lg font-bold flex-shrink-0">
-                {toast.type === "error" ? "⚠️" : toast.type === "success" ? "✓" : "ℹ️"}
-              </span>
-              <span className="flex-1">{toast.message}</span>
-            </div>
-          ))}
-        </div>
-      )}
+
     </div>
   );
 };
