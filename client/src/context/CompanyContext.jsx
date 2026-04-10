@@ -41,12 +41,15 @@ export const CompanyProvider = ({ children }) => {
       setLoading(true)
       const response = await axios.get(`${API_URL}/settings/company`)
 
-      const data = response.data
-      if (data.data) {
-        setCompany(data.data)
+      // API returns company object directly (not wrapped in {data: {...}})
+      const companyData = response.data
+      
+      if (companyData && companyData.companyName !== undefined) {
+        setCompany(companyData)
         // Fetch tax master for this country
-        if (data.data.countryCode) {
-          fetchTaxMaster(data.data.countryCode)
+        const countryCode = companyData.countryCode || companyData.country
+        if (countryCode) {
+          fetchTaxMaster(countryCode)
         }
       }
     } catch (err) {
@@ -85,15 +88,19 @@ export const CompanyProvider = ({ children }) => {
       setLoading(true)
       const response = await axios.post(`${API_URL}/settings/company`, updates)
 
-      const data = response.data
-      if (data.data) {
-        setCompany(data.data)
+      // API returns { message: '...', data: companyObject }
+      const responseData = response.data
+      const updatedCompanyData = responseData.data || responseData
+      
+      if (updatedCompanyData && updatedCompanyData.companyName !== undefined) {
+        setCompany(updatedCompanyData)
         // Fetch updated tax master if country changed
-        if (updates.countryCode && updates.countryCode !== company.countryCode) {
-          fetchTaxMaster(updates.countryCode)
+        const countryCode = updatedCompanyData.countryCode || updatedCompanyData.country
+        if (countryCode && countryCode !== company.countryCode) {
+          fetchTaxMaster(countryCode)
         }
       }
-      return data
+      return response.data
     } catch (err) {
       console.error('Error updating company:', err)
       showToast('error', 'Failed to update company settings')

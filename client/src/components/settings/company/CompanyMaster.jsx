@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Save, Upload, X } from 'lucide-react'
+import { Save, Upload, X, Building } from 'lucide-react'
+import { toast } from 'react-hot-toast'
 import useTaxMaster from '../../../hooks/useTaxMaster'
 import { useCostingMaster } from '../../../hooks/useCostingMaster'
 
@@ -8,51 +9,92 @@ const CompanyMaster = () => {
   const { costingMethod, switchCostingMethod, updateCostingConfig } = useCostingMaster()
 
   const [formData, setFormData] = useState({
-    companyName: 'Al Arab Computers LLC',
-    registrationNumber: 'CR123456789',
-    taxId: 'TAX123456',
-    email: 'info@alarabcomputers.com',
-    phone: '+971554507149',
-    website: 'www.alarabcomputersllc.com',
-    address: 'Dubai Business Centre',
-    city: 'Dubai',
-    state: 'Dubai',
-    postalCode: '12345',
-    country: 'UAE',
-    countryCode: 'AE',
-    currency: 'AED',
-    taxType: 'VAT',
-    taxRate: 5.00,
+    companyName: '',
+    registrationNumber: '',
+    taxId: '',
+    email: '',
+    phone: '',
+    website: '',
+    address: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: '',
+    countryCode: '',
+    currency: '',
+    taxType: '',
+    taxRate: 0,
     costingMethod: 'FIFO',
     decimalPlaces: 2,
     logoUrl: '',
-    industry: 'Technology',
-    fiscalYearEnd: '12-31',
+    industry: '',
+    fiscalYearEnd: '',
   })
 
   const [countries, setCountries] = useState([])
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
   const [logoPreview, setLogoPreview] = useState(null)
   const [countriesLoading, setCountriesLoading] = useState(true)
+  const [isDataLoaded, setIsDataLoaded] = useState(false)
 
+  // Load countries on mount
   useEffect(() => {
     fetchCountries()
-    // Load company data from context
-    if (company && company.companyName) {
+  }, [])
+
+  // Sync company data from context when available
+  useEffect(() => {
+    // Only load data when: company exists, countries are loaded, and data not yet loaded
+    if (company && Object.keys(company).length > 0 && !isDataLoaded && !countriesLoading && countries.length > 0) {
+      // Find country name from countries list based on country code
+      const countryCode = company.country || company.countryCode
+      const countryObj = countries.find(c => c.countryCode === countryCode)
+      const countryName = countryObj?.countryName || company.countryName || company.country || ''
+      
+      // Populate form with company data
+      const dataToLoad = {
+        companyName: company.companyName || '',
+        registrationNumber: company.registrationNumber || '',
+        taxId: company.taxId || '',
+        email: company.email || '',
+        phone: company.phone || '',
+        website: company.website || '',
+        address: company.address || '',
+        city: company.city || '',
+        state: company.state || '',
+        postalCode: company.postalCode || '',
+        country: countryName, // Use full country name for dropdown
+        countryCode: countryCode, // Store country code separately
+        currency: company.currency || '',
+        taxType: company.taxSystem || company.taxType || '',
+        taxRate: company.taxRate || 0,
+        industry: company.industry || '',
+        fiscalYearEnd: company.fiscalYearEnd || '',
+        logoUrl: company.logoUrl || ''
+      }
+
       setFormData((prev) => ({
         ...prev,
-        ...company,
+        ...dataToLoad,
       }))
+
+      if (company.logoUrl) {
+        setLogoPreview(company.logoUrl)
+      }
+
+      setIsDataLoaded(true)
     }
-    // Sync costing method from hook
+  }, [company, countries, countriesLoading, isDataLoaded])
+
+  // Sync costing method when available
+  useEffect(() => {
     if (costingMethod) {
       setFormData((prev) => ({
         ...prev,
         costingMethod,
       }))
     }
-  }, [company, costingMethod])
+  }, [costingMethod])
 
   const fetchCountries = async () => {
     try {
@@ -69,7 +111,10 @@ const CompanyMaster = () => {
       }
     } catch (error) {
       console.error('Error fetching countries:', error)
-      setMessage(`Failed to load country configurations: ${error.message}`)
+      toast.error(`Failed to load country configurations: ${error.message}`, {
+        duration: 4000,
+        position: 'top-right'
+      })
     } finally {
       setCountriesLoading(false)
     }
@@ -123,11 +168,13 @@ const CompanyMaster = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setMessage('')
 
     // Basic client-side validation
     if (!formData.companyName || !formData.email || !formData.phone || !formData.address || !formData.city || !formData.country || !formData.countryCode) {
-      setMessage('Please fill in all required fields marked with *')
+      toast.error('Please fill in all required fields marked with *', {
+        duration: 4000,
+        position: 'top-right'
+      })
       setLoading(false)
       return
     }
@@ -135,7 +182,10 @@ const CompanyMaster = () => {
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(formData.email)) {
-      setMessage('Please enter a valid email address')
+      toast.error('Please enter a valid email address', {
+        duration: 4000,
+        position: 'top-right'
+      })
       setLoading(false)
       return
     }
@@ -160,66 +210,100 @@ const CompanyMaster = () => {
         })
       }
       
-      setMessage('Company information and costing method updated successfully!')
+      toast.success('Company information and costing method updated successfully!', {
+        duration: 4000,
+        position: 'top-right'
+      })
     } catch (error) {
-      setMessage(`Error updating company information: ${error.message}`)
+      toast.error(`Error updating company information: ${error.message}`, {
+        duration: 4000,
+        position: 'top-right'
+      })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="space-y-1">
-      <form onSubmit={handleSubmit} className="space-y-1">
-        {/* Logo Section */}
-        <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">Company Logo</h3>
-          <div className="flex items-center gap-2">
-            <div className="w-12 h-12 bg-white border-2 border-gray-300 rounded-lg flex items-center justify-center overflow-hidden">
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white mb-4 pb-4 border-b border-gray-200">
+        <div className="flex items-center gap-3 mb-2">
+          <Building size={24} className="text-blue-600" />
+          <h1 className="text-xl font-bold text-gray-900">Company Master</h1>
+        </div>
+        <p className="text-sm text-gray-600">Manage your company's core information, contact details, location, and operational settings</p>
+      </div>
+
+      {/* Loading State */}
+      {contextLoading && !isDataLoaded && (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="text-sm text-gray-600">Loading company details...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Form - Show when data is loaded or after timeout */}
+      {(isDataLoaded || !contextLoading) && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Logo Section */}
+          <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+            <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
+            <h2 className="text-sm font-bold text-gray-900">Company Logo</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden">
               {logoPreview ? (
                 <img src={logoPreview} alt="Company Logo" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-gray-400 text-xs">No Logo</span>
+                <span className="text-gray-400 text-xs text-center">Logo</span>
               )}
             </div>
             <div className="flex-1">
-              <label className="block mb-1">
+              <label className="block mb-2">
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleLogoUpload}
                   className="sr-only"
                 />
-                <span className="flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-lg cursor-pointer hover:bg-blue-100 transition font-medium text-sm">
-                  <Upload size={16} />
+                <span className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition font-semibold text-sm">
+                  <Upload size={18} />
                   Upload Logo
                 </span>
               </label>
-              <p className="text-xs text-gray-600">Max: 5MB, 200x200px</p>
+              <p className="text-xs text-gray-600">PNG, JPG up to 5MB • Recommended: 200x200px</p>
             </div>
           </div>
         </div>
 
-        {/* Basic Information */}
-        <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">Basic Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                Company Name *
+        {/* Section 1: Company Identification */}
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+            <div className="w-1 h-6 bg-blue-600 rounded-full"></div>
+            <h2 className="text-sm font-bold text-gray-900">Company Identification</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Company Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 name="companyName"
                 value={formData.companyName}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Legal company name"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
                 Registration Number
               </label>
               <input
@@ -227,39 +311,42 @@ const CompanyMaster = () => {
                 name="registrationNumber"
                 value={formData.registrationNumber}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="CR or License number"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                Tax ID
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Tax ID / VAT Number
               </label>
               <input
                 type="text"
                 name="taxId"
                 value={formData.taxId}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Tax identification"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                Industry
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Industry Type
               </label>
               <input
                 type="text"
                 name="industry"
                 value={formData.industry}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Retail, Technology"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Fiscal Year End (MM-DD)
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Fiscal Year End<span className="text-gray-500 text-xs font-normal ml-1">(MM-DD format)</span>
               </label>
               <input
                 type="text"
@@ -267,73 +354,150 @@ const CompanyMaster = () => {
                 value={formData.fiscalYearEnd}
                 onChange={handleInputChange}
                 placeholder="12-31"
-                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
           </div>
         </div>
 
-        {/* Contact Information */}
-        <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">Contact Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {/* Section 2: Contact Information */}
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+            <div className="w-1 h-6 bg-green-600 rounded-full"></div>
+            <h2 className="text-sm font-bold text-gray-900">Contact Information</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                Email *
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Email Address <span className="text-red-500">*</span>
               </label>
               <input
                 type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="company@example.com"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                Phone Number *
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Phone Number <span className="text-red-500">*</span>
               </label>
               <input
                 type="tel"
                 name="phone"
                 value={formData.phone}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="+971 (55) 450-7149"
                 required
               />
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                Website
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Website URL
               </label>
               <input
-                type="text"
+                type="url"
                 name="website"
                 value={formData.website}
                 onChange={handleInputChange}
-                placeholder="e.g., www.alarabcomputers.com"
-                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="https://www.example.com"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
           </div>
         </div>
 
-        {/* Country Selection */}
-        <div className="bg-blue-50 rounded-lg p-2 border border-blue-200">
-          <h3 className="text-sm font-semibold text-blue-900 mb-2">Country Selection</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {/* Section 3: Address Information */}
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+            <div className="w-1 h-6 bg-purple-600 rounded-full"></div>
+            <h2 className="text-sm font-bold text-gray-900">Address Information</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Street Address <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.street || 'Street address or building name'}
+                required
+              />
+            </div>
+
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Select Operating Country *
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                City <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="city"
+                value={formData.city}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.city || 'City or emirate'}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                State / Province / Region
+              </label>
+              <input
+                type="text"
+                name="state"
+                value={formData.state}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.state || 'State or region'}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Postal Code / ZIP
+              </label>
+              <input
+                type="text"
+                name="postalCode"
+                value={formData.postalCode}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.postalCode || 'Postal code'}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Section 4: Location, Compliance & Tax */}
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+            <div className="w-1 h-6 bg-amber-600 rounded-full"></div>
+            <h2 className="text-sm font-bold text-gray-900">Location, Compliance & Tax</h2>
+          </div>
+
+          {/* Country Selection Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5 pb-5 border-b border-gray-100">
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Operating Country <span className="text-red-500">*</span>
               </label>
               <select
                 name="country"
                 value={formData.country}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-white"
                 required
                 disabled={countriesLoading}
               >
@@ -345,238 +509,33 @@ const CompanyMaster = () => {
                 ))}
               </select>
               <p className="text-xs text-gray-600 mt-2">
-                Changing country will automatically update tax and compliance requirements
+                Changing country will automatically update tax type, rate, currency and decimal settings
               </p>
             </div>
+
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-2">
-                Country Code *
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Country Code
               </label>
-              <input
-                type="text"
-                name="countryCode"
-                value={formData.countryCode}
-                onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-blue-100 font-semibold"
-                readOnly
-                required
-              />
-              <p className="text-xs text-gray-600 mt-2">Auto-populated based on country selection</p>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg">
+                <p className="text-sm font-semibold text-gray-700">{formData.countryCode || '—'}</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Country-Specific Information */}
-        <div className="bg-indigo-50 rounded-lg p-2 border border-indigo-200">
-          <h3 className="text-sm font-semibold text-indigo-900 mb-2">
-            {getCountryConfig(formData.country)?.label} - Regulations & Tax Details
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
-            {/* Tax Type and Rate */}
+          {/* Tax Type, Rate & Tax ID Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5 pb-5 border-b border-gray-100">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
                 Tax Type
               </label>
-              <div className="px-2 py-1 bg-white border border-indigo-300 rounded-lg">
-                <p className="text-sm font-bold text-indigo-900">{formData.taxType}</p>
+              <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg">
+                <p className="text-sm font-semibold text-gray-700">{formData.taxType}</p>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Tax Rate (%)
-              </label>
-              <div className="px-2 py-1 bg-white border border-indigo-300 rounded-lg">
-                <p className="text-sm font-bold text-indigo-900">{formData.taxRate}%</p>
-              </div>
-            </div>
-
-            {/* Costing Method Selection */}
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Inventory Costing Method <span className="text-red-500">*</span>
-              </label>
-              <p className="text-xs text-gray-600 mb-2">
-                This method will be used for entire application inventory valuation
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {['FIFO', 'LIFO', 'WAC'].map((method) => (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, costingMethod: method }))}
-                    className={`py-1 px-2 rounded-lg font-semibold text-sm transition-all border-2 ${
-                      formData.costingMethod === method
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
-                    }`}
-                  >
-                    {method}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-gray-700">
-                <p className="font-semibold mb-1">
-                  {formData.costingMethod === 'FIFO' &&
-                    '📦 FIFO (First In First Out) - First items purchased are first to be sold'}
-                  {formData.costingMethod === 'LIFO' &&
-                    '📦 LIFO (Last In First Out) - Last items purchased are first to be sold'}
-                  {formData.costingMethod === 'WAC' &&
-                    '📦 WAC (Weighted Average Cost) - Uses average cost of all available inventory'}
-                </p>
-              </div>
-            </div>
-
-            {/* Decimal Places Control */}
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-2">
-                Decimal Places Control <span className="text-red-500">*</span>
-              </label>
-              <p className="text-xs text-gray-600 mb-2">
-                Used for all financial calculations and display across the application
-              </p>
-              <div className="grid grid-cols-5 gap-2">
-                {[0, 1, 2, 3, 4].map((decimals) => (
-                  <button
-                    key={decimals}
-                    type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, decimalPlaces: decimals }))}
-                    className={`py-2 px-2 rounded-lg font-semibold text-sm transition-all border-2 ${
-                      formData.decimalPlaces === decimals
-                        ? 'bg-green-600 text-white border-green-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-green-400'
-                    }`}
-                  >
-                    {decimals}
-                    <span className="block text-xs mt-0.5">
-                      {decimals === 0 && '(1000)'}
-                      {decimals === 1 && '(100.0)'}
-                      {decimals === 2 && '(100.00)'}
-                      {decimals === 3 && '(100.000)'}
-                      {decimals === 4 && '(100.0000)'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-gray-700">
-                <p className="font-semibold">
-                  ✓ Current Selection: {formData.decimalPlaces} decimal places
-                </p>
-                <p className="text-xs mt-1 text-gray-600">
-                  All prices, amounts, and calculations will display with {formData.decimalPlaces} decimal {'place' + (formData.decimalPlaces !== 1 ? 's' : '')}
-                </p>
-              </div>
-            </div>
-          </div>
-          {/* Country-Specific Info */}
-          {getCountryConfig(formData.country) && (
-            <div className="bg-white rounded p-2 border border-indigo-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">
-                {getCountryConfig(formData.country)?.label} Requirements
-              </h4>
-              <ul className="text-xs text-gray-700 space-y-1">
-                {getCountryConfig(formData.country)?.regulations?.map((reg, index) => (
-                  <li key={index}>
-                    ✓ <strong>{reg.title}:</strong> {reg.description}
-                  </li>
-                ))}
-              </ul>
-              {getCountryConfig(formData.country)?.complianceRequirements?.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-indigo-100">
-                  <p className="text-xs font-semibold text-gray-900 mb-2">Key Compliance Requirements:</p>
-                  <ul className="text-xs text-gray-700 space-y-1">
-                    {getCountryConfig(formData.country)?.complianceRequirements?.map((req, index) => (
-                      <li key={index}>
-                        • <strong>{req.name}:</strong> {req.description}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Address Information */}
-        <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">Address Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Street Address *
-              </label>
-              <input
-                type="text"
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.street || 'Street Address'}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                City *
-              </label>
-              <input
-                type="text"
-                name="city"
-                value={formData.city}
-                onChange={handleInputChange}
-                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.city || 'City'}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                State / Province
-              </label>
-              <input
-                type="text"
-                name="state"
-                value={formData.state}
-                onChange={handleInputChange}
-                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.state || 'State / Province'}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Postal Code
-              </label>
-              <input
-                type="text"
-                name="postalCode"
-                value={formData.postalCode}
-                onChange={handleInputChange}
-                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={getCountryConfig(formData.country)?.addressPlaceholder?.postalCode || 'Postal Code'}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Tax Information */}
-        <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200">
-          <h3 className="text-sm font-semibold text-yellow-900 mb-2">Tax Configuration</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Tax Type
-              </label>
-              <div className="px-2 py-1 bg-white border border-yellow-300 rounded-lg">
-                <p className="text-sm font-semibold text-yellow-900">{formData.taxType}</p>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
                 Tax Rate (%)
               </label>
               <input
@@ -585,66 +544,155 @@ const CompanyMaster = () => {
                 name="taxRate"
                 value={formData.taxRate}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                placeholder="0.00"
               />
-              <p className="text-xs text-gray-600 mt-1">Editable for custom rates</p>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                {getCountryConfig(formData.country)?.taxNumberLabel || 'Tax ID'} / Registration Number
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
+                Tax Registration
               </label>
               <input
                 type="text"
                 name="taxId"
                 value={formData.taxId}
                 onChange={handleInputChange}
-                className="w-full px-2 py-1 text-sm border border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                placeholder={getCountryConfig(formData.country)?.taxNumberLabel || 'Tax ID / Registration'}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                placeholder="VAT/Registration number"
               />
             </div>
           </div>
-          <div className="mt-3 p-2 bg-white border border-yellow-300 rounded-lg">
-            <p className="text-xs text-gray-600">Current Configuration:</p>
-            <p className="text-sm font-bold text-yellow-900">
-              {formData.taxType} at {formData.taxRate}% for {getCountryConfig(formData.country)?.label}
+
+          {/* Country Requirements Summary */}
+          {getCountryConfig(formData.country) && (
+            <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+              <p className="text-xs font-semibold text-amber-900 mb-2">
+                {getCountryConfig(formData.country)?.label} Requirements
+              </p>
+              <ul className="text-xs text-gray-700 space-y-1">
+                {getCountryConfig(formData.country)?.regulations?.map((reg, index) => (
+                  <li key={index}>✓ <strong>{reg.title}:</strong> {reg.description}</li>
+                ))}
+              </ul>
+              {getCountryConfig(formData.country)?.complianceRequirements?.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-amber-200">
+                  <p className="text-xs font-semibold text-amber-900 mb-2">Compliance Requirements:</p>
+                  <ul className="text-xs text-gray-700 space-y-1">
+                    {getCountryConfig(formData.country)?.complianceRequirements?.map((req, index) => (
+                      <li key={index}>• <strong>{req.name}:</strong> {req.description}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Section 5: Operational Settings */}
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+            <div className="w-1 h-6 bg-indigo-600 rounded-full"></div>
+            <h2 className="text-sm font-bold text-gray-900">Operational Settings</h2>
+          </div>
+
+          {/* Costing Method */}
+          <div className="mb-5 pb-5 border-b border-gray-100">
+            <label className="block text-xs font-semibold text-gray-700 mb-2.5">
+              Inventory Costing Method <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              This method applies to all inventory valuation across the application
             </p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {['FIFO', 'LIFO', 'WAC'].map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, costingMethod: method }))}
+                  className={`py-2 px-2 rounded-lg font-semibold text-sm transition-all border-2 ${
+                    formData.costingMethod === method
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                  }`}
+                >
+                  {method}
+                </button>
+              ))}
+            </div>
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-gray-700">
+              <p className="font-semibold text-indigo-900 mb-1">
+                {formData.costingMethod === 'FIFO' &&
+                  '📦 FIFO (First In First Out) - First items purchased are first to be sold'}
+                {formData.costingMethod === 'LIFO' &&
+                  '📦 LIFO (Last In First Out) - Last items purchased are first to be sold'}
+                {formData.costingMethod === 'WAC' &&
+                  '📦 WAC (Weighted Average Cost) - Uses average cost of all available inventory'}
+              </p>
+            </div>
+          </div>
+
+          {/* Decimal Places Control */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2.5">
+              Decimal Places Control <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Controls decimal precision for all financial calculations and display
+            </p>
+            <div className="grid grid-cols-5 gap-2 mb-3">
+              {[0, 1, 2, 3, 4].map((decimals) => (
+                <button
+                  key={decimals}
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, decimalPlaces: decimals }))}
+                  className={`py-2 px-2 rounded-lg font-semibold text-sm transition-all border-2 text-center ${
+                    formData.decimalPlaces === decimals
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                  }`}
+                >
+                  <span className="block text-sm">{decimals}</span>
+                  <span className="block text-xs mt-0.5 font-normal">
+                    {decimals === 0 && '1000'}
+                    {decimals === 1 && '100.0'}
+                    {decimals === 2 && '100.00'}
+                    {decimals === 3 && '100.000'}
+                    {decimals === 4 && '100.0000'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-gray-700">
+              <p className="font-semibold text-green-900 mb-1">
+                ✓ {formData.decimalPlaces} decimal place{formData.decimalPlaces !== 1 ? 's' : ''} selected
+              </p>
+              <p className="text-gray-600">
+                Sample: {(1000.5555).toFixed(formData.decimalPlaces)}
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Message */}
-        {message && (
-          <div
-            className={`p-2 rounded-lg text-sm font-medium ${
-              message.includes('successfully')
-                ? 'bg-green-50 text-green-700 border border-green-200'
-                : message.includes('required') || message.includes('valid')
-                ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
-                : 'bg-red-50 text-red-700 border border-red-200'
-            }`}
-          >
-            {message}
-          </div>
-        )}
-
         {/* Action Buttons */}
-        <div className="flex gap-2 justify-end">
+        <div className="flex gap-3 justify-end pt-2">
           <button
             type="reset"
-            className="px-4 py-1 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+            className="px-5 py-2 text-sm font-semibold text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
             Reset
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="flex items-center gap-1 px-4 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save size={16} />
+            <Save size={18} />
             {loading ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>
+      )}
     </div>
   )
 }

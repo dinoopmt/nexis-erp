@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Save, X } from 'lucide-react'
+import { Save } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { API_URL } from '../../../config/config'
 
 const UserForm = ({ user, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
@@ -24,7 +26,7 @@ const UserForm = ({ user, onSave, onCancel }) => {
 
   const fetchRoles = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/v1/roles')
+      const response = await fetch(`${API_URL}/roles`)
       if (response.ok) {
         const rolesData = await response.json()
         setRoles(rolesData)
@@ -54,20 +56,31 @@ const UserForm = ({ user, onSave, onCancel }) => {
   }, [user])
 
   const validateForm = () => {
-    const newErrors = {}
-
-    if (!formData.username.trim()) newErrors.username = 'Username is required'
-    if (!formData.email.trim()) newErrors.email = 'Email is required'
-    if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required'
-    if (!formData.role) newErrors.role = 'Role is required'
-
-    if (!user && !formData.password) newErrors.password = 'Password is required'
-    if (!user && formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match'
+    if (!formData.username.trim()) {
+      toast.error('Username is required', { duration: 3000, position: 'top-center' })
+      return false
     }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    if (!formData.email.trim()) {
+      toast.error('Email is required', { duration: 3000, position: 'top-center' })
+      return false
+    }
+    if (!formData.fullName.trim()) {
+      toast.error('Full name is required', { duration: 3000, position: 'top-center' })
+      return false
+    }
+    if (!formData.role) {
+      toast.error('Role is required', { duration: 3000, position: 'top-center' })
+      return false
+    }
+    if (!user && !formData.password) {
+      toast.error('Password is required', { duration: 3000, position: 'top-center' })
+      return false
+    }
+    if (!user && formData.password !== formData.confirmPassword) {
+      toast.error('Passwords do not match', { duration: 3000, position: 'top-center' })
+      return false
+    }
+    return true
   }
 
   const handleInputChange = (e) => {
@@ -76,12 +89,6 @@ const UserForm = ({ user, onSave, onCancel }) => {
       ...prev,
       [name]: value,
     }))
-    if (errors[name]) {
-      setErrors((prev) => ({
-        ...prev,
-        [name]: '',
-      }))
-    }
   }
 
   const handleSubmit = async (e) => {
@@ -93,8 +100,8 @@ const UserForm = ({ user, onSave, onCancel }) => {
 
     try {
       const endpoint = user 
-        ? `http://localhost:5000/api/v1/users/${user._id}` 
-        : 'http://localhost:5000/api/v1/users'
+        ? `${API_URL}/users/${user._id}` 
+        : `${API_URL}/users`
       const method = user ? 'PUT' : 'POST'
 
       // Prepare data - exclude password fields if updating
@@ -125,13 +132,14 @@ const UserForm = ({ user, onSave, onCancel }) => {
 
       if (response.ok) {
         const savedUser = await response.json()
+        toast.success(user ? 'User updated successfully!' : 'User created successfully!', { duration: 3000, position: 'top-center' })
         onSave(savedUser)
       } else {
         const errorData = await response.json().catch(() => ({}))
-        setErrors({ submit: errorData.message || 'Error saving user' })
+        toast.error(errorData.message || 'Error saving user', { duration: 3000, position: 'top-center' })
       }
     } catch (error) {
-      setErrors({ submit: 'Error saving user' })
+      toast.error('Error saving user', { duration: 3000, position: 'top-center' })
       console.error('Error:', error)
     } finally {
       setLoading(false)
@@ -139,20 +147,7 @@ const UserForm = ({ user, onSave, onCancel }) => {
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <h3 className="text-base font-semibold text-gray-900">
-          {user ? 'Edit User' : 'Create New User'}
-        </h3>
-        <button
-          onClick={onCancel}
-          className="p-1 hover:bg-gray-100 rounded transition"
-        >
-          <X size={20} className="text-gray-600" />
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-2">
+    <form onSubmit={handleSubmit} className="space-y-2">
         {/* General Info */}
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
           <h4 className="text-sm font-semibold text-gray-900 mb-2">User Information</h4>
@@ -167,11 +162,8 @@ const UserForm = ({ user, onSave, onCancel }) => {
                 value={formData.username}
                 onChange={handleInputChange}
                 placeholder="e.g., john.doe"
-                className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.username ? 'border-red-500' : 'border-gray-300'
-                }`}
+                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              {errors.username && <p className="text-xs text-red-600 mt-0">{errors.username}</p>}
             </div>
 
             <div>
@@ -184,11 +176,8 @@ const UserForm = ({ user, onSave, onCancel }) => {
                 value={formData.email}
                 onChange={handleInputChange}
                 placeholder="john@alarab.com"
-                className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.email ? 'border-red-500' : 'border-gray-300'
-                }`}
+                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              {errors.email && <p className="text-xs text-red-600 mt-0">{errors.email}</p>}
             </div>
 
             <div>
@@ -201,11 +190,8 @@ const UserForm = ({ user, onSave, onCancel }) => {
                 value={formData.fullName}
                 onChange={handleInputChange}
                 placeholder="John Doe"
-                className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.fullName ? 'border-red-500' : 'border-gray-300'
-                }`}
+                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              {errors.fullName && <p className="text-xs text-red-600 mt-0">{errors.fullName}</p>}
             </div>
 
             <div>
@@ -236,9 +222,7 @@ const UserForm = ({ user, onSave, onCancel }) => {
                 name="role"
                 value={formData.role}
                 onChange={handleInputChange}
-                className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.role ? 'border-red-500' : 'border-gray-300'
-                }`}
+                className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Select a role</option>
                 {roles.map((role) => (
@@ -247,7 +231,6 @@ const UserForm = ({ user, onSave, onCancel }) => {
                   </option>
                 ))}
               </select>
-              {errors.role && <p className="text-xs text-red-600 mt-0">{errors.role}</p>}
             </div>
 
             <div>
@@ -282,11 +265,8 @@ const UserForm = ({ user, onSave, onCancel }) => {
                   value={formData.password}
                   onChange={handleInputChange}
                   placeholder="Enter password"
-                  className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    errors.password ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                {errors.password && <p className="text-xs text-red-600 mt-0">{errors.password}</p>}
               </div>
 
               <div>
@@ -299,20 +279,10 @@ const UserForm = ({ user, onSave, onCancel }) => {
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
                   placeholder="Confirm password"
-                  className={`w-full px-3 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
-                  }`}
+                  className="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                {errors.confirmPassword && <p className="text-xs text-red-600 mt-0">{errors.confirmPassword}</p>}
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Error Message */}
-        {errors.submit && (
-          <div className="p-2 rounded-lg text-sm bg-red-50 text-red-700 border border-red-200">
-            {errors.submit}
           </div>
         )}
 
@@ -335,10 +305,9 @@ const UserForm = ({ user, onSave, onCancel }) => {
           </button>
         </div>
       </form>
-    </div>
-  )
-}
-
-export default UserForm
+    )
+  }
+  
+  export default UserForm
 
 

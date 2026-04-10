@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Save, ToggleRight, ToggleLeft } from 'lucide-react'
+import { showToast } from '../../../components/shared/AnimatedCenteredToast.jsx'
 
 const BasicSettings = () => {
   const [settings, setSettings] = useState({
@@ -43,7 +44,6 @@ const BasicSettings = () => {
   })
 
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
 
   const handleToggle = (key) => {
     setSettings((prev) => ({
@@ -63,7 +63,6 @@ const BasicSettings = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setMessage('')
 
     try {
       const response = await fetch('/api/v1/settings/system', {
@@ -73,12 +72,12 @@ const BasicSettings = () => {
       })
 
       if (response.ok) {
-        setMessage('Settings updated successfully!')
+        showToast('success', 'Settings updated successfully!')
       } else {
-        setMessage('Error updating settings')
+        showToast('error', 'Error updating settings')
       }
     } catch (error) {
-      setMessage('Error updating settings')
+      showToast('error', `Error: ${error.message}`)
       console.error('Error:', error)
     } finally {
       setLoading(false)
@@ -105,8 +104,15 @@ const BasicSettings = () => {
   )
 
   return (
-    <div className="space-y-2">
-      <form onSubmit={handleSubmit} className="space-y-2">
+    <div className="w-full h-full flex flex-col bg-white">
+      {/* STICKY HEADER */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
+        <h2 className="text-lg font-bold text-gray-900">Basic Store Settings</h2>
+      </div>
+
+      {/* SCROLLABLE CONTENT */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <form onSubmit={handleSubmit} className="space-y-2">
         {/* System Settings */}
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
           <h3 className="text-base font-semibold text-gray-900 mb-2">System Settings</h3>
@@ -353,19 +359,6 @@ const BasicSettings = () => {
           </div>
         </div>
 
-        {/* Message */}
-        {message && (
-          <div
-            className={`p-2 rounded-lg text-sm ${
-              message.includes('successfully')
-                ? 'bg-green-50 text-green-700 border border-green-200'
-                : 'bg-red-50 text-red-700 border border-red-200'
-            }`}
-          >
-            {message}
-          </div>
-        )}
-
         {/* Action Buttons */}
         <div className="flex gap-2 justify-end">
           <button
@@ -383,7 +376,8 @@ const BasicSettings = () => {
             {loading ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
-      </form>
+        </form>
+      </div>
     </div>
   )
 }

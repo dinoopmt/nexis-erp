@@ -90,7 +90,7 @@ export const updateRole = async (req, res) => {
     };
 
     // Update role
-    const updatedRole = await Role.findByIdAndUpdate(roleId, updateData, { new: true });
+    const updatedRole = await Role.findByIdAndUpdate(roleId, updateData, { returnDocument: 'after' });
 
     res.status(200).json(updatedRole);
   } catch (error) {

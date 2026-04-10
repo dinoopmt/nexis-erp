@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2 } from 'lucide-react'
-import RoleForm from './RoleForm'
+import toast from 'react-hot-toast'
+import RoleFormModal from './RoleFormModal'
+import { API_URL } from '../../../config/config'
 
 const RoleManagement = () => {
   const [roles, setRoles] = useState([])
@@ -9,21 +11,20 @@ const RoleManagement = () => {
   const [showForm, setShowForm] = useState(false)
   const [editingRole, setEditingRole] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
 
   // Fetch roles from database
   const fetchRoles = async () => {
     try {
       setInitialLoading(true)
-      const response = await fetch('http://localhost:5000/api/v1/roles')
+      const response = await fetch(`${API_URL}/roles`)
       if (response.ok) {
         const data = await response.json()
         setRoles(data)
       } else {
-        setMessage('Error fetching roles')
+        toast.error('Error fetching roles')
       }
     } catch (error) {
-      setMessage('Error fetching roles')
+      toast.error('Error fetching roles')
       console.error('Error:', error)
     } finally {
       setInitialLoading(false)
@@ -49,19 +50,18 @@ const RoleManagement = () => {
 
     setLoading(true)
     try {
-      const response = await fetch(`http://localhost:5000/api/v1/roles/${roleId}`, {
+      const response = await fetch(`${API_URL}/roles/${roleId}`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
         setRoles(roles.filter((r) => r._id !== roleId))
-        setMessage('Role deleted successfully!')
-        setTimeout(() => setMessage(''), 3000)
+        toast.success('Role deleted successfully!')
       } else {
-        setMessage('Error deleting role')
+        toast.error('Error deleting role')
       }
     } catch (error) {
-      setMessage('Error deleting role')
+      toast.error('Error deleting role')
       console.error('Error:', error)
     } finally {
       setLoading(false)
@@ -74,13 +74,7 @@ const RoleManagement = () => {
     } else {
       setRoles([...roles, updatedRole])
     }
-    setShowForm(false)
-    setMessage(editingRole ? 'Role updated successfully!' : 'Role created successfully!')
-    setTimeout(() => setMessage(''), 3000)
-  }
-
-  if (showForm) {
-    return <RoleForm role={editingRole} onSave={handleSaveRole} onCancel={() => setShowForm(false)} />
+    // Don't close modal - user will close manually
   }
 
   if (initialLoading) {
@@ -88,13 +82,20 @@ const RoleManagement = () => {
   }
 
   return (
-    <div className="space-y-2">
-      {/* Message */}
-      {message && (
-        <div className="p-2 rounded-lg text-sm bg-green-50 text-green-700 border border-green-200">
-          {message}
-        </div>
-      )}
+    <>
+      <RoleFormModal 
+        role={editingRole} 
+        onSave={handleSaveRole} 
+        onCancel={() => setShowForm(false)}
+        isOpen={showForm}
+      />
+      
+      <div className="space-y-4">
+      {/* Main Header */}
+      <div className="border-b border-gray-200 pb-4">
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">Role Management</h2>
+        <p className="text-sm text-gray-600">Create, edit, and manage user roles and their permissions</p>
+      </div>
 
       {/* Header with Add Button */}
       <div className="flex justify-between items-center">
@@ -193,7 +194,8 @@ const RoleManagement = () => {
           <p className="text-lg font-bold text-purple-900">10</p>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
 

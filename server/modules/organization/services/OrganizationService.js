@@ -114,18 +114,43 @@ class OrganizationService {
         throw error;
       }
 
-      // If parent exists, validate and calculate level
-      if (orgData.parentId) {
-        const parent = await Organization.findById(orgData.parentId);
-        if (!parent) {
-          const error = new Error('Parent organization not found');
-          error.status = 404;
+      // 🔐 MANDATORY: Check if this is the first organization
+      const organizationCount = await Organization.countDocuments();
+      const isFirstOrganization = organizationCount === 0;
+
+      if (isFirstOrganization) {
+        // Business Rule: First organization MUST be HEAD_OFFICE
+        if (orgData.type !== 'HEAD_OFFICE') {
+          const error = new Error('❌ First organization in the system must be a Head Office');
+          error.status = 400;
           throw error;
         }
-        orgData.level = parent.level + 1;
-      } else {
+
+        // Business Rule: First organization CANNOT have a parent
+        if (orgData.parentId) {
+          const error = new Error('❌ First organization cannot have a parent organization');
+          error.status = 400;
+          throw error;
+        }
+
         orgData.level = 0;
-        orgData.type = 'HEAD_OFFICE';
+      } else {
+        // If parent exists, validate and calculate level
+        if (orgData.parentId) {
+          const parent = await Organization.findById(orgData.parentId);
+          if (!parent) {
+            const error = new Error('Parent organization not found');
+            error.status = 404;
+            throw error;
+          }
+          orgData.level = parent.level + 1;
+        } else {
+          orgData.level = 0;
+          // Only allow HEAD_OFFICE if no parent
+          if (!orgData.type) {
+            orgData.type = 'HEAD_OFFICE';
+          }
+        }
       }
 
       const org = new Organization(orgData);
@@ -134,7 +159,8 @@ class OrganizationService {
       logger.info('Organization created', { 
         orgId: org._id, 
         name: org.name,
-        code: org.code 
+        code: org.code,
+        isFirstOrganization
       });
 
       return await this.getBranchById(org._id);

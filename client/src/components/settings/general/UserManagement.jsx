@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
-import UserForm from './UserForm'
+import UserFormModal from './UserFormModal'
 
 const UserManagement = () => {
   const [users, setUsers] = useState([])
@@ -76,10 +76,6 @@ const UserManagement = () => {
     setTimeout(() => setMessage(''), 3000)
   }
 
-  if (showForm) {
-    return <UserForm user={editingUser} onSave={handleSaveUser} onCancel={() => setShowForm(false)} />
-  }
-
   if (initialLoading) {
     return (
       <div className="space-y-2">
@@ -89,7 +85,14 @@ const UserManagement = () => {
   }
 
   return (
-    <div className="space-y-2">
+    <>
+      <div className="space-y-4">
+      {/* Main Header */}
+      <div className="border-b border-gray-200 pb-4">
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">User Management</h2>
+        <p className="text-sm text-gray-600">Manage system users, assign roles, and control access permissions</p>
+      </div>
+
       {/* Message */}
       {message && (
         <div className="p-2 rounded-lg text-sm bg-green-50 text-green-700 border border-green-200">
@@ -184,7 +187,13 @@ const UserManagement = () => {
           <p className="text-lg font-bold text-red-900">{users.filter((u) => u.status === 'inactive').length}</p>
         </div>
       </div>
-    </div>
+      </div>
+
+      {/* Modal Overlay */}
+      {showForm && (
+        <UserFormModal user={editingUser} onSave={handleSaveUser} onCancel={() => setShowForm(false)} />
+      )}
+    </>
   )
 }
 

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, X, Edit, Trash2, Building2, FileText, MapPin, Phone, Mail, MapPinIcon, AlertCircle, Check } from 'lucide-react'
+import { toast } from 'react-hot-toast'
 import axios from 'axios'
 
 const OrganizationManagement = () => {
   const [organizations, setOrganizations] = useState([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
@@ -18,7 +17,7 @@ const OrganizationManagement = () => {
     parentId: null,
     address: '',
     city: '',
-    country: 'UAE',
+    country: 'AE',
     postalCode: '',
     phone: '',
     email: '',
@@ -36,7 +35,6 @@ const OrganizationManagement = () => {
   const fetchOrganizations = async () => {
     try {
       setLoading(true)
-      setError('')
       const response = await axios.get('/api/v1/organizations/tree')
       if (response.data.success) {
         // Ensure data is always an array
@@ -48,9 +46,12 @@ const OrganizationManagement = () => {
       if (err.response?.data?.message?.includes('No organizations found')) {
         setOrganizations([])
       } else {
-        setError('Failed to load organizations: ' + (err.response?.data?.message || err.message))
+        toast.error(`Failed to load organizations: ${err.response?.data?.message || err.message}`, {
+          duration: 4000,
+          position: 'top-right'
+        })
+        console.error('Error fetching organizations:', err)
       }
-      console.error('Error fetching organizations:', err)
     } finally {
       setLoading(false)
     }
@@ -64,7 +65,7 @@ const OrganizationManagement = () => {
       parentId: null,
       address: '',
       city: '',
-      country: 'UAE',
+      country: 'AE',
       postalCode: '',
       phone: '',
       email: '',
@@ -87,12 +88,34 @@ const OrganizationManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
+
+    // Check if this is first organization
+    const isFirstOrg = organizations.length === 0
 
     if (!formData.name.trim() || !formData.code.trim()) {
-      setError('Name and Code are required')
+      toast.error('Name and Code are required', {
+        duration: 4000,
+        position: 'top-right'
+      })
       return
+    }
+
+    // 🔐 Business Rule: First org must be HEAD_OFFICE with no parent
+    if (isFirstOrg) {
+      if (formData.type !== 'HEAD_OFFICE') {
+        toast.error('⚠️ First organization must be Head Office', {
+          duration: 4000,
+          position: 'top-right'
+        })
+        return
+      }
+      if (formData.parentId) {
+        toast.error('⚠️ First organization cannot have a parent', {
+          duration: 4000,
+          position: 'top-right'
+        })
+        return
+      }
     }
 
     try {
@@ -108,12 +131,18 @@ const OrganizationManagement = () => {
       }
 
       if (response.data.success) {
-        setSuccess(editingId ? 'Organization updated successfully!' : 'Organization created successfully!')
+        toast.success(editingId ? 'Organization updated successfully!' : 'Organization created successfully!', {
+          duration: 4000,
+          position: 'top-right'
+        })
         resetForm()
         fetchOrganizations()
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Error saving organization')
+      toast.error(`Error saving organization: ${err.response?.data?.message || err.message}`, {
+        duration: 4000,
+        position: 'top-right'
+      })
       console.error('Error:', err)
     } finally {
       setLoading(false)
@@ -129,11 +158,17 @@ const OrganizationManagement = () => {
       setLoading(true)
       const response = await axios.delete(`/api/v1/organizations/${orgId}`)
       if (response.data.success) {
-        setSuccess('Organization deleted successfully!')
+        toast.success('Organization deleted successfully!', {
+          duration: 4000,
+          position: 'top-right'
+        })
         fetchOrganizations()
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Error deleting organization')
+      toast.error(`Error deleting organization: ${err.response?.data?.message || err.message}`, {
+        duration: 4000,
+        position: 'top-right'
+      })
       console.error('Error:', err)
     } finally {
       setLoading(false)
@@ -148,7 +183,7 @@ const OrganizationManagement = () => {
       parentId: org.parentId || null,
       address: org.address || '',
       city: org.city || '',
-      country: org.country || 'UAE',
+      country: org.country || 'AE',
       postalCode: org.postalCode || '',
       phone: org.phone || '',
       email: org.email || '',
@@ -159,6 +194,11 @@ const OrganizationManagement = () => {
     })
     setEditingId(org._id)
     setShowForm(true)
+  }
+
+  const getCountryName = (countryCode) => {
+    const country = countries.find(c => c.code === countryCode)
+    return country ? country.name : countryCode
   }
 
   const getTypeIcon = (type) => {
@@ -198,18 +238,23 @@ const OrganizationManagement = () => {
     { value: 'STORE', label: 'Store' },
   ]
 
-  const countries = ['UAE', 'Oman', 'India']
+  // Country codes matching Organization model enum: ['AE', 'OM', 'IN']
+  const countries = [
+    { code: 'AE', name: 'United Arab Emirates' },
+    { code: 'OM', name: 'Oman' },
+    { code: 'IN', name: 'India' },
+  ]
 
   const currencies = {
-    UAE: 'AED',
-    Oman: 'OMR',
-    India: 'INR',
+    AE: 'AED',
+    OM: 'OMR',
+    IN: 'INR',
   }
 
   const timezones = {
-    UAE: 'Asia/Dubai',
-    Oman: 'Asia/Muscat',
-    India: 'Asia/Kolkata',
+    AE: 'Asia/Dubai',
+    OM: 'Asia/Muscat',
+    IN: 'Asia/Kolkata',
   }
 
   const getValidTypes = (type) => {
@@ -239,52 +284,52 @@ const OrganizationManagement = () => {
     const hasChildren = node.children && node.children.length > 0
 
     return (
-      <div key={node._id} className="ml-4 border-l-2 border-gray-300">
-        <div className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200 my-1 hover:shadow-md transition">
+      <div key={node._id} className="ml-2 border-l-2 border-gray-300">
+        <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-gray-200 my-0.5 hover:shadow-md transition">
           {/* Expand/Collapse */}
           {hasChildren && (
             <button
               onClick={() => setExpandedId(isExpanded ? null : node._id)}
-              className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600 text-xs"
             >
               {isExpanded ? '▼' : '▶'}
             </button>
           )}
-          {!hasChildren && <span className="flex-shrink-0 w-5" />}
+          {!hasChildren && <span className="flex-shrink-0 w-3" />}
 
           {/* Type Icon & Name */}
-          <span className="text-lg">{getTypeIcon(node.type)}</span>
+          <span className="text-base">{getTypeIcon(node.type)}</span>
           <div className="flex-grow min-w-0">
-            <p className="font-medium text-sm text-gray-900">{node.name}</p>
+            <p className="font-medium text-xs text-gray-900">{node.name}</p>
             <p className="text-xs text-gray-500">{node.code}</p>
           </div>
 
           {/* Type Badge */}
-          <span className={`text-xs font-medium px-2 py-1 rounded ${getTypeColor(node.type)}`}>
+          <span className={`text-xs font-medium px-1.5 py-0.5 rounded text-sm ${getTypeColor(node.type)}`}>
             {node.type.replace(/_/g, ' ')}
           </span>
 
           {/* City */}
-          {node.city && <span className="text-xs text-gray-600 px-2 py-1 bg-gray-100 rounded">{node.city}</span>}
+          {node.city && <span className="text-xs text-gray-600 px-1.5 py-0.5 bg-gray-100 rounded text-xs">{node.city}</span>}
 
           {/* Country */}
-          <span className="text-xs font-medium px-2 py-1 bg-blue-50 text-blue-700 rounded">{node.country}</span>
+          <span className="text-xs font-medium px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">{getCountryName(node.country)}</span>
 
           {/* Actions */}
-          <div className="flex gap-1 flex-shrink-0">
+          <div className="flex gap-0.5 flex-shrink-0">
             <button
               onClick={() => onEdit(node)}
-              className="p-1 hover:bg-blue-100 text-blue-600 rounded"
+              className="p-0.5 hover:bg-blue-100 text-blue-600 rounded"
               title="Edit"
             >
-              <Edit size={16} />
+              <Edit size={14} />
             </button>
             <button
               onClick={() => onDelete(node._id)}
-              className="p-1 hover:bg-red-100 text-red-600 rounded"
+              className="p-0.5 hover:bg-red-100 text-red-600 rounded"
               title="Delete"
             >
-              <Trash2 size={16} />
+              <Trash2 size={14} />
             </button>
           </div>
         </div>
@@ -302,35 +347,29 @@ const OrganizationManagement = () => {
   }
 
   return (
-    <div className="space-y-3">
-      {/* Success/Error Messages */}
-      {success && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 text-green-700 border border-green-200 text-xs">
-          <Check size={16} />
-          <span>{success}</span>
+    <div className="space-y-2">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 bg-white mb-2 pb-2 border-b border-gray-200">
+        <div className="flex items-center gap-2 mb-1">
+          <Building2 size={20} className="text-blue-600" />
+          <h1 className="text-lg font-bold text-gray-900">Organization Management</h1>
         </div>
-      )}
-
-      {error && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs">
-          <AlertCircle size={16} />
-          <span>{error}</span>
-        </div>
-      )}
+        <p className="text-xs text-gray-600">Create and manage your organization hierarchy</p>
+      </div>
 
       {/* Create Button */}
       <div className="flex gap-2">
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+          className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"
         >
-          <Plus size={16} />
+          <Plus size={14} />
           New Organization
         </button>
         <button
           onClick={fetchOrganizations}
           disabled={loading}
-          className="px-3 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition disabled:opacity-50"
+          className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-300 transition disabled:opacity-50"
         >
           Refresh
         </button>
@@ -338,26 +377,35 @@ const OrganizationManagement = () => {
 
       {/* Create/Edit Form */}
       {showForm && (
-        <div className="bg-white border border-gray-300 rounded-lg p-3 space-y-3">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-base font-semibold text-gray-900">
+        <div className="bg-white border border-gray-300 rounded-lg p-2 space-y-2">
+          <div className="flex justify-between items-center mb-1">
+            <h3 className="text-sm font-semibold text-gray-900">
               {editingId ? 'Edit Organization' : 'Create New Organization'}
             </h3>
             <button
               onClick={resetForm}
               className="text-gray-500 hover:text-gray-700"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3">
+          {/* Information Banner for First Organization */}
+          {organizations.length === 0 && !editingId && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2">
+              <p className="text-xs text-amber-700 font-medium">
+                ℹ️ <strong>First Organization Requirement:</strong> The first organization must be a Head Office with no parent. Hierarchy creation will be available after this is created.
+              </p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-2">
             {/* Basic Information */}
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Basic Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+              <h4 className="text-xs font-semibold text-gray-900 mb-1">Basic Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Organization Name *
                   </label>
                   <input
@@ -366,13 +414,13 @@ const OrganizationManagement = () => {
                     value={formData.name}
                     onChange={handleInputChange}
                     placeholder="e.g., Head Office Dubai"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Organization Code *
                   </label>
                   <input
@@ -381,89 +429,97 @@ const OrganizationManagement = () => {
                     value={formData.code}
                     onChange={handleInputChange}
                     placeholder="e.g., HO-001"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Organization Type *
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                    Organization Type * {organizations.length === 0 && <span className="text-amber-600 text-xs">(First org must be Head Office)</span>}
                   </label>
                   <select
                     name="type"
                     value={formData.type}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={organizations.length === 0}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
-                    {organizationTypes.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
+                    {organizations.length === 0 ? (
+                      <option value="HEAD_OFFICE">Head Office (Required for first organization)</option>
+                    ) : (
+                      organizationTypes.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Parent Organization
-                  </label>
-                  <select
-                    name="parentId"
-                    value={formData.parentId || ''}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        parentId: e.target.value || null,
-                      }))
-                    }
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">-- None (Head Office) --</option>
-                    {flattenOrganizations(organizations)
-                      .filter((org) => org._id !== editingId && org.type !== 'STORE')
-                      .map((org) => (
-                        <option key={org._id} value={org._id}>
-                          {getTypeIcon(org.type)} {org.name} ({org.code})
-                        </option>
-                      ))}
-                  </select>
-                </div>
+                {/* Only show Parent Organization if NOT first organization */}
+                {organizations.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                      Parent Organization
+                    </label>
+                    <select
+                      name="parentId"
+                      value={formData.parentId || ''}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          parentId: e.target.value || null,
+                        }))
+                      }
+                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">-- None (Head Office) --</option>
+                      {flattenOrganizations(organizations)
+                        .filter((org) => org._id !== editingId && org.type !== 'STORE')
+                        .map((org) => (
+                          <option key={org._id} value={org._id}>
+                            {getTypeIcon(org.type)} {org.name} ({org.code})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Location Information */}
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Location Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+              <h4 className="text-xs font-semibold text-gray-900 mb-1">Location Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Country *
                   </label>
                   <select
                     name="country"
                     value={formData.country}
                     onChange={(e) => {
-                      const country = e.target.value
+                      const countryCode = e.target.value
                       setFormData((prev) => ({
                         ...prev,
-                        country,
-                        currency: currencies[country] || prev.currency,
-                        timezone: timezones[country] || prev.timezone,
+                        country: countryCode,
+                        currency: currencies[countryCode] || prev.currency,
+                        timezone: timezones[countryCode] || prev.timezone,
                       }))
                     }}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     {countries.map((country) => (
-                      <option key={country} value={country}>
-                        {country}
+                      <option key={country.code} value={country.code}>
+                        {country.name}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     City *
                   </label>
                   <input
@@ -472,13 +528,13 @@ const OrganizationManagement = () => {
                     value={formData.city}
                     onChange={handleInputChange}
                     placeholder="e.g., Dubai"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Address
                   </label>
                   <input
@@ -487,12 +543,12 @@ const OrganizationManagement = () => {
                     value={formData.address}
                     onChange={handleInputChange}
                     placeholder="Street address"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Postal Code
                   </label>
                   <input
@@ -501,18 +557,18 @@ const OrganizationManagement = () => {
                     value={formData.postalCode}
                     onChange={handleInputChange}
                     placeholder="12345"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               </div>
             </div>
 
             {/* Contact Information */}
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Contact Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+              <h4 className="text-xs font-semibold text-gray-900 mb-1">Contact Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Phone
                   </label>
                   <input
@@ -521,12 +577,12 @@ const OrganizationManagement = () => {
                     value={formData.phone}
                     onChange={handleInputChange}
                     placeholder="+971-4-1234567"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Email
                   </label>
                   <input
@@ -535,25 +591,25 @@ const OrganizationManagement = () => {
                     value={formData.email}
                     onChange={handleInputChange}
                     placeholder="contact@example.com"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               </div>
             </div>
 
             {/* Settings */}
-            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-2">Settings</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
+              <h4 className="text-xs font-semibold text-gray-900 mb-1">Settings</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Currency
                   </label>
                   <select
                     name="currency"
                     value={formData.currency}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="AED">AED - United Arab Emirates Dirham</option>
                     <option value="USD">USD - United States Dollar</option>
@@ -563,14 +619,14 @@ const OrganizationManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Timezone
                   </label>
                   <select
                     name="timezone"
                     value={formData.timezone}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="Asia/Dubai">Asia/Dubai (UAE)</option>
                     <option value="Asia/Muscat">Asia/Muscat (Oman)</option>
@@ -579,7 +635,7 @@ const OrganizationManagement = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
                     Tax Number
                   </label>
                   <input
@@ -588,18 +644,18 @@ const OrganizationManagement = () => {
                     value={formData.taxNumber}
                     onChange={handleInputChange}
                     placeholder="VAT/GST/Tax ID"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
-                <div className="flex items-center gap-2 p-2 bg-white border border-gray-300 rounded-lg">
+                <div className="flex items-center gap-1 p-1 bg-white border border-gray-300 rounded-lg">
                   <input
                     type="checkbox"
                     id="allowTransfer"
                     name="allowInventoryTransfer"
                     checked={formData.allowInventoryTransfer}
                     onChange={handleInputChange}
-                    className="w-4 h-4 rounded"
+                    className="w-3 h-3 rounded"
                   />
                   <label htmlFor="allowTransfer" className="text-xs font-medium text-gray-700 flex-grow">
                     Allow Inventory Transfer
@@ -613,16 +669,16 @@ const OrganizationManagement = () => {
               <button
                 type="button"
                 onClick={resetForm}
-                className="px-3 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition"
+                className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-300 transition"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
               >
-                <FileText size={16} />
+                <FileText size={14} />
                 {editingId ? 'Update' : 'Create'} Organization
               </button>
             </div>
@@ -631,20 +687,20 @@ const OrganizationManagement = () => {
       )}
 
       {/* Organizations List */}
-      <div className="bg-white border border-gray-200 rounded-lg p-3">
-        <h3 className="text-base font-semibold text-gray-900 mb-3">Organization Hierarchy</h3>
+      <div className="bg-white border border-gray-200 rounded-lg p-2">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Organization Hierarchy</h3>
 
         {loading && !organizations.length ? (
-          <div className="text-center py-4">
-            <p className="text-gray-500 text-sm">Loading organizations...</p>
+          <div className="text-center py-2">
+            <p className="text-gray-500 text-xs">Loading organizations...</p>
           </div>
         ) : organizations.length === 0 ? (
-          <div className="text-center py-4">
-            <Building2 className="mx-auto text-gray-300 mb-2" size={32} />
-            <p className="text-gray-500 text-sm">No organizations created yet. Create your first head office above.</p>
+          <div className="text-center py-2">
+            <Building2 className="mx-auto text-gray-300 mb-1" size={24} />
+            <p className="text-gray-500 text-xs">No organizations created yet. Create your first head office above.</p>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {organizations.map((org) => (
               <RecursiveOrgNode
                 key={org._id}

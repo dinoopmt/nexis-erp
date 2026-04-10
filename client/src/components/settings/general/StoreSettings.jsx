@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, X, Printer, Barcode, Settings, Scale } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../../../config/config';
+import TerminalFormModal from './TerminalFormModal';
 
 const StoreSettings = () => {
   const [storeData, setStoreData] = useState({
@@ -76,7 +77,8 @@ const StoreSettings = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeTerminalIndex, setActiveTerminalIndex] = useState(0);
-  const [addingTerminal, setAddingTerminal] = useState(false);
+  const [showTerminalModal, setShowTerminalModal] = useState(false);
+  const [editingTerminal, setEditingTerminal] = useState(null);
 
   useEffect(() => {
     fetchStoreSettings();
@@ -147,31 +149,34 @@ const StoreSettings = () => {
     }));
   };
 
-  const handleTerminalChange = (field, value) => {
-    const updatedTerminals = [...storeData.terminalSettings];
-    updatedTerminals[activeTerminalIndex] = {
-      ...updatedTerminals[activeTerminalIndex],
-      [field]: value
-    };
-    setStoreData(prev => ({ ...prev, terminalSettings: updatedTerminals }));
+  const addTerminal = () => {
+    setEditingTerminal(null);
+    setShowTerminalModal(true);
   };
 
-  const addTerminal = () => {
-    const newTerminal = {
-      terminalId: '',
-      terminalName: '',
-      invoiceNumberPrefix: '',
-      invoiceFormat: 'STANDARD',
-      enableCreditSale: true,
-      enableReturns: true,
-      enablePromotions: true,
-    };
-    setStoreData(prev => ({
-      ...prev,
-      terminalSettings: [...prev.terminalSettings, newTerminal]
-    }));
-    setActiveTerminalIndex(storeData.terminalSettings.length);
-    setAddingTerminal(false);
+  const handleSaveTerminal = (terminalData) => {
+    if (editingTerminal !== null) {
+      // Update existing terminal
+      const updatedTerminals = [...storeData.terminalSettings];
+      updatedTerminals[editingTerminal] = terminalData;
+      setStoreData(prev => ({ ...prev, terminalSettings: updatedTerminals }));
+      setActiveTerminalIndex(editingTerminal);
+    } else {
+      // Add new terminal
+      setStoreData(prev => ({
+        ...prev,
+        terminalSettings: [...prev.terminalSettings, terminalData]
+      }));
+      setActiveTerminalIndex(storeData.terminalSettings.length);
+    }
+    setShowTerminalModal(false);
+    setSuccess(editingTerminal !== null ? 'Terminal updated successfully' : 'Terminal added successfully');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleEditTerminal = (index) => {
+    setEditingTerminal(index);
+    setShowTerminalModal(true);
   };
 
   const removeTerminal = (index) => {
@@ -204,7 +209,13 @@ const StoreSettings = () => {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Main Header */}
+      <div className="border-b border-gray-200 pb-4">
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">Store Settings</h2>
+        <p className="text-sm text-gray-600">Configure store information, inventory controls, and operational settings</p>
+      </div>
+
       {/* Error & Success Messages */}
       {error && (
         <div className="p-3 bg-red-100 text-red-700 rounded-lg flex justify-between items-center text-sm">
@@ -461,122 +472,66 @@ const StoreSettings = () => {
 
       {/* Terminal-Wise Settings */}
       <div className="bg-white p-3 rounded-lg shadow">
-        <div className="flex justify-between items-center mb-2">
+        <div className="flex justify-between items-center mb-3">
           <h3 className="text-sm font-semibold text-gray-900">Terminal-Wise Configuration</h3>
           <button
-            onClick={() => setAddingTerminal(true)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-2 py-1.5 rounded-lg hover:bg-blue-700 text-xs"
+            onClick={addTerminal}
+            className="flex items-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-xs"
           >
             <Plus size={14} />
             Add Terminal
           </button>
         </div>
 
-        {/* Terminal Tabs */}
-        <div className="flex gap-1 mb-2 border-b">
-          {storeData.terminalSettings.map((terminal, index) => (
-            <div
-              key={index}
-              className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer border-b-2 transition text-xs ${
-                activeTerminalIndex === index
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
-              }`}
-              onClick={() => setActiveTerminalIndex(index)}
-            >
-              <span className="font-medium text-sm">{terminal.terminalName || `Terminal ${index + 1}`}</span>
-              {storeData.terminalSettings.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeTerminal(index);
-                  }}
-                  className="text-red-600 hover:text-red-800"
-                >
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Terminal Settings Form */}
-        <div className="space-y-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Terminal ID</label>
-              <input
-                type="text"
-                value={storeData.terminalSettings[activeTerminalIndex]?.terminalId || ''}
-                onChange={(e) => handleTerminalChange('terminalId', e.target.value)}
-                placeholder="e.g., TRM001"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Terminal Name</label>
-              <input
-                type="text"
-                value={storeData.terminalSettings[activeTerminalIndex]?.terminalName || ''}
-                onChange={(e) => handleTerminalChange('terminalName', e.target.value)}
-                placeholder="e.g., Counter 1"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Invoice Number Prefix</label>
-              <input
-                type="text"
-                value={storeData.terminalSettings[activeTerminalIndex]?.invoiceNumberPrefix || ''}
-                onChange={(e) => handleTerminalChange('invoiceNumberPrefix', e.target.value)}
-                placeholder="e.g., C1"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Invoice Format</label>
-              <select
-                value={storeData.terminalSettings[activeTerminalIndex]?.invoiceFormat || 'STANDARD'}
-                onChange={(e) => handleTerminalChange('invoiceFormat', e.target.value)}
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="STANDARD">Standard</option>
-                <option value="THERMAL">Thermal (58mm)</option>
-                <option value="THERMAL80">Thermal (80mm)</option>
-                <option value="A4">A4</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <label className="text-xs font-semibold text-gray-700 flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={storeData.terminalSettings[activeTerminalIndex]?.enableCreditSale || false}
-                onChange={(e) => handleTerminalChange('enableCreditSale', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded"
-              />
-              Enable Credit Sale
-            </label>
-            <label className="text-xs font-semibold text-gray-700 flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={storeData.terminalSettings[activeTerminalIndex]?.enableReturns || false}
-                onChange={(e) => handleTerminalChange('enableReturns', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded"
-              />
-              Enable Returns
-            </label>
-            <label className="text-xs font-semibold text-gray-700 flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={storeData.terminalSettings[activeTerminalIndex]?.enablePromotions || false}
-                onChange={(e) => handleTerminalChange('enablePromotions', e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded"
-              />
-              Enable Promotions
-            </label>
-          </div>
+        {/* Terminal List Table */}
+        <div className="mb-3 overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Terminal ID</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Terminal Name</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Invoice Format</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Features</th>
+                <th className="px-3 py-2 text-center font-medium text-gray-700">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {storeData.terminalSettings.map((terminal, index) => (
+                <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
+                  <td className="px-3 py-2 text-gray-900">{terminal.terminalId || '-'}</td>
+                  <td className="px-3 py-2 text-gray-900">{terminal.terminalName || '-'}</td>
+                  <td className="px-3 py-2 text-gray-700">{terminal.invoiceFormat}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1 flex-wrap">
+                      {terminal.enableCreditSale && <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Credit</span>}
+                      {terminal.enableReturns && <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded">Returns</span>}
+                      {terminal.enablePromotions && <span className="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">Promo</span>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <div className="flex justify-center gap-1">
+                      <button
+                        onClick={() => handleEditTerminal(index)}
+                        className="p-1 hover:bg-blue-50 rounded transition"
+                        title="Edit"
+                      >
+                        <Edit2 size={14} className="text-blue-600" />
+                      </button>
+                      {storeData.terminalSettings.length > 1 && (
+                        <button
+                          onClick={() => removeTerminal(index)}
+                          className="p-1 hover:bg-red-50 rounded transition"
+                          title="Delete"
+                        >
+                          <Trash2 size={14} className="text-red-600" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -962,6 +917,15 @@ const StoreSettings = () => {
           {isLoading ? 'Saving...' : 'Save Store Settings'}
         </button>
       </div>
+
+      {/* Terminal Form Modal */}
+      {showTerminalModal && (
+        <TerminalFormModal
+          terminal={editingTerminal !== null ? storeData.terminalSettings[editingTerminal] : null}
+          onSave={handleSaveTerminal}
+          onCancel={() => setShowTerminalModal(false)}
+        />
+      )}
     </div>
   );
 };

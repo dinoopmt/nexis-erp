@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Save, X } from 'lucide-react'
+import { Save } from 'lucide-react'
+import toast from 'react-hot-toast'
 import PermissionBuilder from './PermissionBuilder'
+import { API_URL } from '../../../config/config'
 
 const RoleForm = ({ role, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
@@ -62,6 +64,13 @@ const RoleForm = ({ role, onSave, onCancel }) => {
     if (formData.permissions.length === 0) newErrors.permissions = 'Select at least one permission'
 
     setErrors(newErrors)
+    
+    // Show toast for first validation error
+    if (Object.keys(newErrors).length > 0) {
+      const firstError = Object.values(newErrors)[0]
+      toast.error(firstError)
+    }
+    
     return Object.keys(newErrors).length === 0
   }
 
@@ -87,7 +96,7 @@ const RoleForm = ({ role, onSave, onCancel }) => {
     setLoading(true)
 
     try {
-      const endpoint = role ? `http://localhost:5000/api/v1/roles/${role._id}` : 'http://localhost:5000/api/v1/roles'
+      const endpoint = role ? `${API_URL}/roles/${role._id}` : `${API_URL}/roles`
       const method = role ? 'PUT' : 'POST'
 
       const response = await fetch(endpoint, {
@@ -98,11 +107,24 @@ const RoleForm = ({ role, onSave, onCancel }) => {
 
       if (response.ok) {
         const savedRole = await response.json()
+        toast.success(role ? 'Role updated successfully!' : 'Role created successfully!', {
+          duration: 3000,
+          position: 'top-center'
+        })
+        // Update parent state but don't close modal - user will close manually
         onSave(savedRole)
       } else {
+        toast.error('Error saving role', {
+          duration: 3000,
+          position: 'top-center'
+        })
         setErrors({ submit: 'Error saving role' })
       }
     } catch (error) {
+      toast.error('Error saving role', {
+        duration: 3000,
+        position: 'top-center'
+      })
       setErrors({ submit: 'Error saving role' })
       console.error('Error:', error)
     } finally {
@@ -112,18 +134,6 @@ const RoleForm = ({ role, onSave, onCancel }) => {
 
   return (
     <div className="space-y-2">
-      <div className="flex justify-between items-center">
-        <h3 className="text-base font-semibold text-gray-900">
-          {role ? 'Edit Role' : 'Create New Role'}
-        </h3>
-        <button
-          onClick={onCancel}
-          className="p-1 hover:bg-gray-100 rounded transition"
-        >
-          <X size={20} className="text-gray-600" />
-        </button>
-      </div>
-
       <form onSubmit={handleSubmit} className="space-y-2">
         {/* Basic Info */}
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
