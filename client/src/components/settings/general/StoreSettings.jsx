@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Printer, Barcode, Settings, Scale } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Printer, Barcode, Settings, Scale, Building, Cog, Monitor } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../../../config/config';
 import TerminalFormModal from './TerminalFormModal';
@@ -25,17 +25,7 @@ const StoreSettings = () => {
       enableOnlineSync: true,
       maxOfflineTransactions: 100,
     },
-    terminalSettings: [
-      {
-        terminalId: '',
-        terminalName: '',
-        invoiceNumberPrefix: '',
-        invoiceFormat: 'STANDARD',
-        enableCreditSale: true,
-        enableReturns: true,
-        enablePromotions: true,
-      },
-    ],
+    // Terminal settings removed - now managed via Terminal Management Collection
     storeControlSettings: {
       enableInventoryTracking: true,
       enableStockAlerts: true,
@@ -79,17 +69,60 @@ const StoreSettings = () => {
   const [activeTerminalIndex, setActiveTerminalIndex] = useState(0);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [editingTerminal, setEditingTerminal] = useState(null);
+  const [activeTab, setActiveTab] = useState('store-details');
+  // ✅ Terminal Management state - separate from store settings
+  const [storeId, setStoreId] = useState(null);
+  const [terminals, setTerminals] = useState([]);
+  const [loadingTerminals, setLoadingTerminals] = useState(false);
 
   useEffect(() => {
     fetchStoreSettings();
   }, []);
+
+  // Fetch terminals whenever storeId changes
+  useEffect(() => {
+    if (storeId) {
+      fetchTerminals(storeId);
+    }
+  }, [storeId]);
 
   const fetchStoreSettings = async () => {
     try {
       setIsLoading(true);
       const response = await axios.get(`${API_URL}/settings/store`);
       if (response.data.data) {
-        setStoreData(response.data.data);
+        // Merge API response with default state to ensure all fields are defined
+        setStoreData(prev => ({
+          ...prev,
+          ...response.data.data,
+          // Ensure nested objects are properly merged
+          salesControls: {
+            ...prev.salesControls,
+            ...(response.data.data.salesControls || {})
+          },
+          storeControlSettings: {
+            ...prev.storeControlSettings,
+            ...(response.data.data.storeControlSettings || {})
+          },
+          weightScaleSettings: {
+            ...prev.weightScaleSettings,
+            ...(response.data.data.weightScaleSettings || {}),
+            barcodeMeasurement: {
+              ...prev.weightScaleSettings.barcodeMeasurement,
+              ...(response.data.data.weightScaleSettings?.barcodeMeasurement || {})
+            },
+            scaleDevice: {
+              ...prev.weightScaleSettings.scaleDevice,
+              ...(response.data.data.weightScaleSettings?.scaleDevice || {})
+            }
+          }
+        }));
+        // Extract storeId for terminal management API
+        if (response.data.data._id) {
+          setStoreId(response.data.data._id);
+        } else if (response.data.data.storeId) {
+          setStoreId(response.data.data.storeId);
+        }
       }
       setError('');
     } catch (err) {
@@ -97,6 +130,25 @@ const StoreSettings = () => {
       console.error('Failed to fetch store settings:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // ✅ Fetch terminals from Terminal Management Collection API
+  const fetchTerminals = async (currentStoreId) => {
+    if (!currentStoreId) return;
+    try {
+      setLoadingTerminals(true);
+      const response = await axios.get(`${API_URL}/terminals/store/${currentStoreId}`);
+      if (response.data.data) {
+        setTerminals(Array.isArray(response.data.data) ? response.data.data : [response.data.data]);
+      } else {
+        setTerminals([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch terminals:', err);
+      setTerminals([]);
+    } finally {
+      setLoadingTerminals(false);
     }
   };
 
@@ -154,24 +206,34 @@ const StoreSettings = () => {
     setShowTerminalModal(true);
   };
 
-  const handleSaveTerminal = (terminalData) => {
-    if (editingTerminal !== null) {
-      // Update existing terminal
-      const updatedTerminals = [...storeData.terminalSettings];
-      updatedTerminals[editingTerminal] = terminalData;
-      setStoreData(prev => ({ ...prev, terminalSettings: updatedTerminals }));
-      setActiveTerminalIndex(editingTerminal);
-    } else {
-      // Add new terminal
-      setStoreData(prev => ({
-        ...prev,
-        terminalSettings: [...prev.terminalSettings, terminalData]
-      }));
-      setActiveTerminalIndex(storeData.terminalSettings.length);
+  const handleSaveTerminal = async (terminalData) => {
+    try {
+      setIsLoading(true);
+      
+      if (editingTerminal !== null) {
+        // Update existing terminal via Terminal Management API
+        // Use terminalId (not MongoDB _id) as the route parameter
+        await axios.put(`${API_URL}/terminals/${terminals[editingTerminal].terminalId}`, terminalData);
+        setSuccess('Terminal updated successfully');
+      } else {
+        // Create new terminal via Terminal Management API
+        // Add storeId to terminal data before creating
+        const terminalWithStoreId = { ...terminalData, storeId };
+        await axios.post(`${API_URL}/terminals/create`, terminalWithStoreId);
+        setSuccess('Terminal added successfully');
+      }
+      
+      // Refresh terminals list
+      if (storeId) {
+        await fetchTerminals(storeId);
+      }
+      setShowTerminalModal(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save terminal');
+    } finally {
+      setIsLoading(false);
     }
-    setShowTerminalModal(false);
-    setSuccess(editingTerminal !== null ? 'Terminal updated successfully' : 'Terminal added successfully');
-    setTimeout(() => setSuccess(''), 3000);
   };
 
   const handleEditTerminal = (index) => {
@@ -179,14 +241,29 @@ const StoreSettings = () => {
     setShowTerminalModal(true);
   };
 
-  const removeTerminal = (index) => {
-    if (storeData.terminalSettings.length <= 1) {
+  const removeTerminal = async (index) => {
+    if (terminals.length <= 1) {
       setError('At least one terminal configuration is required');
       return;
     }
-    const updatedTerminals = storeData.terminalSettings.filter((_, i) => i !== index);
-    setStoreData(prev => ({ ...prev, terminalSettings: updatedTerminals }));
-    setActiveTerminalIndex(0);
+
+    try {
+      setIsLoading(true);
+      // Delete from Terminal Management API using terminalId (not MongoDB _id)
+      await axios.delete(`${API_URL}/terminals/${terminals[index].terminalId}`);
+      setSuccess('Terminal deleted successfully');
+      
+      // Refresh terminals list
+      if (storeId) {
+        await fetchTerminals(storeId);
+      }
+      setActiveTerminalIndex(0);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete terminal');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -234,6 +311,26 @@ const StoreSettings = () => {
           </button>
         </div>
       )}
+
+      {/* Grouped Tab Navigation */}
+      <div className="flex gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200 overflow-x-auto">
+        <button onClick={() => setActiveTab('store-details')} className={`flex items-center gap-2 px-4 py-2 rounded-md whitespace-nowrap font-medium text-sm transition ${activeTab === 'store-details' ? 'bg-white text-blue-600 border border-gray-300 shadow-sm' : 'text-gray-700'}`}>
+          <Building size={16} />
+          Store Details
+        </button>
+        <button onClick={() => setActiveTab('store-settings')} className={`flex items-center gap-2 px-4 py-2 rounded-md whitespace-nowrap font-medium text-sm transition ${activeTab === 'store-settings' ? 'bg-white text-blue-600 border border-gray-300 shadow-sm' : 'text-gray-700'}`}>
+          <Cog size={16} />
+          Store Settings
+        </button>
+        <button onClick={() => setActiveTab('terminal-settings')} className={`flex items-center gap-2 px-4 py-2 rounded-md whitespace-nowrap font-medium text-sm transition ${activeTab === 'terminal-settings' ? 'bg-white text-blue-600 border border-gray-300 shadow-sm' : 'text-gray-700'}`}>
+          <Monitor size={16} />
+          Terminal Settings
+        </button>
+      </div>
+
+      {/* Tab 1: Store Details */}
+      {activeTab === 'store-details' && (
+      <>
 
       {/* Store Basic Information */}
       <div className="bg-white p-3 rounded-lg shadow">
@@ -307,6 +404,12 @@ const StoreSettings = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
+
+      {/* Tab 2: Store Settings */}
+      {activeTab === 'store-settings' && (
+      <>
 
       {/* Barcode Configuration */}
       <div className="bg-white p-3 rounded-lg shadow">
@@ -469,6 +572,12 @@ const StoreSettings = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
+
+      {/* Tab 3: Terminal Settings */}
+      {activeTab === 'terminal-settings' && (
+      <>
 
       {/* Terminal-Wise Settings */}
       <div className="bg-white p-3 rounded-lg shadow">
@@ -496,7 +605,7 @@ const StoreSettings = () => {
               </tr>
             </thead>
             <tbody>
-              {storeData.terminalSettings.map((terminal, index) => (
+              {terminals.map((terminal, index) => (
                 <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
                   <td className="px-3 py-2 text-gray-900">{terminal.terminalId || '-'}</td>
                   <td className="px-3 py-2 text-gray-900">{terminal.terminalName || '-'}</td>
@@ -517,7 +626,7 @@ const StoreSettings = () => {
                       >
                         <Edit2 size={14} className="text-blue-600" />
                       </button>
-                      {storeData.terminalSettings.length > 1 && (
+                      {terminals.length > 1 && (
                         <button
                           onClick={() => removeTerminal(index)}
                           className="p-1 hover:bg-red-50 rounded transition"
@@ -534,6 +643,12 @@ const StoreSettings = () => {
           </table>
         </div>
       </div>
+      </>
+      )}
+
+      {/* Store Control Settings & Weight Scale - Part of Store Settings */}
+      {activeTab === 'store-settings' && (
+      <>
 
       {/* Store Control Settings */}
       <div className="bg-white p-3 rounded-lg shadow">
@@ -906,8 +1021,10 @@ const StoreSettings = () => {
           </div>
         )}
       </div>
+      </>
+      )}
 
-      {/* Save Button */}
+      {/* Save Button - Outside all tabs */}
       <div className="flex justify-end gap-2">
         <button
           onClick={handleSave}
@@ -921,7 +1038,7 @@ const StoreSettings = () => {
       {/* Terminal Form Modal */}
       {showTerminalModal && (
         <TerminalFormModal
-          terminal={editingTerminal !== null ? storeData.terminalSettings[editingTerminal] : null}
+          terminal={editingTerminal !== null ? terminals[editingTerminal] : null}
           onSave={handleSaveTerminal}
           onCancel={() => setShowTerminalModal(false)}
         />

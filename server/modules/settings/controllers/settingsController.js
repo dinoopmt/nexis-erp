@@ -144,43 +144,6 @@ export async function validateLicense(req, res) {
   }
 }
 
-// Get System Settings
-export async function getSystemSettings(req, res) {
-  try {
-    let settings = await SystemSettings.findOne({ companyId: 1 });
-
-    if (!settings) {
-      // Create default settings if not found
-      settings = await SystemSettings.create({ companyId: 1 });
-    }
-
-    res.json(settings);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-}
-
-// Update System Settings
-export async function updateSystemSettings(req, res) {
-  try {
-    let settings = await SystemSettings.findOne({ companyId: 1 });
-
-    if (!settings) {
-      settings = await SystemSettings.create({ companyId: 1, ...req.body });
-    } else {
-      settings = await SystemSettings.findOneAndUpdate(
-        { companyId: 1 },
-        req.body,
-        { returnDocument: 'after' }
-      );
-    }
-
-    res.json({ message: 'System settings updated successfully', data: settings });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-}
-
 // Get All Settings (Combined)
 export async function getAllSettings(req, res) {
   try {

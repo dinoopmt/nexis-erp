@@ -28,6 +28,9 @@ import unitTypeRoutes from './modules/unit/routes/index.js';
 import productPackingRoutes from './modules/inventory/routes/productPackingRoutes.js';
 import stockBatchRoutes from './modules/inventory/routes/stockBatchRoutes.js';
 import organizationRoutes from './modules/organization/routes/organizationRoutes.js';
+import invoiceTemplateRoutes from './routes/invoiceTemplateRoutes.js';
+import invoicePdfRoutes from './routes/invoicePdfRoutes.js';
+import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,6 +74,14 @@ try {
   }
 } catch (syncErr) {
   console.warn('⚠️  Auto-sync skipped on startup (will work on first search):', syncErr.message);
+}
+
+// ✅ STEP 3: Seed invoice templates on startup
+console.log('📄 Seeding invoice templates...');
+try {
+  await seedInvoiceTemplates();
+} catch (seedErr) {
+  console.error('❌ Error seeding invoice templates:', seedErr.message);
 }
 
 // Middleware
@@ -135,6 +146,9 @@ app.use(`${apiV1}/financial-years`, masterRoutes.financialYearRoutes);
 // Settings module
 app.use(`${apiV1}/settings`, settingsRoutes.settingsRoutes);
 
+// Terminal Management module
+app.use(`${apiV1}/terminals`, settingsRoutes.terminalManagementRoutes);
+
 // Tax module
 app.use(`${apiV1}/tax-masters`, taxRoutes.taxMasterRoutes);
 app.use(`${apiV1}/countries`, taxRoutes.countryConfigRoutes);
@@ -169,6 +183,10 @@ app.use(`${apiV1}/stock-batches`, stockBatchRoutes);
 
 // Organization module (Branch Management)
 app.use(`${apiV1}/organizations`, organizationRoutes);
+
+// Invoice Printing System - Templates & PDF Generation
+app.use(`${apiV1}/invoice-templates`, invoiceTemplateRoutes);
+app.use(`${apiV1}`, invoicePdfRoutes);
 
 // Health check endpoints
 app.get('/', (req, res) => {

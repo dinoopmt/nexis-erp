@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Search, Plus, Edit2, Trash2, AlertCircle, X, Loader } from 'lucide-react'
 import useTaxMaster from '../../../hooks/useTaxMaster'
 import { showToast } from '../../../components/shared/AnimatedCenteredToast.jsx'
+import { API_URL } from '../../../config/config'
 
 const HSNManagement = () => {
   const { company } = useTaxMaster()
@@ -34,7 +35,7 @@ const HSNManagement = () => {
   const fetchAllHSNList = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/v1/hsn/list?limit=10000&page=1&isActive=true')
+      const response = await fetch(`${API_URL}/hsn/list?limit=10000&page=1&isActive=true`)
       const data = await response.json()
 
       if (data.success) {
@@ -53,7 +54,7 @@ const HSNManagement = () => {
   // Fetch Categories
   const fetchCategories = async () => {
     try {
-      const response = await fetch('/api/v1/hsn/categories')
+      const response = await fetch(`${API_URL}/hsn/categories`)
       const data = await response.json()
       if (data.success) {
         setCategories(data.data)
@@ -144,7 +145,7 @@ const HSNManagement = () => {
 
     try {
       setLoading(true)
-      const response = await fetch('/api/v1/hsn/create', {
+      const response = await fetch(`${API_URL}/hsn/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

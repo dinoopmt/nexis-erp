@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, useContext } from "react";
 import {
   Plus,
   Trash2,
@@ -26,9 +26,17 @@ import { API_URL } from "../../config/config";
 import { useDecimalFormat } from "../../hooks/useDecimalFormat";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
 import { useProductSearch } from "../../hooks/useProductSearch";
+import { useGlobalBarcodeScanner } from "../../hooks/useGlobalBarcodeScanner";
+import { createBarcodeHandler } from "../../utils/barcodeHandler";
+import { normalizeBarcode } from "../../utils/barcodeUtils";
+import { CompanyContext } from "../../context/CompanyContext";
 import InvoiceViewModal from "./salesInvoice/InvoiceViewModal";
+import ProductLookupModal from "./salesInvoice/ProductLookupModal";
+import InvoicePrintingComponent from "./salesInvoice/InvoicePrintingComponent";
 
 const SalesInvoice = () => {
+  // Get full company data from context
+  const { company } = useContext(CompanyContext);
   // Get decimal formatting functions based on company currency settings
   const { round, formatCurrency, formatNumber, config } = useDecimalFormat();
   // Get tax master data for customer-based tax calculations
@@ -94,9 +102,9 @@ const SalesInvoice = () => {
     return taxDetails[country] || taxDetails['UAE'];
   };
   const [openDropdown, setOpenDropdown] = useState(null);
-  const [scannerInput, setScannerInput] = useState("");
-  const [scannerActive, setScannerActive] = useState(true);
+  const [scannerInput, setScannerInput] = useState(""); // Keep for manual input field
   const [lastScanTime, setLastScanTime] = useState(0);
+  const scanQueueRef = useRef(Promise.resolve()); // 🔬 Queue for sequential barcode processing
   const [itemSearch, setItemSearch] = useState("");
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
@@ -115,8 +123,6 @@ const SalesInvoice = () => {
   const searchInputRef = useRef(null);
   const searchDropdownRef = useRef(null);
   const customerDropdownRef = useRef(null);
-  const barcodeBuffer = useRef("");
-  const lastKeyTime = useRef(0);
 
   // Table cell refs for keyboard navigation
   const itemInputRefs = useRef({}); // Store refs like itemInputRefs.current["itemId_fieldName"]
@@ -142,6 +148,8 @@ const SalesInvoice = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showProductLookup, setShowProductLookup] = useState(false);
   const [viewedInvoice, setViewedInvoice] = useState(null);
+  const [showPrintingModal, setShowPrintingModal] = useState(false);
+  const [invoiceToView, setInvoiceToView] = useState(null);
   const [historyDateFilter, setHistoryDateFilter] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -169,27 +177,57 @@ const SalesInvoice = () => {
 
   // Toast notifications state
   const [toasts, setToasts] = useState([]);
+  const [activeErrorId, setActiveErrorId] = useState(null); // Track active error toast
+  const [activeValidationId, setActiveValidationId] = useState(null); // Track active "not found" validation (also blocks scanning)
+  const [lastErrorBarcode, setLastErrorBarcode] = useState(null); // Track last error barcode
+  const [errorTimestamp, setErrorTimestamp] = useState(0); // Track when last error occurred
+  const errorDebounceTimeMs = 1000; // Prevent duplicate errors within 1 second
 
   // Show toast function
-  const showToast = (message, type = "info", duration = 3000) => {
+  // Parameters: message, type ("info","warning","error"), duration, blockingMode ("error"|"validation"|null)
+  const showToast = useCallback((message, type = "info", duration = 3000, blockingMode = null) => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, duration);
-  };
+    
+    // Track blocking states (both prevent scanning)
+    if (blockingMode === "error") {
+      setActiveErrorId(id);
+    } else if (blockingMode === "validation") {
+      setActiveValidationId(id);
+    }
+    
+    if (duration !== Infinity) {
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        if (blockingMode === "error") {
+          setActiveErrorId(null);
+        } else if (blockingMode === "validation") {
+          setActiveValidationId(null);
+        }
+      }, duration);
+    }
+  }, []);
 
   // Close toast by ID
-  const closeToast = (id) => {
+  const closeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  };
+    // Clear active error if this was the error toast
+    if (activeErrorId === id) {
+      setActiveErrorId(null);
+      setLastErrorBarcode(null);
+      console.log("✅ Error cleared - scanning resumed");
+    }
+    // Clear active validation if this was the validation toast
+    if (activeValidationId === id) {
+      setActiveValidationId(null);
+      setLastErrorBarcode(null);
+      console.log("✅ Validation cleared - scanning resumed");
+    }
+  }, [activeErrorId, activeValidationId]);
 
   // Global keyboard shortcuts (Ctrl+S, Ctrl+P, Ctrl+N, Escape)
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
-      // Close toasts on any key press
-      setToasts([]);
-
       // Ctrl+S or Cmd+S: Save invoice
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
@@ -208,8 +246,9 @@ const SalesInvoice = () => {
         addItem();
       }
 
-      // Escape: Return focus to search box (if in table) or close modals
+      // Escape: Close toasts and return focus to search box (if in table) or close modals
       if (e.key === "Escape") {
+        setToasts([]);
         if (focusedCell) {
           e.preventDefault();
           setFocusedCell(null);
@@ -228,12 +267,21 @@ const SalesInvoice = () => {
 
   // ✅ Update products list when search results change
   useEffect(() => {
+    if (!searchResults || searchResults.length === 0) return;
+    
+    // ✅ MERGE STOCK DATA - Extract stock from embedded currentStock object
+    const productsWithStock = searchResults.map(product => ({
+      ...product,
+      // Use embedded currentStock.availableQuantity if available, otherwise fallback
+      stock: product.currentStock?.availableQuantity ?? product.currentStock?.totalQuantity ?? 0
+    }));
+    
     if (productPage === 1) {
       // First page: replace the products list
-      setProducts(searchResults || []);
+      setProducts(productsWithStock || []);
     } else {
       // Load more: append to existing products
-      setProducts((prev) => [...prev, ...searchResults]);
+      setProducts((prev) => [...prev, ...productsWithStock]);
     }
   }, [searchResults, productPage]);
 
@@ -318,7 +366,33 @@ const SalesInvoice = () => {
   // Flag to prevent duplicate API calls on component mount
   const hasFetchedInvoices = useRef(false);
 
-  
+  /**
+   * ✅ LOAD ALL PRODUCTS ON MOUNT
+   * Populates products array for barcode scanner fallback search
+   * Global scanner needs this to match barcodes locally
+   */
+  useEffect(() => {
+    const loadAllProducts = async () => {
+      try {
+        console.log("📦 Loading all products for barcode scanner...");
+        const response = await axios.get(`${API_URL}/products/getproducts?limit=50000`);
+        
+        if (response.data && Array.isArray(response.data)) {
+          const allProducts = response.data.map(product => ({
+            ...product,
+            stock: product.stock?.availableQuantity ?? product.stock?.totalQuantity ?? 0
+          }));
+          setProducts(allProducts);
+          console.log(`✅ Loaded ${allProducts.length} products for barcode matching`);
+        }
+      } catch (err) {
+        console.error("❌ Failed to load products:", err);
+      }
+    };
+
+    // Load products once on mount
+    loadAllProducts();
+  }, []); // Empty array = run only once on mount
   // Fetch customers
   const fetchCustomers = async () => {
     try {
@@ -405,109 +479,300 @@ const SalesInvoice = () => {
     }
   }, [showCustomerDropdown]);
 
-  // Add item by barcode scan
-  const addItemByBarcode = useCallback(
-    (barcode) => {
-      const product = products.find(
-        (p) => p.barcode === barcode || p.itemcode === barcode,
+  /**
+   * 🔬 HANDLER CALLBACKS FOR BARCODE SCANNER
+   */
+  
+  // Handle variant barcode scans (auto-add with unit)
+  const handleVariantFound = useCallback((product, variant, matchedBarcode) => {
+    console.log(`✅ [VARIANT] Adding ${product.name} as ${variant.unit?.unitName}`);
+    
+    setInvoiceData((prev) => {
+      // Check if item already exists
+      const existingIndex = prev.items.findIndex(
+        (item) => item.productId === product._id
       );
 
-      if (!product) {
-        alert(`Product not found: ${barcode}`);
-        return;
+      if (existingIndex >= 0) {
+        // Increment quantity
+        const updatedItems = [...prev.items];
+        updatedItems[existingIndex].qty += 1;
+        console.log(`🔄 [VARIANT] Incremented qty to ${updatedItems[existingIndex].qty}`);
+        return { ...prev, items: updatedItems };
+      } else {
+        // Add new item with variant unit
+        const newItem = {
+          id: Date.now(),
+          itemName: product.name,
+          itemcode: product.itemcode,
+          cost: product.cost || 0,
+          qty: 1,
+          rate: product.price || 0,
+          tax: product.tax || 5,
+          itemDiscount: 0,
+          itemDiscountAmount: 0,
+          productId: product._id,
+          barcode: matchedBarcode,
+          serialNumbers: [],
+        };
+        console.log(`➕ [VARIANT] Added new item:`, newItem.itemName);
+        return { ...prev, items: [...prev.items, newItem] };
       }
+    });
 
-      setInvoiceData((prev) => {
-        // Check if item already exists
-        const existingIndex = prev.items.findIndex(
-          (item) => item.productId === product._id,
-        );
+    // ✅ Silent success - no toast, item appears in table
+    // Play success sound if available
+    try {
+      const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj==');
+      audio.play().catch(() => {});
+    } catch (e) {}
+  }, []);
 
-        if (existingIndex >= 0) {
-          // Increment quantity
-          const updatedItems = [...prev.items];
-          updatedItems[existingIndex] = {
-            ...updatedItems[existingIndex],
-            qty: updatedItems[existingIndex].qty + 1,
-          };
-          return { ...prev, items: updatedItems };
-        } else {
-          // Add new item
-          const newItem = {
-            id: Date.now(),
-            itemName: product.name,
-            itemcode: product.itemcode,
-            cost: product.cost,
-            qty: 1,
-            rate: product.price,
-            tax: product.tax || 5,
-            itemDiscount: 0,
-            itemDiscountAmount: 0,
-            productId: product._id,
-            barcode: product.barcode,
-            serialNumbers: [],
-          };
-          return { ...prev, items: [...prev.items, newItem] };
+  // Handle product barcode scans
+  const handleProductFound = useCallback((product) => {
+    console.log(`✅ [PRODUCT] Adding ${product.name}`);
+    
+    setInvoiceData((prev) => {
+      const existingIndex = prev.items.findIndex(
+        (item) => item.productId === product._id
+      );
+
+      if (existingIndex >= 0) {
+        const updatedItems = [...prev.items];
+        updatedItems[existingIndex].qty += 1;
+        console.log(`🔄 [PRODUCT] Incremented qty to ${updatedItems[existingIndex].qty}`);
+        return { ...prev, items: updatedItems };
+      } else {
+        const newItem = {
+          id: Date.now(),
+          itemName: product.name,
+          itemcode: product.itemcode,
+          cost: product.cost || 0,
+          qty: 1,
+          rate: product.price || 0,
+          tax: product.tax || 5,
+          itemDiscount: 0,
+          itemDiscountAmount: 0,
+          productId: product._id,
+          barcode: product.barcode,
+          serialNumbers: [],
+        };
+        console.log(`➕ [PRODUCT] Added new item:`, newItem.itemName);
+        return { ...prev, items: [...prev.items, newItem] };
+      }
+    });
+
+    // ✅ Silent success - no toast, no sound
+  }, []);
+
+  // Handle duplicate scans (same barcode scanned again)
+  const handleDuplicateScan = useCallback((barcode, existingItem) => {
+    console.log(`🔄 [QTY] Incrementing quantity for repeat scan: "${barcode}"`);
+    
+    setInvoiceData((prev) => {
+      const updatedItems = prev.items.map((item) => {
+        if (item.id === existingItem.id || item.barcode === barcode) {
+          return { ...item, qty: item.qty + 1 };
         }
+        return item;
       });
+      return { ...prev, items: updatedItems };
+    });
 
-      setLastScanTime(Date.now());
-      setScannerInput("");
-    },
-    [products],
+    // ✅ Silent increment - no toast, qty updates automatically
+  }, []);
+
+  // Handle barcode not found
+  const handleBarcodeNotFound = useCallback((barcode) => {
+    const now = Date.now();
+    
+    // ⛔ Prevent duplicate validations for same barcode within debounce window
+    if (lastErrorBarcode === barcode && (now - errorTimestamp) < errorDebounceTimeMs) {
+      console.warn(`⏱️ [VALIDATION] Duplicate blocked for barcode: ${barcode}`);
+      return;
+    }
+    
+    // 📝 Systematic validation logging (NOT an error - just product not in database)
+    console.group(`⚠️ VALIDATION - Product Not In Database`);
+    console.log(`Barcode: ${barcode}`);
+    console.log(`Timestamp: ${new Date(now).toISOString()}`);
+    console.log(`Status: This is normal - product simply doesn't exist`);
+    console.groupEnd();
+    
+    // Track this validation
+    setLastErrorBarcode(barcode);
+    setErrorTimestamp(now);
+    
+    // Show validation message - NO AUTO CLOSE (user must dismiss manually)
+    // ⛔ VALIDATION also blocks scanning until dismissed (like errors)
+    showToast(` Product not found: ${barcode}`, "error", Infinity, "validation");
+    
+    // Play alert sound (informational, not error)
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Single beep for "not found" (less aggressive than error beep)
+      const oscill = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      
+      oscill.connect(gain);
+      gain.connect(audioContext.destination);
+      
+      oscill.frequency.value = 600; // Single frequency
+      oscill.type = 'sine';
+      
+      gain.gain.setValueAtTime(0.6, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+      
+      oscill.start(audioContext.currentTime);
+      oscill.stop(audioContext.currentTime + 0.3);
+    } catch (e) {
+      console.error("🔊 [SOUND] Failed to play validation sound:", e.message);
+    }
+  }, [showToast, lastErrorBarcode, errorTimestamp, errorDebounceTimeMs]);
+
+  /**
+   * 🌐 API SEARCH FOR BARCODE
+   * Uses dedicated /barcode/:code endpoint for fast exact match
+   */
+  const apiSearchProduct = useCallback(async (barcode) => {
+    const normalized = normalizeBarcode(barcode);
+    console.log(`🌐 [API] Searching barcode: GET /products/barcode/${normalized}`);
+    
+    try {
+      // ✅ PRIMARY: Use dedicated barcode endpoint (fast exact match)
+      const response = await axios.get(
+        `${API_URL}/products/barcode/${encodeURIComponent(normalized)}`
+      );
+      
+      // ✅ SUCCESS: Product found
+      if (response.data?.success && response.data?.product) {
+        console.log(`✅ [BUSINESS] Product found:`, response.data.product.name);
+        return response.data.product;
+      }
+      
+      // ⚠️ BUSINESS CASE: Product not found (valid state, not an error)
+      if (response.data?.success === false && response.data?.type === "PRODUCT_NOT_FOUND") {
+        console.log(`⚠️  [BUSINESS] Product not in database: ${barcode}`);
+        return null;
+      }
+      
+      // Unexpected response format
+      console.log(`ℹ️ [API] Unexpected response format`, response.data);
+      return null;
+      
+    } catch (err) {
+      // ❌ REAL ERROR: Server problems (5xx, network issues, etc.)
+      if (err.response?.status >= 500) {
+        console.group(`❌ [ERROR] Server Error`);
+        console.error(`Status: ${err.response.status}`);
+        console.error(`Barcode: ${barcode}`);
+        console.error(`Message: ${err.message}`);
+        console.groupEnd();
+        // Show blocking error toast for real server errors
+        showToast("Server error - try again", "error", Infinity, "error");
+        return null;
+      }
+      
+      // Network connectivity issues
+      if (!err.response) {
+        console.group(`❌ [ERROR] Network Error`);
+        console.error(`Barcode: ${barcode}`);
+        console.error(`Message: ${err.message}`);
+        console.groupEnd();
+        // Show blocking error toast for network failures
+        showToast("Network error - check connection", "error", Infinity, "error");
+        return null;
+      }
+      
+      // Other unexpected errors
+      console.log(`⚠️  [API] Unexpected error status ${err.response.status}`);
+      return null;
+    }
+  }, []);
+
+  /**
+   * 📦 CREATE BARCODE HANDLER
+   * Factory pattern handler with all search logic
+   */
+  const barcodeHandler = useMemo(
+    () => createBarcodeHandler({
+      products, // All products loaded in memory
+      apiSearch: apiSearchProduct, // API fallback search
+      onVariantFound: handleVariantFound,
+      onProductFound: handleProductFound,
+      onDuplicateScan: handleDuplicateScan,
+      onNotFound: handleBarcodeNotFound,
+      currentItems: invoiceData.items, // Pass current items for duplicate detection
+    }),
+    [products, apiSearchProduct, handleVariantFound, handleProductFound, handleDuplicateScan, handleBarcodeNotFound, invoiceData.items]
   );
 
-  // Global keyboard listener for barcode scanner
-  useEffect(() => {
-    if (!scannerActive) return;
-
-    const handleKeyDown = (e) => {
-      const now = Date.now();
-      const timeDiff = now - lastKeyTime.current;
-
-      // Reset buffer if too much time passed (>100ms between keys = manual typing)
-      if (timeDiff > 100) {
-        barcodeBuffer.current = "";
+  /**
+   * 🔬 GLOBAL BARCODE HANDLER
+   * Delegates to optimized handler
+   */
+  const handleBarcodeScanned = useCallback(
+    async (barcode, meta = {}) => {
+      // ⛔ Prevent scanning if ANY blocking validation is active (error or "not found")
+      if (activeErrorId || activeValidationId) {
+        const reason = activeErrorId ? "Error" : "Product not found";
+        console.warn(`⛔ Cannot scan: ${reason} validation must be dismissed first`);
+        return;
       }
-
-      lastKeyTime.current = now;
-
-      // Ignore modifier keys and special keys (except Enter)
-      if (e.key === "Enter") {
-        if (barcodeBuffer.current.length >= 3) {
-          e.preventDefault();
-          addItemByBarcode(barcodeBuffer.current.toUpperCase());
-        }
-        barcodeBuffer.current = "";
+      
+      if (!barcode || barcode.trim().length === 0) {
+        console.warn("⚠️ Empty barcode provided, ignoring");
         return;
       }
 
-      // Only capture alphanumeric characters
-      if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
-        // Don't capture if user is typing in an input field
-        const activeElement = document.activeElement;
-        const isInputField =
-          activeElement.tagName === "INPUT" ||
-          activeElement.tagName === "TEXTAREA" ||
-          activeElement.isContentEditable;
+      console.log(`\n📱 [SCAN] Global scan triggered: "${barcode.trim()}"\n`);
 
-        if (!isInputField || activeElement === scannerInputRef.current) {
-          barcodeBuffer.current += e.key;
-        }
-      }
-    };
+      scanQueueRef.current = scanQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            await barcodeHandler(barcode, meta);
+          } catch (error) {
+            console.error("❌ [SCAN] Handler error:", error);
+            showToast("Failed to process barcode", "error", Infinity, "error");
+          }
+        });
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [scannerActive, addItemByBarcode]);
+      await scanQueueRef.current;
+    },
+    [barcodeHandler, activeErrorId, activeValidationId]
+  );
 
-  // Handle manual barcode input
-  const handleScannerSubmit = (e) => {
-    e.preventDefault();
-    if (scannerInput.trim()) {
-      addItemByBarcode(scannerInput.trim().toUpperCase());
+  /**
+   * 🔬 GLOBAL BARCODE LISTENER
+   * Captures barcode scans from scanner even without input focus
+   */
+  const barcodeScannerControls = useGlobalBarcodeScanner(handleBarcodeScanned, {
+    minLength: 3,
+    maxTypingSpeed: 100, // Scanner detection threshold (fast = scanner, slow = typing)
+    debounceTime: 500,
+    enableSound: false,
+    ignoreInputFields: true, // ✅ FIXED: Should be TRUE to work globally (ignore INPUT fields)
+    debugMode: true, // ✅ ENABLED: Debug console logs for troubleshooting
+    allowDuplicateScan: true,
+    preventDefaultOnScan: true,
+    enabled: true,
+  });
+
+  /**
+   * 🔍 CONTEXT-AWARE SCANNING
+   * Pause scanner when modals are open
+   * ⚠️ DO NOT include barcodeScannerControls in dependency array!
+   * It changes on every render, causing buffer to reset after each character
+   */
+  useEffect(() => {
+    if (showProductLookup || showItemNoteModal || showSerialModal) {
+      barcodeScannerControls?.pause();
+    } else {
+      barcodeScannerControls?.resume();
     }
-  };
+  }, [showProductLookup, showItemNoteModal, showSerialModal]);
 
   // Filter products for search
   const filteredProducts = products
@@ -853,57 +1118,75 @@ const SalesInvoice = () => {
 
   const totals = calculateTotals();
 
-  // Save invoice (create or update)
-  const handleSaveInvoice = async () => {
-    // Validation checks
+  // ✅ GLOBAL VALIDATION HELPER - Centralized invoice validation
+  const validateInvoice = () => {
+    // Collect all validation errors
+    const errors = [];
+
+    // 1. Customer validation
     if (!invoiceData.partyName?.trim()) {
-      showToast("Please select a customer", "error", 3000);
-      return false;
+      errors.push("Please select a customer");
     }
-    
-    // Country isolation: Prevent cross-country sales (NOT international sales)
+
+    // 2. Country isolation validation
     const companyCountry = config?.country || 'AE';
     if (selectedCustomerDetails?.country && selectedCustomerDetails.country !== companyCountry) {
-      showToast(
-        `❌ Cannot create invoice: Customer is from ${selectedCustomerDetails.country}, but company is in ${companyCountry}. Not international sales allowed.`,
-        "error",
-        4000
+      errors.push(
+        `Cannot create invoice: Customer is from ${selectedCustomerDetails.country}, but company is in ${companyCountry}`
       );
-      return false;
     }
-    
-    // India-specific validation: Ensure customer has tax type set
+
+    // 3. India-specific tax validation
     if (config?.country === 'India' && !selectedCustomerDetails?.taxType) {
-      showToast(
-        "⚠️ India company requires customer to have a GST tax classification. Please set customer tax type.",
-        "error",
-        4000
+      errors.push(
+        "India company requires customer to have a GST tax classification"
       );
-      return false;
     }
-    
+
+    // 4. Payment type validation
     if (!invoiceData.paymentType?.trim()) {
-      showToast("Please select a payment type", "error", 3000);
-      return false;
+      errors.push("Please select a payment type");
     }
-    if (selectedCustomerDetails?.paymentType === "Credit Sale" && !invoiceData.paymentTerms?.trim()) {
-      showToast("Please select payment terms for credit sale customers", "error", 3000);
-      return false;
+
+    // 5. Payment terms validation (for credit sales)
+    if (
+      selectedCustomerDetails?.paymentType === "Credit Sale" &&
+      !invoiceData.paymentTerms?.trim()
+    ) {
+      errors.push("Please select payment terms for credit sale customers");
     }
+
+    // 6. Items validation
     if (invoiceData.items.length === 0) {
-      showToast("Add at least one item to the invoice", "error", 3000);
-      return false;
+      errors.push("Add at least one item to the invoice");
     }
+
+    // 7. Item name validation
     if (invoiceData.items.some((item) => !item.itemName?.trim())) {
-      showToast("All items must have a name", "error", 3000);
-      return false;
+      errors.push("All items must have a name");
     }
+
+    // 8. Item quantity validation
     if (invoiceData.items.some((item) => item.qty <= 0)) {
-      showToast("All items must have quantity greater than 0", "error", 3000);
-      return false;
+      errors.push("All items must have quantity greater than 0");
     }
+
+    // 9. Item price validation
     if (invoiceData.items.some((item) => item.rate <= 0)) {
-      showToast("All items must have a price greater than 0", "error", 3000);
+      errors.push("All items must have a price greater than 0");
+    }
+
+    return errors;
+  };
+
+  // Save invoice (create or update)
+  const handleSaveInvoice = async () => {
+    // ✅ USE GLOBAL VALIDATION - Get all validation errors
+    const validationErrors = validateInvoice();
+
+    // ✅ SHOW FIRST ERROR if any validation fails
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], "error", 4000);
       return false;
     }
 
@@ -1241,12 +1524,28 @@ const SalesInvoice = () => {
             </button>
             <button
               onClick={async () => {
-                // Fetch all products when opening lookup
+                // Fetch all products with embedded stock data
                 try {
-                  const res = await axios.get(
-                    `${API_URL}/products/getproducts?limit=50000`,  // ✅ Fetch up to 50k products
+                  const productsRes = await axios.get(
+                    `${API_URL}/products/getproducts?limit=50000`,
                   );
-                  setProducts(res.data.products || res.data);
+                  let productsData = productsRes.data.products || productsRes.data;
+                  
+                  // Log actual fields in first product for debugging
+                  if (productsData.length > 0) {
+                    const firstProduct = productsData[0];
+                    console.log("First product fields:", Object.keys(firstProduct).sort());
+                    console.log("First product taxPercent:", firstProduct.taxPercent);
+                  }
+                  
+                  // Extract stock from embedded currentStock object instead of fetching separately
+                  productsData = productsData.map(product => ({
+                    ...product,
+                    // Use embedded currentStock.availableQuantity if available, otherwise fallback
+                    stock: product.currentStock?.availableQuantity ?? product.currentStock?.totalQuantity ?? 0
+                  }));
+                  
+                  setProducts(productsData);
                   setItemSearch(""); // Clear search to show all products
                 } catch (err) {
                   console.error("Error fetching products:", err);
@@ -1441,7 +1740,7 @@ const SalesInvoice = () => {
                 onChange={(e) => setScannerInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && scannerInput.trim()) {
-                    addItemByBarcode(scannerInput.trim());
+                    handleBarcodeScanned(scannerInput.trim());
                     setScannerInput("");
                   }
                 }}
@@ -1521,19 +1820,14 @@ const SalesInvoice = () => {
                           <p className="font-bold text-green-600">
                             {config.currency} {formatNumber(product.price)}
                           </p>
+                          <p className="text-xs text-gray-600 font-semibold">
+                            Final: {config.currency} {formatNumber(product.finalPrice || product.price)}
+                          </p>
                           <p className="text-xs text-gray-400">
                             Stock: {product.stock}
                           </p>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addItemFromSearch(product);
-                          }}
-                          className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition"
-                        >
-                          <Plus size={16} />
-                        </button>
+                        
                       </div>
                     </div>
                   ))}
@@ -1851,59 +2145,7 @@ const SalesInvoice = () => {
         </div>
       </div>
 
-      {/* TAX DETAILS SECTION - Country Based Tax Breakdown */}
-      {invoiceData.items.length > 0 && (
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100 border-t border-gray-200 px-4 py-3">
-          <div className="max-w-6xl mx-auto">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* Subtotal */}
-              <div className="bg-white rounded-lg p-3 border border-gray-100">
-                <p className="text-xs text-gray-500 font-medium">SUBTOTAL</p>
-                <p className="text-lg font-bold text-gray-800">
-                  {config.currency || 'AED'} {totals.subtotal}
-                </p>
-              </div>
-
-              {/* Discounts */}
-              <div className="bg-white rounded-lg p-3 border border-gray-100">
-                <p className="text-xs text-gray-500 font-medium">TOTAL DISCOUNT</p>
-                <p className="text-lg font-bold text-orange-600">
-                  -{config.currency || 'AED'} {totals.discount}
-                </p>
-              </div>
-
-              {/* Taxable Amount */}
-              <div className="bg-white rounded-lg p-3 border border-gray-100">
-                <p className="text-xs text-gray-500 font-medium">TAXABLE AMOUNT</p>
-                <p className="text-lg font-bold text-blue-600">
-                  {config.currency || 'AED'} {totals.totalAfterDiscount}
-                </p>
-              </div>
-
-              {/* Tax Details */}
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 border border-blue-200">
-                <p className="text-xs text-blue-700 font-semibold mb-1">
-                  {totals.taxLabel} @ {totals.taxRate}%
-                </p>
-                {totals.taxBreakdown ? (
-                  <>
-                    <p className="text-xs text-gray-600">
-                      CGST ({formatNumber(totals.taxBreakdown.cgst)}%): {config.currency || 'AED'} {formatNumber(parseFloat(totals.tax) * (totals.taxBreakdown.cgst / totals.taxRate))}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      SGST ({formatNumber(totals.taxBreakdown.sgst)}%): {config.currency || 'AED'} {formatNumber(parseFloat(totals.tax) * (totals.taxBreakdown.sgst / totals.taxRate))}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-lg font-bold text-green-700">
-                    {config.currency || 'AED'} {totals.tax}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* FOOTER - Order Summary & Actions - Fixed at bottom */}
       <div className="flex-shrink-0 bg-white border-t shadow-lg z-10">
@@ -2181,6 +2423,18 @@ const SalesInvoice = () => {
                               </button>
                               <button
                                 onClick={() => {
+                                  setInvoiceToView(invoice);
+                                  setShowPrintingModal(true);
+                                  setShowHistoryModal(false);
+                                }}
+                                title="Print/Download PDF"
+                                className="flex items-center justify-center gap-1 px-1.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded text-xs font-medium transition"
+                              >
+                                <Printer size={11} />
+                                Print
+                              </button>
+                              <button
+                                onClick={() => {
                                   setViewedInvoice(invoice);
                                 }}
                                 title="View"
@@ -2206,93 +2460,35 @@ const SalesInvoice = () => {
       <InvoiceViewModal 
         viewedInvoice={viewedInvoice} 
         setViewedInvoice={setViewedInvoice} 
-        config={config} 
+        config={company} 
         formatNumber={formatNumber} 
       />
 
-      {/* PRODUCT LOOKUP MODAL */}
-      {showProductLookup && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-96 flex flex-col">
-            <div className="flex justify-between items-center px-6 py-4 border-b bg-gray-50">
-              <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                <Package size={18} className="text-blue-600" />
-                Product Lookup
-              </h2>
-              <button
-                onClick={() => setShowProductLookup(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="px-6 py-2 border-b bg-white">
-              <input
-                type="text"
-                placeholder="Search products by name, code, or barcode..."
-                value={itemSearch}
-                onChange={(e) => setItemSearch(e.target.value)}
-                className="w-full px-4 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
-              {filteredProducts.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">
-                  {itemSearch.trim()
-                    ? "No products found"
-                    : "Search for products"}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {filteredProducts.map((product) => (
-                    <button
-                      key={product._id}
-                      onClick={() => {
-                        addItemFromSearch(product);
-                        setShowProductLookup(false);
-                      }}
-                      className="w-full text-left p-2 hover:bg-blue-50 border border-gray-200 rounded-lg transition"
-                    >
-                      <div className="flex justify-between items-start gap-3">
-                        <div className="flex-1">
-                          <p className="font-semibold text-gray-800">
-                            {product.name}
-                          </p>
-                          <div className="flex gap-4 text-xs text-gray-600 mt-1">
-                            <span>Code: {product.itemcode}</span>
-                            <span>Barcode: {product.barcode}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex gap-3 text-xs">
-                              <div>
-                                <p className="text-gray-500">Cost</p>
-                                <p className="font-semibold text-gray-800">
-                                  {config.currency || 'AED'} {formatNumber(product.cost) || "0.00"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-gray-500">Price</p>
-                                <p className="font-semibold text-gray-800">
-                                  {config.currency || 'AED'} {formatNumber(product.price) || "0.00"}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              VAT: {product.tax}%
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* INVOICE PRINTING & PDF MODAL */}
+      {showPrintingModal && invoiceToView && (
+        <InvoicePrintingComponent
+          invoiceId={invoiceToView._id}
+          onClose={() => {
+            setShowPrintingModal(false);
+            setInvoiceToView(null);
+          }}
+        />
       )}
+
+      {/* PRODUCT LOOKUP MODAL */}
+      <ProductLookupModal
+        showProductLookup={showProductLookup}
+        setShowProductLookup={setShowProductLookup}
+        filteredProducts={filteredProducts}
+        addItemFromSearch={addItemFromSearch}
+        config={config}
+        formatNumber={formatNumber}
+        itemSearch={itemSearch}
+        setItemSearch={setItemSearch}
+        loadMoreProducts={loadMoreProducts}
+        products={products}
+        searchMetadata={searchMetadata}
+      />
 
       {/* ITEM NOTE MODAL */}
       {showItemNoteModal && selectedItemNote && (
@@ -2507,9 +2703,7 @@ const SalesInvoice = () => {
               )}
               <div className="flex-1">
                 <span>{toast.message}</span>
-                <p className="text-xs opacity-75 mt-1">
-                  Click to close or press any key
-                </p>
+                
               </div>
             </div>
           </div>

@@ -11,7 +11,6 @@ import RtvForm from "../components/inventory/RtvForm";
 import InventoryAdjust from "../components/inventory/InventoryAdjust";
 import StockTracking from "../components/inventory/StockTracking";
 
-import BasicSettings from "../components/settings/company/BasicSettings";
 import CompanySettings from "../components/settings/company/CompanyMaster";
 import LicenseManagement from "../components/settings/company/LicenseManagement";
 import HSNmanagement from "../components/settings/company/HSNManagement";
@@ -379,11 +378,6 @@ const menus = [
         id: "HSNManagement",
         path: "/company-settings/hsn-management",
       },
-      {
-        name: "Basic Settings",
-        id: "BasicSettings",
-        path: "/company-settings/basic-settings",
-      },
       { name: "Role Management", id: "RoleManagement", path: "/role-management" },
       { name: "User Management", id: "UserManagement", path: "/user-management" },
       { name: "Store Settings", id: "StoreSettings", path: "/store-settings" },
@@ -680,11 +674,7 @@ function Home() {
               path="/company-settings/license-management"
               element={<LicenseManagement />}
             />
-            <Route
-              path="/company-settings/basic-settings"
-              element={<BasicSettings />}
-             />
-              <Route path="/role-management" element={<RollManagement />} />
+            <Route path="/role-management" element={<RollManagement />} />
               <Route path="/user-management" element={<UserManagement />} />
               <Route path="/store-settings" element={<StoreSettings />} />
               <Route path="/unit-type-management" element={<UnitTypeManagement />} />

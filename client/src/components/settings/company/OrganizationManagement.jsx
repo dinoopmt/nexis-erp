@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, X, Edit, Trash2, Building2, FileText, MapPin, Phone, Mail, MapPinIcon, AlertCircle, Check } from 'lucide-react'
+import { Plus, X, Edit, Trash2, Building2, FileText } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import axios from 'axios'
 
@@ -11,20 +11,8 @@ const OrganizationManagement = () => {
   const [expandedId, setExpandedId] = useState(null)
 
   const [formData, setFormData] = useState({
-    name: '',
     code: '',
     type: 'HEAD_OFFICE',
-    parentId: null,
-    address: '',
-    city: '',
-    country: 'AE',
-    postalCode: '',
-    phone: '',
-    email: '',
-    currency: 'AED',
-    timezone: 'Asia/Dubai',
-    taxNumber: '',
-    allowInventoryTransfer: true,
   })
 
   // Fetch organizations on mount
@@ -59,20 +47,8 @@ const OrganizationManagement = () => {
 
   const resetForm = () => {
     setFormData({
-      name: '',
       code: '',
       type: 'HEAD_OFFICE',
-      parentId: null,
-      address: '',
-      city: '',
-      country: 'AE',
-      postalCode: '',
-      phone: '',
-      email: '',
-      currency: 'AED',
-      timezone: 'Asia/Dubai',
-      taxNumber: '',
-      allowInventoryTransfer: true,
     })
     setEditingId(null)
     setShowForm(false)
@@ -92,15 +68,15 @@ const OrganizationManagement = () => {
     // Check if this is first organization
     const isFirstOrg = organizations.length === 0
 
-    if (!formData.name.trim() || !formData.code.trim()) {
-      toast.error('Name and Code are required', {
+    if (!formData.code.trim()) {
+      toast.error('Code is required', {
         duration: 4000,
         position: 'top-right'
       })
       return
     }
 
-    // 🔐 Business Rule: First org must be HEAD_OFFICE with no parent
+    // 🔐 Business Rule: First org must be HEAD_OFFICE
     if (isFirstOrg) {
       if (formData.type !== 'HEAD_OFFICE') {
         toast.error('⚠️ First organization must be Head Office', {
@@ -109,12 +85,17 @@ const OrganizationManagement = () => {
         })
         return
       }
-      if (formData.parentId) {
-        toast.error('⚠️ First organization cannot have a parent', {
-          duration: 4000,
-          position: 'top-right'
-        })
-        return
+    } else {
+      // 🔐 Prevent duplicate HEAD_OFFICE
+      if (formData.type === 'HEAD_OFFICE' && !editingId) {
+        const hasHeadOffice = flattenOrganizations(organizations).some(org => org.type === 'HEAD_OFFICE')
+        if (hasHeadOffice) {
+          toast.error('❌ Only one Head Office is allowed in the system', {
+            duration: 4000,
+            position: 'top-right'
+          })
+          return
+        }
       }
     }
 
@@ -177,40 +158,52 @@ const OrganizationManagement = () => {
 
   const handleEdit = (org) => {
     setFormData({
-      name: org.name,
       code: org.code,
       type: org.type,
-      parentId: org.parentId || null,
-      address: org.address || '',
-      city: org.city || '',
-      country: org.country || 'AE',
-      postalCode: org.postalCode || '',
-      phone: org.phone || '',
-      email: org.email || '',
-      currency: org.currency || 'AED',
-      timezone: org.timezone || 'Asia/Dubai',
-      taxNumber: org.taxNumber || '',
-      allowInventoryTransfer: org.allowInventoryTransfer !== false,
     })
     setEditingId(org._id)
     setShowForm(true)
   }
 
-  const getCountryName = (countryCode) => {
-    const country = countries.find(c => c.code === countryCode)
-    return country ? country.name : countryCode
+  // Generate next code based on organization type
+  const generateNextCode = (type) => {
+    const allOrgs = flattenOrganizations(organizations)
+    if (type === 'HEAD_OFFICE') {
+      return 'HO'
+    } else if (type === 'BRANCH') {
+      // Find highest branch number
+      const branchCodes = allOrgs
+        .filter(org => org.type === 'BRANCH')
+        .map(org => {
+          const match = org.code.match(/BR-(\d+)/)
+          return match ? parseInt(match[1]) : 0
+        })
+      const nextNum = Math.max(...branchCodes, 0) + 1
+      return `BR-${String(nextNum).padStart(3, '0')}`
+    }
+    return ''
+  }
+
+  // Open form with auto-generated code
+  const openNewForm = (type = 'HEAD_OFFICE') => {
+    const generateCode = type === 'HEAD_OFFICE' 
+      ? (organizations.length === 0 ? 'HO' : '') 
+      : generateNextCode('BRANCH')
+    
+    setFormData({
+      code: generateCode,
+      type: organizations.length === 0 ? 'HEAD_OFFICE' : type,
+    })
+    setEditingId(null)
+    setShowForm(true)
   }
 
   const getTypeIcon = (type) => {
     switch (type) {
       case 'HEAD_OFFICE':
         return '🏢'
-      case 'REGIONAL':
-        return '🏭'
       case 'BRANCH':
         return '🏪'
-      case 'STORE':
-        return '🛒'
       default:
         return '📍'
     }
@@ -220,12 +213,8 @@ const OrganizationManagement = () => {
     switch (type) {
       case 'HEAD_OFFICE':
         return 'bg-purple-100 text-purple-800'
-      case 'REGIONAL':
-        return 'bg-blue-100 text-blue-800'
       case 'BRANCH':
         return 'bg-green-100 text-green-800'
-      case 'STORE':
-        return 'bg-orange-100 text-orange-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -233,38 +222,24 @@ const OrganizationManagement = () => {
 
   const organizationTypes = [
     { value: 'HEAD_OFFICE', label: 'Head Office' },
-    { value: 'REGIONAL', label: 'Regional Office' },
     { value: 'BRANCH', label: 'Branch' },
-    { value: 'STORE', label: 'Store' },
   ]
-
-  // Country codes matching Organization model enum: ['AE', 'OM', 'IN']
-  const countries = [
-    { code: 'AE', name: 'United Arab Emirates' },
-    { code: 'OM', name: 'Oman' },
-    { code: 'IN', name: 'India' },
-  ]
-
-  const currencies = {
-    AE: 'AED',
-    OM: 'OMR',
-    IN: 'INR',
-  }
-
-  const timezones = {
-    AE: 'Asia/Dubai',
-    OM: 'Asia/Muscat',
-    IN: 'Asia/Kolkata',
-  }
 
   const getValidTypes = (type) => {
     const hierarchy = {
-      HEAD_OFFICE: ['REGIONAL', 'BRANCH', 'STORE'],
-      REGIONAL: ['BRANCH', 'STORE'],
-      BRANCH: ['STORE'],
-      STORE: [],
+      HEAD_OFFICE: ['BRANCH'],
+      BRANCH: [],
     }
     return organizationTypes.filter((t) => hierarchy[type]?.includes(t.value) || t.value === 'HEAD_OFFICE')
+  }
+
+  // Check if HEAD_OFFICE already exists
+  const getAvailableTypes = () => {
+    const hasHeadOffice = flattenOrganizations(organizations).some(org => org.type === 'HEAD_OFFICE')
+    if (hasHeadOffice) {
+      return organizationTypes.filter((t) => t.value !== 'HEAD_OFFICE')
+    }
+    return organizationTypes
   }
 
   // Flatten organizations for parent selection
@@ -297,23 +272,16 @@ const OrganizationManagement = () => {
           )}
           {!hasChildren && <span className="flex-shrink-0 w-3" />}
 
-          {/* Type Icon & Name */}
+          {/* Type Icon & Code */}
           <span className="text-base">{getTypeIcon(node.type)}</span>
           <div className="flex-grow min-w-0">
-            <p className="font-medium text-xs text-gray-900">{node.name}</p>
-            <p className="text-xs text-gray-500">{node.code}</p>
+            <p className="font-medium text-xs text-gray-900">{node.code}</p>
           </div>
 
           {/* Type Badge */}
           <span className={`text-xs font-medium px-1.5 py-0.5 rounded text-sm ${getTypeColor(node.type)}`}>
             {node.type.replace(/_/g, ' ')}
           </span>
-
-          {/* City */}
-          {node.city && <span className="text-xs text-gray-600 px-1.5 py-0.5 bg-gray-100 rounded text-xs">{node.city}</span>}
-
-          {/* Country */}
-          <span className="text-xs font-medium px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">{getCountryName(node.country)}</span>
 
           {/* Actions */}
           <div className="flex gap-0.5 flex-shrink-0">
@@ -360,7 +328,7 @@ const OrganizationManagement = () => {
       {/* Create Button */}
       <div className="flex gap-2">
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => openNewForm(organizations.length === 0 ? 'HEAD_OFFICE' : 'BRANCH')}
           className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition"
         >
           <Plus size={14} />
@@ -375,314 +343,130 @@ const OrganizationManagement = () => {
         </button>
       </div>
 
-      {/* Create/Edit Form */}
+      {/* Modal Overlay */}
       {showForm && (
-        <div className="bg-white border border-gray-300 rounded-lg p-2 space-y-2">
-          <div className="flex justify-between items-center mb-1">
-            <h3 className="text-sm font-semibold text-gray-900">
-              {editingId ? 'Edit Organization' : 'Create New Organization'}
-            </h3>
-            <button
-              onClick={resetForm}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Information Banner for First Organization */}
-          {organizations.length === 0 && !editingId && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-2">
-              <p className="text-xs text-amber-700 font-medium">
-                ℹ️ <strong>First Organization Requirement:</strong> The first organization must be a Head Office with no parent. Hierarchy creation will be available after this is created.
-              </p>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          {/* Modal Box */}
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-screen overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center border-b border-blue-200">
+              <h3 className="text-lg font-bold text-white">
+                {editingId ? '✏️ Edit Organization' : '➕ Create New Organization'}
+              </h3>
+              <button
+                onClick={resetForm}
+                className="text-white hover:bg-blue-500 rounded-full p-1 transition"
+              >
+                <X size={20} />
+              </button>
             </div>
-          )}
 
-          <form onSubmit={handleSubmit} className="space-y-2">
-            {/* Basic Information */}
-            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-              <h4 className="text-xs font-semibold text-gray-900 mb-1">Basic Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Information Banner for First Organization */}
+              {organizations.length === 0 && !editingId && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs text-amber-700 font-medium">
+                    ℹ️ <strong>First Organization:</strong> Must be a Head Office. Branches can be created after.
+                  </p>
+                </div>
+              )}
+
+              {/* Information Banner for Creating Branch */}
+              {organizations.length > 0 && !editingId && formData.type === 'BRANCH' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-700 font-medium">
+                    ℹ️ <strong>Branch Creation:</strong> Will be automatically linked to Head Office.
+                  </p>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Organization Code */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Organization Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Head Office Dubai"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Organization Code *
+                    </label>
+                    {!editingId && formData.code && (
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                        🔄 Auto-generated
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      name="code"
+                      value={formData.code}
+                      onChange={handleInputChange}
+                      placeholder={formData.type === 'HEAD_OFFICE' ? 'HO' : 'BR-001'}
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
+                    />
+                    {!editingId && formData.type === 'BRANCH' && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, code: generateNextCode('BRANCH') }))}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition"
+                        title="Generate next code"
+                      >
+                        🔄
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {formData.type === 'HEAD_OFFICE' ? '💡 Format: HO' : '💡 Format: BR-001, BR-002, etc.'}
+                  </p>
                 </div>
 
+                {/* Organization Type */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Organization Code *
-                  </label>
-                  <input
-                    type="text"
-                    name="code"
-                    value={formData.code}
-                    onChange={handleInputChange}
-                    placeholder="e.g., HO-001"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Organization Type * {organizations.length === 0 && <span className="text-amber-600 text-xs">(First org must be Head Office)</span>}
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Organization Type *
                   </label>
                   <select
                     name="type"
                     value={formData.type}
                     onChange={handleInputChange}
                     disabled={organizations.length === 0}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
                   >
                     {organizations.length === 0 ? (
-                      <option value="HEAD_OFFICE">Head Office (Required for first organization)</option>
+                      <option value="HEAD_OFFICE">🏢 Head Office (Required for first)</option>
                     ) : (
-                      organizationTypes.map((type) => (
+                      getAvailableTypes().map((type) => (
                         <option key={type.value} value={type.value}>
-                          {type.label}
+                          {getTypeIcon(type.value)} {type.label}
                         </option>
                       ))
                     )}
                   </select>
+                  {flattenOrganizations(organizations).some(org => org.type === 'HEAD_OFFICE') && organizations.length > 0 && (
+                    <p className="text-xs text-amber-600 mt-1">✓ Head Office exists - only Branch can be created</p>
+                  )}
                 </div>
 
-                {/* Only show Parent Organization if NOT first organization */}
-                {organizations.length > 0 && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                      Parent Organization
-                    </label>
-                    <select
-                      name="parentId"
-                      value={formData.parentId || ''}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          parentId: e.target.value || null,
-                        }))
-                      }
-                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">-- None (Head Office) --</option>
-                      {flattenOrganizations(organizations)
-                        .filter((org) => org._id !== editingId && org.type !== 'STORE')
-                        .map((org) => (
-                          <option key={org._id} value={org._id}>
-                            {getTypeIcon(org.type)} {org.name} ({org.code})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Location Information */}
-            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-              <h4 className="text-xs font-semibold text-gray-900 mb-1">Location Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Country *
-                  </label>
-                  <select
-                    name="country"
-                    value={formData.country}
-                    onChange={(e) => {
-                      const countryCode = e.target.value
-                      setFormData((prev) => ({
-                        ...prev,
-                        country: countryCode,
-                        currency: currencies[countryCode] || prev.currency,
-                        timezone: timezones[countryCode] || prev.timezone,
-                      }))
-                    }}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                {/* Form Actions */}
+                <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition"
                   >
-                    {countries.map((country) => (
-                      <option key={country.code} value={country.code}>
-                        {country.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    City *
-                  </label>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Dubai"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Address
-                  </label>
-                  <input
-                    type="text"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    placeholder="Street address"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Postal Code
-                  </label>
-                  <input
-                    type="text"
-                    name="postalCode"
-                    value={formData.postalCode}
-                    onChange={handleInputChange}
-                    placeholder="12345"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Contact Information */}
-            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-              <h4 className="text-xs font-semibold text-gray-900 mb-1">Contact Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    placeholder="+971-4-1234567"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="contact@example.com"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Settings */}
-            <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-              <h4 className="text-xs font-semibold text-gray-900 mb-1">Settings</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Currency
-                  </label>
-                  <select
-                    name="currency"
-                    value={formData.currency}
-                    onChange={handleInputChange}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
                   >
-                    <option value="AED">AED - United Arab Emirates Dirham</option>
-                    <option value="USD">USD - United States Dollar</option>
-                    <option value="INR">INR - Indian Rupee</option>
-                    <option value="OMR">OMR - Omani Rial</option>
-                  </select>
+                    {loading ? '⏳ Saving...' : editingId ? '💾 Update' : '✓ Create'}
+                  </button>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Timezone
-                  </label>
-                  <select
-                    name="timezone"
-                    value={formData.timezone}
-                    onChange={handleInputChange}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="Asia/Dubai">Asia/Dubai (UAE)</option>
-                    <option value="Asia/Muscat">Asia/Muscat (Oman)</option>
-                    <option value="Asia/Kolkata">Asia/Kolkata (India)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                    Tax Number
-                  </label>
-                  <input
-                    type="text"
-                    name="taxNumber"
-                    value={formData.taxNumber}
-                    onChange={handleInputChange}
-                    placeholder="VAT/GST/Tax ID"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1 p-1 bg-white border border-gray-300 rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="allowTransfer"
-                    name="allowInventoryTransfer"
-                    checked={formData.allowInventoryTransfer}
-                    onChange={handleInputChange}
-                    className="w-3 h-3 rounded"
-                  />
-                  <label htmlFor="allowTransfer" className="text-xs font-medium text-gray-700 flex-grow">
-                    Allow Inventory Transfer
-                  </label>
-                </div>
-              </div>
+              </form>
             </div>
-
-            {/* Form Actions */}
-            <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-300 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-              >
-                <FileText size={14} />
-                {editingId ? 'Update' : 'Create'} Organization
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       )}
 

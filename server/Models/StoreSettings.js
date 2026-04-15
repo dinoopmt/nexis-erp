@@ -103,6 +103,43 @@ const storeSettingsSchema = new mongoose.Schema(
           type: Boolean,
           default: true,
         },
+        // ✅ NEW: System Settings moved to terminal level
+        dateFormat: {
+          type: String,
+          default: 'DD-MM-YYYY',
+          enum: ['DD-MM-YYYY', 'MM-DD-YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY'],
+        },
+        timeFormat: {
+          type: String,
+          enum: ['24', '12'],
+          default: '24',
+        },
+        currency: {
+          type: String,
+          default: 'AED',
+        },
+        timezone: {
+          type: String,
+          default: 'Asia/Dubai',
+        },
+        defaultLanguage: {
+          type: String,
+          default: 'English',
+          enum: ['English', 'Arabic', 'Urdu'],
+        },
+        enableAutoBackup: {
+          type: Boolean,
+          default: true,
+        },
+        backupFrequency: {
+          type: String,
+          enum: ['hourly', 'daily', 'weekly', 'monthly'],
+          default: 'daily',
+        },
+        backupTime: {
+          type: String,
+          default: '02:00',
+        },
       },
     ],
     // Store Control Settings

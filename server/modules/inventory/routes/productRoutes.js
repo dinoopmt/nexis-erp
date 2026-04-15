@@ -2,6 +2,7 @@ import express from "express";
 import {
   addProduct,
   getProducts,
+  getProductsByBranch,
   getProductById,
   updateProduct,
   deleteProduct,
@@ -24,6 +25,7 @@ import {
   resetAndSyncMeilisearch,
   cleanupMeilisearchOrphans,
   searchProducts,
+  getProductByBarcode,
 } from "../controllers/productController.js";
 
 // ✅ Import Meilisearch task status function
@@ -45,6 +47,9 @@ router.post("/addproduct", addProduct);
 
 // ================= GET ALL PRODUCTS =================
 router.get("/getproducts", getProducts);
+
+// ================= GET PRODUCTS BY BRANCH (Multi-Store Support) =================
+router.get("/branch/:branchId", getProductsByBranch);
 
 // ================= GET PRODUCT BY ID =================
 router.get("/getproduct/:id", getProductById);
@@ -69,6 +74,11 @@ router.get("/products/stats", getProductStats);
 
 // ================= CHECK IF BARCODE EXISTS =================
 router.post("/checkbarcode", checkBarcodeExists);
+
+// ================= GET PRODUCT BY BARCODE (FOR BARCODE SCANNING) =================
+// ✅ Fast exact match endpoint for barcode scanner
+// Usage: GET /api/v1/products/barcode/649528918796
+router.get("/barcode/:code", getProductByBarcode);
 
 // ================= CHECK IF ITEM CODE EXISTS =================
 router.post("/checkitemcode", checkItemcodeExists);

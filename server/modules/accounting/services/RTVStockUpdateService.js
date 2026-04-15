@@ -24,12 +24,17 @@ class RTVStockUpdateService {
    *
    * @param {Object} rtvData - RTV document with items
    * @param {string} userId - User posting the RTV
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store stock tracking
    * @returns {Promise<Object>} - Result with reversed products, batches, costs, logs
    */
-  static async processRtvStockReversal(rtvData, userId) {
+  static async processRtvStockReversal(rtvData, userId, branchId = null) {
     try {
+      // ✅ Extract branchId from RTV if not provided
+      const rtvBranchId = branchId || rtvData.branchId || null;
+      
       console.log("🔄 Processing RTV stock reversals:", {
         rtvNumber: rtvData.rtvNumber,
+        branchId: rtvBranchId,
         totalItems: rtvData.items?.length,
         createdBy: userId
       });
@@ -164,8 +169,14 @@ class RTVStockUpdateService {
    */
   static async reverseProductStock(product, item, rtvData) {
     try {
+      // ✅ CRITICAL FIX: Include branchId to get correct branch stock (multi-store support)
+      const branchId = rtvData.branchId || null;
+      
       // ✅ CORRECT WORKFLOW: Get stock from CurrentStock table (single source of truth)
-      const currentStock = await CurrentStock.findOne({ productId: product._id });
+      const currentStock = await CurrentStock.findOne({ 
+        productId: product._id,
+        branchId: branchId  // ← CRITICAL: Filter by branch for multi-store
+      });
       
       if (!currentStock) {
         throw new Error(
@@ -186,7 +197,10 @@ class RTVStockUpdateService {
 
       // ✅ UPDATE CurrentStock collection (SINGLE SOURCE OF TRUTH)
       const updatedStock = await CurrentStock.findOneAndUpdate(
-        { productId: product._id },
+        { 
+          productId: product._id,
+          branchId: branchId  // ← CRITICAL: Ensure we update the correct branch stock
+        },
         {
           $inc: {
             quantityInStock: -quantityReturned,  // Decrease stock
@@ -393,8 +407,14 @@ class RTVStockUpdateService {
       const oldCost = product.cost || 0;
       const quantityReturned = item.quantity || 0;
       
+      // ✅ CRITICAL FIX: Include branchId for multi-store stock tracking
+      const branchId = rtvData.branchId || null;
+      
       // ✅ CORRECT WORKFLOW: Get stock from CurrentStock table (after reversal)
-      const currentStock = await CurrentStock.findOne({ productId: product._id });
+      const currentStock = await CurrentStock.findOne({ 
+        productId: product._id,
+        branchId: branchId  // ← CRITICAL: Filter by branch
+      });
       const remainingQuantity = currentStock ? (currentStock.quantityInStock - quantityReturned) : 0;
 
       // ✅ NEW LOGIC: Check if this is latest GRN and if stock becomes zero

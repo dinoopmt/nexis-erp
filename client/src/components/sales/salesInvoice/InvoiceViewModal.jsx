@@ -25,10 +25,14 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
               {/* Company Info */}
               <div>
                 <h3 className="text-lg font-bold text-gray-800">
-                  NEXIS ERP
+                  {config?.companyName || "NEXIS ERP"}
                 </h3>
-                <p className="text-xs text-gray-600 mt-2">Dubai, UAE</p>
-                <p className="text-xs text-gray-600">TRN: 123456789</p>
+                <p className="text-xs text-gray-600 mt-2">
+                  {config?.city && config?.state 
+                    ? `${config.city}, ${config.state}`
+                    : config?.address || "Dubai, UAE"}
+                </p>
+                <p className="text-xs text-gray-600">TRN: {config?.taxId || "123456789"}</p>
               </div>
 
               {/* Invoice Details */}
@@ -110,10 +114,10 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-200 border-b">
-                  <th className="px-2 py-2 text-left">Item</th>
+                  <th className="px-2 py-2 text-center">Sl.No</th>
+                  <th className="px-2 py-2 text-left">Item </th>
                   <th className="px-2 py-2 text-center">Qty</th>
                   <th className="px-2 py-2 text-right">Rate</th>
-                  <th className="px-2 py-2 text-right">Discount %</th>
                   <th className="px-2 py-2 text-right">Disc Amt</th>
                   <th className="px-2 py-2 text-right">Tax %</th>
                   <th className="px-2 py-2 text-right">Amount</th>
@@ -122,24 +126,34 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
               <tbody>
                 {viewedInvoice.items?.map((item, idx) => (
                   <tr key={idx} className="border-b hover:bg-gray-50">
-                    <td className="px-2 py-2">{item.itemName}</td>
+                    <td className="px-2 py-2 text-center font-semibold">
+                      {idx + 1}
+                    </td>
+                    <td className="px-2 py-2">
+                      <div>{item.itemName}</div>
+
+                      {(item.serialNumbers?.length > 0 || item.note) && (
+                        <div className="text-xs text-gray-500 italic">
+                          {item.serialNumbers?.length > 0 && <div>Serial - {item.serialNumbers.join(", ")}</div>}
+                          {item.note && <div>Note - {item.note}</div>}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-2 py-2 text-center">
                       {item.quantity}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      {config.currency || 'AED'} {formatNumber(item.unitPrice)}
+                      {formatNumber(item.unitPrice)}
                     </td>
+                    
                     <td className="px-2 py-2 text-right">
-                      {item.discountPercentage}%
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      {config.currency || 'AED'} {formatNumber(item.discountAmount || 0)}
+                      {formatNumber(item.discountAmount || 0)}
                     </td>
                     <td className="px-2 py-2 text-right">
                       {item.vatPercentage}%
                     </td>
                     <td className="px-2 py-2 text-right font-semibold">
-                      {config.currency || 'AED'} {formatNumber(item.total || 0)}
+                       {formatNumber(item.total || 0)}
                     </td>
                   </tr>
                 ))}
@@ -166,7 +180,7 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-600">Subtotal:</span>
                     <span className="font-semibold">
-                      {config.currency || 'AED'} {formatNumber(viewedInvoice.subtotal)}
+                      {formatNumber(viewedInvoice.subtotal)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
@@ -174,8 +188,7 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
                       Discount ({viewedInvoice.discountPercentage || 0}%):
                     </span>
                     <span className="font-semibold text-red-600">
-                      -{config.currency || 'AED'}{" "}
-                      {formatNumber(viewedInvoice.discountAmount || 0)}
+                      -{formatNumber(viewedInvoice.discountAmount || 0)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
@@ -183,7 +196,6 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
                       Total After Discount:
                     </span>
                     <span className="font-semibold">
-                      {config.currency || 'AED'}{" "}
                       {formatNumber(viewedInvoice.totalAfterDiscount)}
                     </span>
                   </div>
@@ -192,13 +204,12 @@ const InvoiceViewModal = ({ viewedInvoice, setViewedInvoice, config, formatNumbe
                       VAT ({viewedInvoice.vatPercentage || 0}%):
                     </span>
                     <span className="font-semibold">
-                      {config.currency || 'AED'} {formatNumber(viewedInvoice.vatAmount)}
+                      {formatNumber(viewedInvoice.vatAmount)}
                     </span>
                   </div>
                   <div className="bg-blue-100 px-4 py-3 rounded mt-4 flex justify-between">
                     <span className="font-bold text-gray-800">TOTAL:</span>
                     <span className="font-bold text-blue-600 text-lg">
-                      {config.currency || 'AED'}{" "}
                       {formatNumber(
                         viewedInvoice.totalIncludeVat ||
                           viewedInvoice.totalAmount

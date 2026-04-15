@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Save, Copy, Check, AlertCircle, CheckCircle } from 'lucide-react'
+import { API_URL } from '../../../config/config'
 
 const LicenseManagement = () => {
   const [licenseData, setLicenseData] = useState({
@@ -40,7 +41,7 @@ const LicenseManagement = () => {
     setMessage('')
 
     try {
-      const response = await fetch('/api/v1/settings/license/validate', {
+      const response = await fetch(`${API_URL}/settings/license/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ licenseKey: newLicense }),

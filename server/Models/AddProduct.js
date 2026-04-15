@@ -62,6 +62,21 @@ const productSchema = new mongoose.Schema({
     index: true,
     description: "Country where product is sold - enforces individual country operations (ISO country codes: AE=UAE, OM=Oman, IN=India)"
   },
+  
+  // Branch/Organization Association (Multi-Store Setup)
+  branchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    default: null,
+    index: true,
+    description: "Organization/Branch this product belongs to - enables branch-specific products"
+  },
+  branchName: {
+    type: String,
+    default: '',
+    description: "Cached branch name for quick lookup (e.g., 'Dubai Main Branch')"
+  },
+  
   minStock: {
     type: Number,
     default: 0,
@@ -281,6 +296,8 @@ productSchema.index({ isDeleted: 1, barcode: 1 });  // Composite index for exist
 productSchema.index({ categoryId: 1 });  // Index for category queries
 productSchema.index({ groupingId: 1 });  // Index for grouping queries
 productSchema.index({ hsnReference: 1 });  // Index for HSN lookup
+productSchema.index({ branchId: 1 });  // Index for multi-store branch queries
+productSchema.index({ branchId: 1, isDeleted: 1 });  // Composite index for branch-specific product queries
 
 // Middleware to attach GST rate from HSN when hsnReference is set
 productSchema.post('findOne', async function(doc) {

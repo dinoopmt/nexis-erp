@@ -673,9 +673,14 @@ export const getProducts = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const search = req.query.search || "";
     const trimmedSearch = search.trim();
+    
+    // ✅ NEW: Support branch filtering for multi-store setup
+    const branchId = req.query.branchId || null;
 
     const query = {
       isDeleted: false,
+      // ✅ Branch filtering: if branchId provided, filter; otherwise get all/global products
+      ...(branchId && { $or: [{ branchId }, { branchId: null }] }),
       $or: [
         { name: { $regex: trimmedSearch, $options: "i" } },
         { barcode: { $regex: trimmedSearch, $options: "i" } },
@@ -690,11 +695,12 @@ export const getProducts = async (req, res) => {
 
     // ✅ SIMPLE: Use regular find() and populate()
     const products = await Product.find({ ...query, ...groupingFilter })
-      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry')
+      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry taxPercent taxType finalPrice branchId branchName')
       .populate('categoryId', 'name')
       .populate('groupingId', 'name')
       .populate('vendor', 'name')
       .populate('unitType', 'unitName unitSymbol unitDecimal category')
+      .populate('branchId', 'name code type')
       .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
       .skip((page - 1) * limit)
       .limit(limit)
@@ -705,8 +711,13 @@ export const getProducts = async (req, res) => {
     if (products.length > 0) {
       const productIds = products.map(p => p._id);
       
-      // Fetch all currentStock docs for these products
-      const stockDocs = await CurrentStock.find({ productId: { $in: productIds } }).lean();
+      // Fetch all currentStock docs for these products (optionally filtered by branch)
+      const stockQuery = { productId: { $in: productIds } };
+      if (branchId) {
+        stockQuery.branchId = branchId;  // Filter stock by branch
+      }
+      
+      const stockDocs = await CurrentStock.find(stockQuery).lean();
       const stockMap = new Map(stockDocs.map(s => [s.productId.toString(), s]));
       
       // Attach currentStock to each product
@@ -731,6 +742,88 @@ export const getProducts = async (req, res) => {
     console.error("❌ Error fetching products:", err);
     res.status(500).json({
       message: "Error fetching products",
+      error: err.message,
+    });
+  }
+};
+
+// ================= GET PRODUCTS BY BRANCH (Multi-Store Support) =================
+// ✅ NEW: Dedicated endpoint for branch-specific products
+export const getProductsByBranch = async (req, res) => {
+  try {
+    const branchId = req.params.branchId;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const search = req.query.search || "";
+    const trimmedSearch = search.trim();
+
+    if (!branchId) {
+      return res.status(400).json({ message: "❌ Branch ID is required" });
+    }
+
+    const query = {
+      isDeleted: false,
+      $or: [
+        { branchId }, // Products specifically assigned to this branch
+        { branchId: null } // Global products available to all branches
+      ],
+      $or: [
+        { name: { $regex: trimmedSearch, $options: "i" } },
+        { barcode: { $regex: trimmedSearch, $options: "i" } },
+        { itemcode: { $regex: trimmedSearch, $options: "i" } },
+        { 'packingUnits.barcode': { $regex: trimmedSearch, $options: "i" } },
+        { 'packingUnits.additionalBarcodes': { $regex: trimmedSearch, $options: "i" } },
+      ],
+    };
+
+    const total = await Product.countDocuments(query);
+
+    const products = await Product.find(query)
+      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry taxPercent taxType finalPrice branchId branchName')
+      .populate('categoryId', 'name')
+      .populate('groupingId', 'name')
+      .populate('vendor', 'name')
+      .populate('unitType', 'unitName unitSymbol unitDecimal category')
+      .populate('branchId', 'name code type')
+      .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdate: -1 })
+      .lean();
+
+    // Fetch stock for this specific branch
+    if (products.length > 0) {
+      const productIds = products.map(p => p._id);
+      const stockDocs = await CurrentStock.find({
+        productId: { $in: productIds },
+        branchId
+      }).lean();
+      
+      const stockMap = new Map(stockDocs.map(s => [s.productId.toString(), s]));
+      
+      products.forEach(product => {
+        const stock = stockMap.get(product._id.toString());
+        product.currentStock = stock || {
+          totalQuantity: 0,
+          availableQuantity: 0,
+          allocatedQuantity: 0,
+        };
+      });
+    }
+
+    res.json({
+      products,
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      hasMore: (page * limit) < total,
+      branchId,
+      message: `Found ${products.length} products for branch ${branchId}`
+    });
+  } catch (err) {
+    console.error("❌ Error fetching products by branch:", err);
+    res.status(500).json({
+      message: "Error fetching products by branch",
       error: err.message,
     });
   }
@@ -1584,6 +1677,115 @@ export const getBarcodeQueueStatus = async (req, res) => {
       success: false,
       message: "Error retrieving queue status",
       error: err.message
+    });
+  }
+};
+
+// ================= GET PRODUCT BY BARCODE (FOR BARCODE SCANNING) =================
+export const getProductByBarcode = async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    if (!code || code.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Barcode is required",
+        product: null,
+      });
+    }
+
+    const normalizedBarcode = code.trim().toUpperCase();
+
+    console.log(`🔍 [BARCODE] Looking up: "${normalizedBarcode}"`);
+
+    // ✅ PRIMARY: Search by exact barcode match
+    let product = await Product.findOne({
+      isDeleted: false,
+      barcode: normalizedBarcode,
+    })
+      .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice currentStock')
+      .populate('vendor', 'name')
+      .populate('categoryId', 'name')
+      .populate('unitType', 'unitName unitSymbol unitDecimal category')
+      .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
+      .lean();
+
+    // ✅ SECONDARY: Search by item code if barcode not found
+    if (!product) {
+      console.log(`⚠️  [BARCODE] Not found by barcode, trying itemcode...`);
+      product = await Product.findOne({
+        isDeleted: false,
+        itemcode: normalizedBarcode,
+      })
+        .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice currentStock')
+        .populate('vendor', 'name')
+        .populate('categoryId', 'name')
+        .populate('unitType', 'unitName unitSymbol unitDecimal category')
+        .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
+        .lean();
+    }
+
+    // ✅ TERTIARY: Search in variant barcodes if still not found
+    if (!product) {
+      console.log(`⚠️  [BARCODE] Not found by itemcode, searching variant barcodes...`);
+      product = await Product.findOne({
+        isDeleted: false,
+        $or: [
+          { 'packingUnits.barcode': normalizedBarcode },
+          { 'packingUnits.additionalBarcodes': normalizedBarcode },
+          { 'packingUnits.moreBarcode': normalizedBarcode },
+        ],
+      })
+        .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice currentStock')
+        .populate('vendor', 'name')
+        .populate('categoryId', 'name')
+        .populate('unitType', 'unitName unitSymbol unitDecimal category')
+        .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
+        .lean();
+    }
+
+    if (!product) {
+      console.log(`⚠️  [BARCODE] Product not found in database: "${normalizedBarcode}"`);
+      return res.status(200).json({
+        success: false,
+        type: "PRODUCT_NOT_FOUND",
+        message: `Product not found for barcode: ${normalizedBarcode}`,
+        product: null,
+        barcode: normalizedBarcode,
+      });
+    }
+
+    // ✅ Attach current stock data
+    let currentStock = null;
+    try {
+      currentStock = await CurrentStock.findOne({ productId: product._id }).lean();
+    } catch (err) {
+      console.warn(`⚠️  Could not fetch current stock for product ${product._id}:`, err.message);
+    }
+
+    const productWithStock = {
+      ...product,
+      currentStock: currentStock || {
+        availableQuantity: 0,
+        totalQuantity: 0,
+      },
+    };
+
+    console.log(`✅ [BARCODE] Found: ${product.name} (${product.itemcode})`);
+
+    res.json({
+      success: true,
+      message: `Product found: ${product.name}`,
+      product: productWithStock,
+      barcode: normalizedBarcode,
+    });
+  } catch (err) {
+    console.error("❌ Error fetching product by barcode:", err.message);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching product",
+      error: err.message,
+      product: null,
     });
   }
 };
@@ -2766,7 +2968,7 @@ export const searchProducts = async (req, res) => {
             { 'packingUnits.additionalBarcodes': exactBarcodeQuery },
           ],
         })
-          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice')
           .populate('vendor', 'name')
           .populate('categoryId', 'name')
           .populate('unitType', 'unitName unitSymbol unitDecimal category')
@@ -2811,7 +3013,7 @@ export const searchProducts = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
 
         const products = await Product.find(mongoQuery)
-          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry')
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice')
           .populate('vendor', 'name')
           .populate('categoryId', 'name')
           .populate('unitType', 'unitName unitSymbol unitDecimal category')

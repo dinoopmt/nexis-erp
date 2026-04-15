@@ -220,9 +220,10 @@ class GRNEditManager {
    * @param {ObjectId} grnId
    * @param {Object} proposedChanges - { items: [...], notes: string }
    * @param {ObjectId} userId
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store support
    * @returns {Promise<Object>} - { safe: boolean, checks: {}, error: string }
    */
-  static async validateEditSafety(grnId, proposedChanges, userId) {
+  static async validateEditSafety(grnId, proposedChanges, userId, branchId = null) {
     const checks = {
       grnExists: false,
       hasItems: false,
@@ -235,7 +236,7 @@ class GRNEditManager {
     };
 
     try {
-      console.log(`\n🔍 Pre-edit validation for GRN ${grnId}`);
+      console.log(`\n🔍 Pre-edit validation for GRN ${grnId}`, { branchId });
 
       // Check 0: Items array is provided (REQUIRED)
       if (!proposedChanges.items || !Array.isArray(proposedChanges.items) || proposedChanges.items.length === 0) {
@@ -278,8 +279,10 @@ class GRNEditManager {
       // Where: NET_INCREASE_NEEDED = newQty - originalQty
       
       for (const item of proposedChanges.items || []) {
+        // ✅ CRITICAL FIX: Include branchId to get correct branch stock
         const currentStock = await CurrentStock.findOne({
           productId: item.productId,
+          branchId: branchId || null  // ← Add branch filter for multi-store
         });
 
         // Find original quantity from GRN
@@ -366,20 +369,21 @@ class GRNEditManager {
    * @param {ObjectId} grnId
    * @param {Object} changes - { items: [...], notes: string }
    * @param {ObjectId} userId
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store support
    * @returns {Promise<Object>} - { success, result }
    */
-  static async editPostedGRNWithTransaction(grnId, changes, userId) {
+  static async editPostedGRNWithTransaction(grnId, changes, userId, branchId = null) {
     let lockAcquired = false;
     let sessionCreated = false;
     const session = await mongoose.startSession();
 
     try {
       console.log(`\n${'═'.repeat(80)}`);
-      console.log(`🔐 TRANSACTION START: Edit Posted GRN ${grnId}`);
+      console.log(`🔐 TRANSACTION START: Edit Posted GRN ${grnId}`, { branchId });
       console.log(`${'═'.repeat(80)}`);
 
       // Step 1: Pre-validation (before lock/transaction)
-      const validation = await this.validateEditSafety(grnId, changes, userId);
+      const validation = await this.validateEditSafety(grnId, changes, userId, branchId);
       if (!validation.safe) {
         throw new Error(validation.error);
       }
@@ -418,7 +422,8 @@ class GRNEditManager {
         updatedGRN,
         oldData,
         userId,
-        session // ← Pass session for all writes
+        session,  // ← Pass session for all writes
+        branchId  // ← Pass branchId for multi-store support
       );
 
       console.log(`✅ All cascade phases completed`);
@@ -724,14 +729,14 @@ class GRNEditManager {
 
       // ✅ 3. PHASE 2: Reverse original stock impact
       console.log(`\n📊 [Phase 2] REVERSING original stock impact...`);
-      const reversedData = await this.reverseGRNStockImpact(grn, userId);
+      const reversedData = await this.reverseGRNStockImpact(grn, userId, branchId);
       console.log(`✅ [Phase 2] Reversal complete:`);
       console.log(`   Items reversed: ${reversedData.count}`);
       console.log(`   Total reversed: ${reversedData.totalQuantity} units`);
 
       // ✅ 4. PHASE 3: Apply new changes
       console.log(`\n📊 [Phase 3] APPLYING new changes...`);
-      const recalculatedData = await this.applyGRNChanges(grnId, changes, userId);
+      const recalculatedData = await this.applyGRNChanges(grnId, changes, userId, branchId);
       console.log(`✅ [Phase 3] Application complete:`);
       console.log(`   Items applied: ${recalculatedData.count}`);
       console.log(`   Total applied: ${recalculatedData.newTotalQty} units`);
@@ -817,11 +822,12 @@ class GRNEditManager {
    * @private
    * @param {Object} grn - The GRN document
    * @param {ObjectId} userId
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store support
    * @returns {Promise<Object>} - Summary of reversals
    */
-  static async reverseGRNStockImpact(grn, userId) {
+  static async reverseGRNStockImpact(grn, userId, branchId = null) {
     try {
-      console.log(`↩️ Reversing ${grn.items.length} items...`);
+      console.log(`↩️ Reversing ${grn.items.length} items...`, { branchId });
 
       const reversals = [];
       let totalReversed = 0;
@@ -836,7 +842,11 @@ class GRNEditManager {
         }
 
         // ✅ 1. Reverse quantity in CurrentStock
-        const currentStock = await CurrentStock.findOne({ productId: item.productId });
+        // ✅ CRITICAL FIX: Include branchId for multi-store stock isolation
+        const currentStock = await CurrentStock.findOne({ 
+          productId: item.productId,
+          branchId: branchId || null  // ← Add branch filter
+        });
         if (!currentStock) continue;
 
         // Validate we have enough to reverse
@@ -849,7 +859,10 @@ class GRNEditManager {
 
         // ✅ 2. Decrease stock
         const reversed = await CurrentStock.findOneAndUpdate(
-          { productId: item.productId },
+          { 
+            productId: item.productId,
+            branchId: branchId || null  // ← Add branch filter
+          },
           {
             $inc: {
               totalQuantity: -item.quantity,
@@ -917,11 +930,12 @@ class GRNEditManager {
    * @param {ObjectId} grnId
    * @param {Object} changes - { itemUpdates, reason }
    * @param {ObjectId} userId
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store support
    * @returns {Promise<Object>} - New quantities, costs, and items
    */
-  static async applyGRNChanges(grnId, changes, userId) {
+  static async applyGRNChanges(grnId, changes, userId, branchId = null) {
     try {
-      console.log(`✅ Applying ${changes.itemUpdates.length} new item changes...`);
+      console.log(`✅ Applying ${changes.itemUpdates.length} new item changes...`, { branchId });
 
       const grn = await Grn.findById(grnId).populate('items.productId');
       const newItems = [];
@@ -935,7 +949,11 @@ class GRNEditManager {
 
         // ✅ 1. Update CurrentStock - VALIDATE EXISTENCE FIRST
         // Check if CurrentStock exists (should from product creation)
-        const existingStock = await CurrentStock.findOne({ productId: change.productId });
+        // ✅ CRITICAL FIX: Include branchId for multi-store stock validation
+        const existingStock = await CurrentStock.findOne({ 
+          productId: change.productId,
+          branchId: branchId || null  // ← Add branch filter
+        });
         if (!existingStock) {
           throw new Error(
             `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
@@ -944,7 +962,10 @@ class GRNEditManager {
         }
 
         const updated = await CurrentStock.findOneAndUpdate(
-          { productId: change.productId },
+          { 
+            productId: change.productId,
+            branchId: branchId || null  // ← Add branch filter
+          },
           {
             $inc: {
               totalQuantity: change.quantity,
@@ -1265,10 +1286,10 @@ class GRNEditManager {
     }
   }
 
-  static async updateRelatedCollections(grnId, updatedGRN, oldData, userId, session = null) {
+  static async updateRelatedCollections(grnId, updatedGRN, oldData, userId, session = null, branchId = null) {
     try {
       console.log(`\n${'─'.repeat(80)}`);
-      console.log(`🔄 [updateRelatedCollections] Starting cascade updates`);
+      console.log(`🔄 [updateRelatedCollections] Starting cascade updates`, { branchId });
       console.log(`   GRN: ${updatedGRN.grnNumber}`);
       console.log(`   New Total: ${updatedGRN.totalAmount}`);
       if (session) {

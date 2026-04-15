@@ -8,9 +8,6 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
     terminalName: '',
     invoiceNumberPrefix: '',
     invoiceFormat: 'STANDARD',
-    enableCreditSale: true,
-    enableReturns: true,
-    enablePromotions: true,
   })
 
   useEffect(() => {
@@ -25,7 +22,11 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
 
   useEffect(() => {
     if (terminal) {
-      setFormData(terminal)
+      // Merge terminal data with default state to ensure all fields stay defined
+      setFormData(prev => ({
+        ...prev,
+        ...terminal
+      }))
     }
   }, [terminal])
 
@@ -141,43 +142,6 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
                     <option value="A4">A4</option>
                   </select>
                 </div>
-              </div>
-            </div>
-
-            {/* Terminal Features */}
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Terminal Features</h4>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-gray-700 flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="enableCreditSale"
-                    checked={formData.enableCreditSale}
-                    onChange={handleInputChange}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Enable Credit Sale
-                </label>
-                <label className="text-xs font-medium text-gray-700 flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="enableReturns"
-                    checked={formData.enableReturns}
-                    onChange={handleInputChange}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Enable Returns
-                </label>
-                <label className="text-xs font-medium text-gray-700 flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="enablePromotions"
-                    checked={formData.enablePromotions}
-                    onChange={handleInputChange}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Enable Promotions
-                </label>
               </div>
             </div>
 

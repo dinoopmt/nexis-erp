@@ -120,6 +120,19 @@ const rtvSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // ✅ NEW: Branch/Organization Association (Multi-Store Support)
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      default: null,
+      index: true,
+      description: "Organization/Branch where RTV is processed"
+    },
+    branchName: {
+      type: String,
+      default: '',
+      description: "Cached branch name"
+    },
 
     // ✅ RETURN DETAILS
     referenceNumber: {

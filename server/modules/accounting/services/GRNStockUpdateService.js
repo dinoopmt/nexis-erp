@@ -27,13 +27,18 @@ class GRNStockUpdateService {
    * 
    * @param {Object} grnData - GRN document with items
    * @param {string} userId - User posting the GRN
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store stock tracking
    * @returns {Promise<Object>} - Result with updated products, batches, costs, logs
    */
-  static async processGrnStockUpdate(grnData, userId) {
+  static async processGrnStockUpdate(grnData, userId, branchId = null) {
     try {
+      // ✅ Extract branchId from GRN if not provided, or use parameter
+      const grnBranchId = branchId || grnData.branchId || null;
+      
       console.log("📦 Processing GRN stock updates:", {
         grnNumber: grnData.grnNumber,
         grnId: grnData._id?.toString(),
+        branchId: grnBranchId,  // ✅ Log branch for debugging
         totalItems: grnData.items?.length,
         itemsIsArray: Array.isArray(grnData.items),
         createdBy: userId
@@ -86,8 +91,9 @@ class GRNStockUpdateService {
           // All stock updates now go through CurrentStock collection (single source of truth)
           
           // 1b. ✅ NEW: Update CurrentStock collection for real-time tracking
+          // ✅ Pass grnBranchId for multi-store support
           console.log(`📊 About to call updateCurrentStock for ${product.itemcode}`);
-          const currentStockUpdate = await this.updateCurrentStock(product, item, grnData);
+          const currentStockUpdate = await this.updateCurrentStock(product, item, grnData, grnBranchId);
           if (currentStockUpdate) {
             console.log(`✅ Adding to currentStockUpdates:`, currentStockUpdate);
             results.currentStockUpdates.push(currentStockUpdate);
@@ -671,6 +677,8 @@ class GRNStockUpdateService {
       if (!batchRecord) return;
 
       // Get current stock for tracking
+      // ✅ NOTE: This method doesn't have direct access to branchId
+      // Will query for product stock (fetches any branch, which is OK for audit trail reference purposes)
       const CurrentStock = (await import("../../../Models/CurrentStock.js")).default;
       const currentStockRecord = await CurrentStock.findOne({ productId: product._id });
 
@@ -763,29 +771,38 @@ class GRNStockUpdateService {
    * @param {Object} product - Product document
    * @param {Object} item - GRN line item with quantity and conversionFactor
    * @param {Object} grnData - GRN data
+   * @param {string} branchId - Optional: Branch/Organization ID for multi-store support
    * @returns {Promise<Object>} - Updated current stock document
    */
-  static async updateCurrentStock(product, item, grnData) {
+  static async updateCurrentStock(product, item, grnData, branchId = null) {
     try {
       const conversionFactor = item.conversionFactor || 1;
       const quantityReceived = (item.quantity || 0) * conversionFactor;
 
-      console.log(`\n🔄 updateCurrentStock START:`, { productCode: product.itemcode, qty: quantityReceived, grn: grnData.grnNumber });
+      console.log(`\n🔄 updateCurrentStock START:`, { productCode: product.itemcode, qty: quantityReceived, grn: grnData.grnNumber, branchId });
 
       // ✅ CORRECT WORKFLOW: CurrentStock must already exist from product creation
       // GRN only UPDATES existing records, never CREATE new ones
-      const existingStock = await CurrentStock.findOne({ productId: product._id });
+      // ✅ NEW: Include branchId in query for multi-branch support
+      const existingStock = await CurrentStock.findOne({ 
+        productId: product._id,
+        branchId: branchId || null  // ← CRITICAL: Add branch filter
+      });
       if (!existingStock) {
         throw new Error(
-          `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode}. ` +
+          `❌ CRITICAL: CurrentStock record missing for product ${product.itemcode} in branch ${branchId || "Global"}. ` +
           `This should have been created when the product was first created. ` +
           `Create current stock entry first, then perform GRN transactions.`
         );
       }
 
       // ✅ UPDATE only (no upsert) - forward workflow: product creation → current stock creation → GRN updates
+      // ✅ NEW: Include branchId in query for multi-branch support
       const updatedStock = await CurrentStock.findOneAndUpdate(
-        { productId: product._id },
+        { 
+          productId: product._id,
+          branchId: branchId || null  // ← CRITICAL: Add branch filter
+        },
         {
           $inc: {
             totalQuantity: quantityReceived,  // ✅ Total physical stock

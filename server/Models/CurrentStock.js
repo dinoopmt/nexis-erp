@@ -9,6 +9,15 @@ const CurrentStockSchema = new mongoose.Schema(
       unique: true,
     },
     
+    // ✅ NEW: Multi-Store Support - Branch/Organization Association
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      default: null,
+      index: true,
+      description: "Branch/Organization this stock entry belongs to - null for global/main store"
+    },
+    
     // ✅ CURRENT STOCK QUANTITIES
     totalQuantity: {
       type: Number,

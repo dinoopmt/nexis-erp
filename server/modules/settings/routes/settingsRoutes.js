@@ -14,11 +14,6 @@ router.put('/company', settingsController.updateCompanySettings);
 router.get('/license', settingsController.getLicense);
 router.post('/license/validate', settingsController.validateLicense);
 
-// System Settings Routes
-router.get('/system', settingsController.getSystemSettings);
-router.post('/system', settingsController.updateSystemSettings);
-router.put('/system', settingsController.updateSystemSettings);
-
 // Store Settings Routes
 router.get('/store', storeSettingsController.getStoreSettings);
 router.post('/store', storeSettingsController.updateStoreSettings);

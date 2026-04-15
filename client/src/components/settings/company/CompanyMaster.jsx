@@ -3,6 +3,7 @@ import { Save, Upload, X, Building } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import useTaxMaster from '../../../hooks/useTaxMaster'
 import { useCostingMaster } from '../../../hooks/useCostingMaster'
+import { API_URL } from '../../../config/config'
 
 const CompanyMaster = () => {
   const { company, taxMaster, loading: contextLoading, updateCompany } = useTaxMaster()
@@ -99,7 +100,7 @@ const CompanyMaster = () => {
   const fetchCountries = async () => {
     try {
       setCountriesLoading(true)
-      const response = await fetch('/api/v1/countries')
+      const response = await fetch(`${API_URL}/countries`)
 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status} ${response.statusText}`)
@@ -108,6 +109,9 @@ const CompanyMaster = () => {
       const data = await response.json()
       if (data.success && data.data) {
         setCountries(data.data)
+      } else if (Array.isArray(data)) {
+        // Handle case where response is directly an array
+        setCountries(data)
       }
     } catch (error) {
       console.error('Error fetching countries:', error)

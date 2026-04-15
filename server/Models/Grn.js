@@ -111,6 +111,19 @@ const grnSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // ✅ NEW: Branch/Organization Association (Multi-Store Support)
+    branchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      default: null,
+      index: true,
+      description: "Organization/Branch where GRN is received"
+    },
+    branchName: {
+      type: String,
+      default: '',
+      description: "Cached branch name"
+    },
     // ✅ ADDED: Shipper tracking for separate payables
     shipperId: {
       type: mongoose.Schema.Types.ObjectId,

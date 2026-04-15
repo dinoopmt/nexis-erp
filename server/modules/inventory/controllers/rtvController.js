@@ -468,8 +468,11 @@ export const postRtv = async (req, res) => {
       });
     }
 
+    // ✅ CRITICAL FIX: Extract branchId for multi-store stock isolation
+    const branchIdForStock = rtv.branchId || null;
+    
     // Process stock reversal
-    const stockResult = await RTVStockUpdateService.processRtvStockReversal(rtv);
+    const stockResult = await RTVStockUpdateService.processRtvStockReversal(rtv, req.user?._id, branchIdForStock);
     if (!stockResult.success) {
       return res.status(400).json({
         success: false,

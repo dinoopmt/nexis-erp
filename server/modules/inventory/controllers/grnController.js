@@ -1208,7 +1208,10 @@ export const postGrn = async (req, res) => {
         } : null
       });
 
-      stockUpdate = await GRNStockUpdateService.processGrnStockUpdate(grn, createdBy || "System");
+      // ✅ Extract branchId from GRN for multi-store stock tracking
+      const branchIdForStock = grn.branchId || null;
+      
+      stockUpdate = await GRNStockUpdateService.processGrnStockUpdate(grn, createdBy || "System", branchIdForStock);
       console.log("✅ Stock updates completed:", {
         itemsProcessed: stockUpdate.processedItems.length,
         batchesCreated: stockUpdate.createdBatches.length,
