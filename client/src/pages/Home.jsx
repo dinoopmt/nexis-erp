@@ -481,15 +481,19 @@ function Home() {
               return (
                 <div key={menu.name}>
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log("Menu clicked:", menu.name, "isGroup:", isGroup);
                       if (isGroup) {
                         toggleExpand(menu.name);
                       } else if (menu.path) {
+                        console.log("Navigating to:", menu.path);
                         navigate(menu.path);
                       }
                     }}
                     className={`
-                      w-full flex items-center gap-3 px-4 py-3 rounded-lg transition text-xs lg:text-sm
+                      w-full flex items-center gap-3 px-4 py-3 rounded-lg transition text-xs lg:text-sm cursor-pointer pointer-events-auto
                       ${
                         activeMenu === menu.name && !isGroup
                           ? "bg-green-600"
@@ -523,15 +527,19 @@ function Home() {
                           <div key={submenuKey}>
                             {/* Level 2: Subgroup */}
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log("Submenu clicked:", child.name, "isSubmenu:", isSubmenu);
                                 if (isSubmenu) {
                                   toggleExpandSubmenu(submenuKey);
                                 } else if (child.path) {
+                                  console.log("Navigating to:", child.path);
                                   navigate(child.path);
                                 }
                               }}
                               className={`
-                                w-full text-left flex items-center gap-2 px-3 py-2 rounded text-xs transition
+                                w-full text-left flex items-center gap-2 px-3 py-2 rounded text-xs transition cursor-pointer pointer-events-auto
                                 ${
                                   activeMenu === child.name && !isSubmenu
                                     ? "bg-green-600 text-white"
@@ -567,13 +575,16 @@ function Home() {
                                           {grandchild.children.map((item) => (
                                             <button
                                               key={item.id}
-                                              onClick={() => {
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                console.log("Item clicked:", item.name, "path:", item.path);
                                                 if (item.path) {
                                                   navigate(item.path);
                                                 }
                                               }}
                                               className={`
-                                              w-full text-left px-4 py-1.5 rounded text-xs transition
+                                              w-full text-left px-4 py-1.5 rounded text-xs transition cursor-pointer pointer-events-auto
                                               ${
                                                 activeMenu === item.name
                                                   ? "bg-green-600 text-white"
@@ -690,6 +701,17 @@ function Home() {
                 }
               />
             ))}
+
+            {/* Catch-all for debugging */}
+            <Route 
+              path="*" 
+              element={
+                <div className="p-6 text-center text-gray-700">
+                  <p className="mb-4">Page not found: <code>{window.location.pathname}</code></p>
+                  <p className="text-sm text-gray-500">Check browser console for routing logs</p>
+                </div>
+              } 
+            />
           </Routes>
         </div>
       </section>

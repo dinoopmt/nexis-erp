@@ -1,5 +1,5 @@
 import {
-  BrowserRouter as Router,
+  HashRouter as Router,
   Routes as Routers,
   Route,
 } from "react-router-dom";
