@@ -414,13 +414,7 @@ function Home() {
     }));
   };
 
-  useEffect(() => {
-    // Check if user is authenticated
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-    }
-  }, [navigate]);
+  // ✅ Auth check is now done in AuthContext & App.jsx, so Home is only rendered if authenticated
 
   useEffect(() => {
     // Calculate available height based on screen resolution

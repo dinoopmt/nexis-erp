@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"; // For navigation after login
 import { Lock, UserRound, Eye, EyeOff } from "lucide-react"; // Icon components
 import axios from "axios"; // HTTP client for API requests
 import { API_URL } from "../config/config"; // API endpoint configuration
+import { useAuth } from "../context/AuthContext"; // For updating auth context after login
 import logo from "../assets/images/logo.png"; // Company logo
 
 // Login component - Handles user authentication
@@ -16,6 +17,8 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   // Navigation hook to redirect after successful login
   const navigate = useNavigate();
+  // Auth hook to update context after login
+  const { login } = useAuth();
 
 
   // Handle login form submission
@@ -35,6 +38,8 @@ function Login() {
         localStorage.setItem("token", response.data.token);
         // Store user information in localStorage
         localStorage.setItem("user", JSON.stringify(response.data.user));
+        // ✅ Update AuthContext state to trigger re-render
+        login(response.data.user);
 
         // Redirect to home page after successful login
         navigate("/");
