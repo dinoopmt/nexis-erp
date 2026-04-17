@@ -6,11 +6,27 @@ const { loadConfig, validateConfig } = require("./config-loader.cjs");
 
 // ================== GLOBAL VARIABLES ==================
 let mainWindow;
+let splash;
 let terminalConfig;
 let isDev = process.env.NODE_ENV === "development";
 
 // Disable default menu
 Menu.setApplicationMenu(null);
+
+// ================== SINGLE INSTANCE LOCK ==================
+// Prevent multiple app instances
+const gotLock = app.requestSingleInstanceLock();
+
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 // ================== INITIALIZATION ==================
 /**
@@ -37,6 +53,25 @@ function initializeConfig() {
     console.error("❌ Config initialization failed:", error);
     app.quit();
   }
+}
+
+// ================== SPLASH SCREEN ==================
+/**
+ * Create and show splash screen (instant)
+ */
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 400,
+    height: 300,
+    frame: false,
+    alwaysOnTop: true,
+    transparent: false,
+    resizable: false,
+    show: true,
+  });
+
+  splash.loadFile(path.join(__dirname, "splash.html"));
+  console.log("🎬 Splash screen shown");
 }
 
 // ================== WINDOW CREATION ==================
@@ -103,9 +138,17 @@ function createWindow() {
   }
 
   mainWindow.once("ready-to-show", () => {
+    // Close splash screen
+    if (splash && !splash.isDestroyed()) {
+      splash.destroy();
+      splash = null;
+      console.log("✅ Splash screen closed");
+    }
+
+    // Show main window maximized
     mainWindow.show();
     mainWindow.maximize();
-    console.log("✅ UI ready and displayed (maximized)");
+    console.log("✅ Main window displayed (maximized)");
   });
 
   // Enable DevTools for debugging
@@ -160,6 +203,10 @@ function createWindow() {
 
 // ================== APP LIFECYCLE ==================
 app.on("ready", () => {
+  // Show splash immediately
+  createSplash();
+
+  // Load config and create main window
   initializeConfig();
   createWindow();
   setupIPC();

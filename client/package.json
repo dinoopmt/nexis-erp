@@ -81,6 +81,7 @@
         "nsis",
         "portable"
       ],
+      "icon": "assets/icon.ico",
       "certificateFile": null,
       "certificatePassword": null
     },
