@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FaUserCircle, FaBell } from "react-icons/fa";
 import { LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import logo from "../../assets/images/logo.png";
+
 
 export default function Header() {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -33,7 +33,7 @@ export default function Header() {
     <header className="flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 bg-gray-800 text-white gap-4">
       {/* Logo and Title */}
       <div className="flex items-center space-x-2 flex-shrink-0">
-        <img src={logo} alt="restro logo" className="h-7 lg:h-8 w-7 lg:w-8" />
+        
         <h1 className="text-lg lg:text-xl font-bold">Nexis ERP</h1>
       </div>
 

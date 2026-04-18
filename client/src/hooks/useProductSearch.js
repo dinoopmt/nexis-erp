@@ -186,9 +186,14 @@ export const useProductSearch = (
             'results'
           );
         } else if (!response.data.products || response.data.products.length === 0) {
-          console.warn(
-            '⚠️ Meilisearch returned empty results, trying fallback...'
-          );
+          // ✅ Empty results from Meilisearch is NORMAL - not an error
+          // Only log in debug mode - this is expected when no items match the search
+          if (process.env.NODE_ENV === 'development') {
+            console.debug(
+              '📊 Meilisearch returned 0 results for query:',
+              query
+            );
+          }
 
           if (!useFallback) {
             // If fallback is disabled, just use empty results
@@ -207,12 +212,13 @@ export const useProductSearch = (
             return;
           }
 
-          throw new Error('Empty search results - using fallback');
+          // ✅ Treat empty results as success case - try fallback anyway
+          throw new Error('Meilisearch empty results - checking fallback');
         }
       } catch (meilisearchErr) {
         // ✅ FIX: Don't show errors for AbortError/canceled - it's expected when user types quickly
         if (meilisearchErr.name === 'AbortError' || meilisearchErr.message === 'canceled') {
-          console.debug('⚠️ Meilisearch search cancelled (new search initiated)');
+          console.debug('⏱️ Search cancelled - new search initiated');
           setLoading(false);
           return;
         }
@@ -221,10 +227,17 @@ export const useProductSearch = (
           throw meilisearchErr;
         }
 
-        console.warn(
-          '⚠️ Meilisearch failed, falling back to getproducts endpoint:',
-          meilisearchErr.message
-        );
+        // ✅ Only warn about actual connection/timeout errors, not empty results
+        if (!meilisearchErr.message?.includes('empty results')) {
+          console.warn(
+            '⚠️ Meilisearch error - using fallback:',
+            meilisearchErr.message
+          );
+        } else if (process.env.NODE_ENV === 'development') {
+          // Empty results is normal - only debug log in dev mode
+          console.debug('📊 Meilisearch returned no results, checking fallback endpoint');
+        }
+
         usedFallback = true;
 
         // Fallback to getproducts endpoint
@@ -235,7 +248,9 @@ export const useProductSearch = (
           limit: limit,
         };
 
-        console.log('📡 Using fallback endpoint:', fallbackUrl);
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('📡 Fallback search endpoint:', fallbackUrl);
+        }
         response = await axios.get(fallbackUrl, {
           params: fallbackParams,
           signal: abortControllerRef.current.signal,
@@ -253,16 +268,21 @@ export const useProductSearch = (
       console.log('✅ Search Response:', {
         productsCount: response.data.products?.length || 0,
         totalCount: response.data.totalCount || response.data.total,
-        usedFallback: usedFallback,
+        source: usedFallback ? 'MongoDB (fallback)' : 'Meilisearch',
         status: response.status,
       });
 
       if (response.data.products) {
-        console.log(
-          '✅ Setting',
-          response.data.products.length,
-          'search results'
-        );
+        if (response.data.products.length > 0) {
+          console.log(
+            `✅ Found ${response.data.products.length} results from ${usedFallback ? 'fallback' : 'Meilisearch'}`
+          );
+        } else {
+          // Empty results is normal - don't log as error
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('📊 No products found matching query');
+          }
+        }
         // ✅ Parse stringified packingUnits from Meilisearch
         const parsedProducts = parsePackingUnits(response.data.products);
         setResults(parsedProducts);

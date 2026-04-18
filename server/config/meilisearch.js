@@ -109,6 +109,7 @@ const searchProducts = async (query, options = {}) => {
 
 /**
  * Add or update a product in Meilisearch index
+ * ✅ NOW WAITS FOR TASK COMPLETION - Ensures document is indexed before returning
  * @param {object} product - Product document
  * @returns {object} - Returns { success: true/false, taskUid: number, message: string }
  */
@@ -154,24 +155,55 @@ const indexProduct = async (product) => {
       createdate: product.createdate ? new Date(product.createdate).getTime() : Date.now(),
     }];
 
-    // ✅ INDUSTRIAL GRADE: Capture taskUid from Meilisearch response
+    // ✅ Add document and capture task
     const task = await meilisearchClient.index('products').addDocuments(documents);
     
-    if (task && typeof task.uid === 'number') {
-      console.log(`📌 Meilisearch task created - UID: ${task.uid}`);
+    // ✅ DEBUG: Log the actual response structure
+    console.log('📬 Task response type:', typeof task);
+    console.log('📬 Task response keys:', task ? Object.keys(task) : 'null');
+    
+    // ✅ Handle both possible property names (uid or taskUid)
+    const taskUid = task?.taskUid ?? task?.uid;
+    
+    if (!task || typeof taskUid !== 'number') {
+      console.warn('⚠️  No taskUid in response:', task);
       return { 
         success: true, 
-        taskUid: task.uid, 
-        message: 'Document added to Meilisearch queue'
+        taskUid: null, 
+        message: 'Document submitted but no task tracking'
       };
     }
-    
-    console.warn('⚠️  No taskUid returned from Meilisearch');
-    return { 
-      success: true, 
-      taskUid: null, 
-      message: 'Document indexed but no task UID'
-    };
+
+    // ✅ CRITICAL FIX: Use tasks.waitForTask() to wait for completion
+    // This ensures the product is actually indexed
+    console.log(`⏳ Waiting for Meilisearch task ${taskUid} to complete...`);
+    const completedTask = await meilisearchClient.tasks.waitForTask(taskUid, {
+      timeoutMs: 10000, // 10 second timeout
+      intervalMs: 250,  // Check every 250ms
+    });
+
+    if (completedTask.status === 'succeeded') {
+      console.log(`✅ Indexed product: ${product.name} (${product._id}) - Task UID: ${taskUid}`);
+      return { 
+        success: true, 
+        taskUid: taskUid, 
+        message: 'Document successfully indexed'
+      };
+    } else if (completedTask.status === 'failed') {
+      console.error(`❌ Failed to index product ${product._id}:`, completedTask.error);
+      return { 
+        success: false, 
+        taskUid: taskUid, 
+        message: `Indexing failed: ${completedTask.error?.message || 'Unknown error'}`
+      };
+    } else {
+      console.warn(`⚠️  Task ${taskUid} ended with status: ${completedTask.status}`);
+      return { 
+        success: completedTask.status === 'succeeded', 
+        taskUid: taskUid, 
+        message: `Task status: ${completedTask.status}`
+      };
+    }
   } catch (err) {
     console.error('❌ Indexing Error:', err.message);
     return { 
@@ -184,6 +216,7 @@ const indexProduct = async (product) => {
 
 /**
  * Bulk add/update products in Meilisearch index
+ * ✅ NOW WAITS FOR TASK COMPLETION - Ensures documents are indexed before returning
  * @param {array} products - Array of product documents
  */
 const bulkIndexProducts = async (products) => {
@@ -247,10 +280,39 @@ const bulkIndexProducts = async (products) => {
     });
 
     console.log(`📝 About to index ${documents.length} documents...`);
-    const response = await meilisearchClient.index('products').addDocuments(documents);
-    console.log(`📬 Response from addDocuments:`, typeof response, response instanceof Object ? 'Task object' : response);
-    console.log(`✅ Submitted ${documents.length} products for indexing`);
-    return true;
+    const task = await meilisearchClient.index('products').addDocuments(documents);
+    
+    // ✅ DEBUG: Log the actual response structure
+    console.log('📬 Task response type:', typeof task);
+    console.log('📬 Task response keys:', task ? Object.keys(task) : 'null');
+    console.log('📬 Full task response:', JSON.stringify(task, null, 2));
+    
+    // ✅ Handle both possible property names (uid or taskUid)
+    const taskUid = task?.taskUid ?? task?.uid;
+    
+    if (!task || typeof taskUid !== 'number') {
+      console.error('❌ No task UID returned from Meilisearch - task:', task);
+      return false;
+    }
+
+    // ✅ CRITICAL FIX: Use tasks.waitForTask() to wait for completion
+    // This ensures documents are actually indexed before we return success
+    console.log(`⏳ Waiting for Meilisearch task ${taskUid} to complete...`);
+    const completedTask = await meilisearchClient.tasks.waitForTask(taskUid, {
+      timeoutMs: 30000, // 30 second timeout
+      intervalMs: 500,  // Check every 500ms
+    });
+
+    if (completedTask.status === 'succeeded') {
+      console.log(`✅ Task ${taskUid} completed successfully - ${documents.length} products indexed`);
+      return true;
+    } else if (completedTask.status === 'failed') {
+      console.error(`❌ Task ${taskUid} failed:`, completedTask.error);
+      return false;
+    } else {
+      console.warn(`⚠️  Task ${taskUid} ended with status: ${completedTask.status}`);
+      return completedTask.status === 'succeeded';
+    }
   } catch (err) {
     console.error('❌ Bulk Indexing Error Type:', err.constructor.name);
     console.error('❌ Bulk Indexing Error Message:', err.message);
@@ -294,18 +356,22 @@ const resetMeilisearchIndex = async () => {
       console.log('🗑️  Deleted products index');
       
       // Wait for deletion to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (err) {
-      if (!err.message.includes('not found')) {
+      if (!err.message?.includes('not found') && !err.code?.includes('index_not_found')) {
         console.error('❌ Error deleting index:', err.message);
         throw err;
       }
       console.log('ℹ️  Index did not exist, creating new one');
     }
 
-    // 2. Create fresh index
+    // 2. Create fresh index with explicit primaryKey
+    console.log('📝 Creating fresh index with primaryKey: _id...');
     await meilisearchClient.createIndex('products', { primaryKey: '_id' });
     console.log('✅ Created fresh products index');
+
+    // Wait for creation to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // 3. Configure the new index
     const index = meilisearchClient.index('products');
@@ -331,6 +397,7 @@ const resetMeilisearchIndex = async () => {
       'stock',
       'price',
       'cost',
+      'isDeleted',
     ]);
 
     await index.updateSettings({
@@ -356,6 +423,7 @@ const resetMeilisearchIndex = async () => {
 
 /**
  * Initialize Meilisearch index with settings
+ * ✅ FIXED: Ensures primaryKey is always set to '_id' - DELETES AND RECREATES if needed
  */
 const setupIndex = async () => {
   if (!meilisearchClient || !isConnected) {
@@ -364,13 +432,55 @@ const setupIndex = async () => {
   }
 
   try {
-    // Try to create index if it doesn't exist
+    let indexExists = false;
+    let needsRecreate = false;
+    
+    // Check if index exists
     try {
-      await meilisearchClient.createIndex('products', { primaryKey: '_id' });
-      console.log('✅ Created Meilisearch products index');
+      const indexInfo = await meilisearchClient.getIndex('products');
+      indexExists = true;
+      
+      // If index exists but has no primary key, we MUST delete and recreate
+      if (!indexInfo.primaryKey || indexInfo.primaryKey === null) {
+        console.log('⚠️  Index exists but has NO primary key - will delete and recreate');
+        needsRecreate = true;
+      } else {
+        console.log(`ℹ️  Index exists with primaryKey: ${indexInfo.primaryKey}`);
+      }
     } catch (err) {
-      // Index likely already exists
-      console.log('ℹ️  Products index already exists');
+      if (err.code === 'index_not_found' || err.message?.includes('not found')) {
+        console.log('ℹ️  Index does not exist - will create fresh');
+        indexExists = false;
+      } else {
+        throw err;
+      }
+    }
+
+    // Delete old index if it has no primary key
+    if (needsRecreate) {
+      console.log('🗑️  Deleting old index without primaryKey...');
+      try {
+        await meilisearchClient.deleteIndex('products');
+        console.log('✅ Deleted old index');
+        // Wait for deletion to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        indexExists = false;
+      } catch (deleteErr) {
+        console.error('❌ Error deleting index:', deleteErr.message);
+        throw deleteErr;
+      }
+    }
+
+    // Create index if it doesn't exist
+    if (!indexExists) {
+      console.log('📝 Creating fresh index with primaryKey: _id...');
+      try {
+        await meilisearchClient.createIndex('products', { primaryKey: '_id' });
+        console.log('✅ Created Meilisearch products index with primaryKey: _id');
+      } catch (createErr) {
+        console.error('❌ Error creating index:', createErr.message);
+        throw createErr;
+      }
     }
 
     const index = meilisearchClient.index('products');
