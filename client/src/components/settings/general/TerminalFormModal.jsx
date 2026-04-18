@@ -1,14 +1,346 @@
 import React, { useState, useEffect } from 'react'
-import { X, Save } from 'lucide-react'
+import { X, Save, Printer, Monitor, Download } from 'lucide-react'
+import axios from 'axios'
+import { API_URL } from '../../../config/config'
+import toast from 'react-hot-toast'
 
 const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
   const [modalHeight, setModalHeight] = useState('90vh')
+  const [activeTab, setActiveTab] = useState('basic')
+  const [availableTemplates, setAvailableTemplates] = useState({
+    invoice: [],
+    deliveryNote: [],
+    quotation: [],
+    salesOrder: [],
+    salesReturn: [],
+  })
+  const [loadingTemplates, setLoadingTemplates] = useState(true)
+  const [installedPrinters, setInstalledPrinters] = useState([])
+  const [availableComPorts, setAvailableComPorts] = useState([])
+  const [loadingHardware, setLoadingHardware] = useState(false)
+  const [deviceFingerprint, setDeviceFingerprint] = useState(null)
+  const [deviceTerminals, setDeviceTerminals] = useState([])
+  const [terminalIdError, setTerminalIdError] = useState('')
+  const [validatingTerminalId, setValidatingTerminalId] = useState(false)
+  const [printerModels] = useState({
+    invoice: [
+      { id: 'EPSON_TM', name: 'EPSON TM Series', type: 'EPSON' },
+      { id: 'STAR_TSP', name: 'STAR TSP', type: 'STAR' },
+      { id: 'CANON_P', name: 'Canon P Series', type: 'CANON' },
+    ],
+    label: [
+      { id: 'ZEBRA_GK', name: 'ZEBRA GK420d', type: 'ZEBRA' },
+      { id: 'TSC_TTP', name: 'TSC TTP-244 Plus', type: 'TSC' },
+      { id: 'BROTHER_QL', name: 'Brother QL-800', type: 'BROTHER' },
+    ]
+  })
+  const [vfdModels] = useState([
+    { id: 'VFD_20X2', name: 'VFD 20x2 Characters', rows: 2, cols: 20 },
+    { id: 'VFD_40X2', name: 'VFD 40x2 Characters', rows: 2, cols: 40 },
+    { id: 'VFD_20X4', name: 'VFD 20x4 Characters', rows: 4, cols: 20 },
+  ])
   const [formData, setFormData] = useState({
     terminalId: '',
     terminalName: '',
-    invoiceNumberPrefix: '',
-    invoiceFormat: 'STANDARD',
+    terminalType: 'SALES',
+    invoiceControls: {
+      invoiceNumberPrefix: '',
+    },
+    formatMapping: {
+      invoice: {
+        templateId: null,
+      },
+      deliveryNote: {
+        templateId: null,
+      },
+      quotation: {
+        templateId: null,
+      },
+      salesOrder: {
+        templateId: null,
+      },
+      salesReturn: {
+        templateId: null,
+      },
+    },
+    hardwareMapping: {
+      invoicePrinter: {
+        enabled: true,
+        printerName: '',
+        timeout: 5000,
+      },
+      barcodePrinter: {
+        enabled: false,
+        printerName: '',
+        timeout: 5000,
+      },
+      customerDisplay: {
+        enabled: false,
+        displayType: 'VFD',
+        comPort: '',
+        vfdModel: 'VFD_20X2',
+        baudRate: 9600,
+        displayItems: true,
+        displayPrice: true,
+        displayTotal: true,
+        displayDiscount: true,
+      },
+    },
   })
+
+  // ✅ Fetch available invoice templates from database
+  useEffect(() => {
+    fetchAvailableTemplates()
+    fetchHardwareDevices()
+    initializeDeviceFingerprint()
+  }, [])
+
+  const fetchHardwareDevices = async () => {
+    try {
+      setLoadingHardware(true)
+      
+      // Check if running in Electron
+      const isElectron = typeof window !== 'undefined' && window.electronAPI
+      
+      console.log('🔧 Checking Electron availability...')
+      console.log('   window.electronAPI:', !!window.electronAPI)
+      console.log('   window.electronAPI.hardware:', !!window.electronAPI?.hardware)
+      
+      if (isElectron && window.electronAPI.hardware) {
+        // Use Electron IPC for hardware detection
+        try {
+          console.log('📡 Calling window.electronAPI.hardware.getAllDevices()...')
+          const devices = await window.electronAPI.hardware.getAllDevices()
+          
+          console.log('═══════════════════════════════════════════════════════')
+          console.log('📊 FULL RESPONSE FROM ELECTRON:')
+          console.log('   devices object:', devices)
+          console.log('   JSON:', JSON.stringify(devices, null, 2))
+          console.log('   devices.printers:', devices.printers)
+          console.log('   devices.debug:', devices.debug)
+          console.log('   devices.debug is array?', Array.isArray(devices.debug))
+          console.log('═══════════════════════════════════════════════════════')
+          
+          // Log all debug messages with colors
+          if (devices.debug && Array.isArray(devices.debug) && devices.debug.length > 0) {
+            console.log('🖨️  PRINTER DETECTION DEBUG OUTPUT:')
+            devices.debug.forEach((msg, idx) => {
+              console.log(`   [${idx}] ${msg}`)
+            })
+          } else {
+            console.warn('⚠️ No debug messages in response')
+          }
+          
+          console.log('📊 Response from Electron:', devices)
+          console.log('   Printers:', devices.printers)
+          console.log('   Printers length:', devices.printers?.length)
+          console.log('   COM Ports:', devices.comPorts)
+          console.log('   COM Ports length:', devices.comPorts?.length)
+          
+          // Set printers from hardware detection
+          if (devices.printers && devices.printers.length > 0) {
+            const formattedPrinters = devices.printers.map(p => ({
+              name: p.name || p,
+              displayName: (p.displayName || p.name || p).replace(/_/g, ' '),
+            }))
+            setInstalledPrinters(formattedPrinters)
+            console.log('✅ Hardware printers detected and set:', formattedPrinters.length, 'printers')
+            formattedPrinters.forEach((p, i) => console.log(`   [${i}] ${p.name} -> ${p.displayName}`))
+          } else {
+            console.log('⚠️ No printers detected from hardware, using defaults')
+            setInstalledPrinters([
+              { name: 'Network Printer (IP)', displayName: 'Network Printer' },
+              { name: 'Local Printer', displayName: 'Local Printer' },
+            ])
+          }
+          
+          // Set COM ports from hardware detection
+          if (devices.comPorts && devices.comPorts.length > 0) {
+            const ports = devices.comPorts.map(port => 
+              typeof port === 'string' ? port : port.path
+            )
+            setAvailableComPorts(ports)
+            console.log('✅ Hardware COM ports detected:', ports.length, 'ports')
+            ports.forEach((p, i) => console.log(`   [${i}] ${p}`))
+          } else {
+            console.log('⚠️ No COM ports detected from hardware, using defaults')
+            setAvailableComPorts(['COM1', 'COM2', 'COM3', 'COM4', 'LPT1'])
+          }
+        } catch (err) {
+          console.error('❌ Electron hardware detection failed:', err)
+          console.error('   Error message:', err.message)
+          console.error('   Error stack:', err.stack)
+          console.log('⚠️ Falling back to default printers')
+          // Fallback to defaults on error
+          setInstalledPrinters([
+            { name: 'Network Printer (IP)', displayName: 'Network Printer' },
+            { name: 'Local Printer', displayName: 'Local Printer' },
+          ])
+          setAvailableComPorts(['COM1', 'COM2', 'COM3', 'COM4', 'LPT1'])
+        }
+      } else {
+        // Running in web browser - use HTTP API calls
+        console.log('🌐 Running in web browser, fetching hardware via API')
+        try {
+          const printersResponse = await axios.get(`${API_URL}/system/printers`)
+          if (printersResponse.data.data && Array.isArray(printersResponse.data.data)) {
+            setInstalledPrinters(printersResponse.data.data)
+            console.log('✅ API printers detected:', printersResponse.data.data.length)
+          } else {
+            throw new Error('Invalid printers response')
+          }
+        } catch (err) {
+          console.log('⚠️ Printers API not available, using defaults')
+          setInstalledPrinters([
+            { name: 'Network Printer (IP)', displayName: 'Network Printer' },
+            { name: 'Local Printer', displayName: 'Local Printer' },
+          ])
+        }
+
+        try {
+          const portsResponse = await axios.get(`${API_URL}/system/com-ports`)
+          if (portsResponse.data.data && Array.isArray(portsResponse.data.data)) {
+            setAvailableComPorts(portsResponse.data.data)
+            console.log('✅ API COM ports detected:', portsResponse.data.data.length)
+          } else {
+            throw new Error('Invalid COM ports response')
+          }
+        } catch (err) {
+          console.log('⚠️ COM ports API not available, using defaults')
+          setAvailableComPorts(['COM1', 'COM2', 'COM3', 'COM4', 'LPT1', 'USB0', 'USB1'])
+        }
+      }
+    } finally {
+      setLoadingHardware(false)
+    }
+  }
+
+  // ✅ Auto-populate printer and COM port from detected hardware
+  useEffect(() => {
+    if (!loadingHardware && (installedPrinters.length > 0 || availableComPorts.length > 0)) {
+      setFormData(prev => {
+        const updated = { ...prev }
+        
+        // Auto-set invoice printer if empty
+        if (!updated.hardwareMapping.invoicePrinter.printerName && installedPrinters.length > 0) {
+          updated.hardwareMapping.invoicePrinter.printerName = installedPrinters[0].name
+        }
+        
+        // Auto-set barcode printer if empty and we have a second printer
+        if (!updated.hardwareMapping.barcodePrinter.printerName && installedPrinters.length > 1) {
+          updated.hardwareMapping.barcodePrinter.printerName = installedPrinters[1].name
+        }
+        
+        // Auto-set COM port if empty
+        if (!updated.hardwareMapping.customerDisplay.comPort && availableComPorts.length > 0) {
+          updated.hardwareMapping.customerDisplay.comPort = availableComPorts[0]
+        }
+        
+        return updated
+      })
+    }
+  }, [loadingHardware, installedPrinters, availableComPorts])
+
+  const fetchAvailableTemplates = async () => {
+    try {
+      setLoadingTemplates(true)
+      const response = await axios.get(`${API_URL}/invoice-templates`)
+      
+      if (response.data.data) {
+        const templates = Array.isArray(response.data.data) ? response.data.data : [response.data.data]
+        
+        // Organize templates by templateType
+        const organized = {
+          invoice: templates.filter(t => t.templateType === 'INVOICE' || !t.templateType),
+          deliveryNote: templates.filter(t => t.templateType === 'DELIVERY_NOTE'),
+          quotation: templates.filter(t => t.templateType === 'QUOTATION'),
+          salesOrder: templates.filter(t => t.templateType === 'SALES_ORDER'),
+          salesReturn: templates.filter(t => t.templateType === 'SALES_RETURN' || t.templateType === 'RTV'),
+        }
+        
+        setAvailableTemplates(organized)
+        console.log('✅ Templates organized by type:', organized)
+      }
+    } catch (error) {
+      console.error('Failed to fetch invoice templates:', error)
+      toast.error('Failed to load document templates')
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }
+
+  // ✅ Initialize Device Fingerprint and auto-generate Terminal ID
+  const initializeDeviceFingerprint = async () => {
+    try {
+      const isElectron = typeof window !== 'undefined' && window.electronAPI
+
+      if (isElectron && window.electronAPI.device) {
+        // Get device fingerprint from Electron
+        const fingerprint = await window.electronAPI.device.getFingerprint()
+        setDeviceFingerprint(fingerprint)
+        console.log('✅ Device fingerprint:', fingerprint)
+
+        // Fetch existing device terminals
+        const response = await axios.get(`${API_URL}/terminals/device-info`, {
+          params: { deviceFingerprint: fingerprint },
+        })
+
+        if (response.data.success) {
+          setDeviceTerminals(response.data.terminals)
+          console.log('✅ Device terminals found:', response.data.terminals.length)
+
+          // If creating new terminal, auto-generate ID
+          if (!terminal) {
+            const nextTerminalNumber = response.data.nextTerminalNumber
+            const generatedId = await window.electronAPI.device.generateTerminalId(nextTerminalNumber)
+            setFormData(prev => ({
+              ...prev,
+              terminalId: generatedId,
+            }))
+            console.log('✅ Generated Terminal ID:', generatedId)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('⚠️ Error initializing device fingerprint:', error)
+      // Continue without device fingerprinting in web mode
+    }
+  }
+
+  // ✅ Validate Terminal ID for duplicates
+  const validateTerminalId = async (terminalId, terminalType = 'SALES') => {
+    // Only validate Terminal ID if type is SALES
+    if (terminalType !== 'SALES') {
+      setTerminalIdError('')
+      return
+    }
+
+    if (!terminalId) return
+
+    try {
+      setValidatingTerminalId(true)
+      setTerminalIdError('')
+
+      const response = await axios.post(`${API_URL}/terminals/validate-id`, {
+        terminalId,
+        excludeId: terminal?._id, // Exclude current terminal if editing
+      })
+
+      if (response.data.success) {
+        console.log('✅ Terminal ID is unique:', terminalId)
+      }
+    } catch (error) {
+      if (error.response?.data?.code === 'DUPLICATE_TERMINAL_ID') {
+        const errorMsg = `Terminal ID already exists: ${error.response.data.details.existingTerminal}`
+        setTerminalIdError(errorMsg)
+        console.error('❌ Duplicate Terminal ID:', errorMsg)
+      } else {
+        console.error('Error validating Terminal ID:', error)
+      }
+    } finally {
+      setValidatingTerminalId(false)
+    }
+  }
 
   useEffect(() => {
     const calculateHeight = () => {
@@ -22,13 +354,79 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
 
   useEffect(() => {
     if (terminal) {
-      // Merge terminal data with default state to ensure all fields stay defined
+      // Handle both old and new hardware mapping structures
+      let hardwareMapping = terminal.hardwareMapping
+      
+      // If old structure with 'printer' exists, migrate to new structure
+      if (hardwareMapping && hardwareMapping.printer && !hardwareMapping.invoicePrinter) {
+        hardwareMapping = {
+          ...hardwareMapping,
+          invoicePrinter: {
+            enabled: hardwareMapping.printer.enabled,
+            printerName: hardwareMapping.printer.printerName || (installedPrinters[0]?.name || ''),
+            timeout: hardwareMapping.printer.timeout || 5000,
+          },
+          barcodePrinter: {
+            enabled: false,
+            printerName: installedPrinters[1]?.name || '',
+            timeout: 5000,
+          },
+        }
+        // Remove old printer field
+        delete hardwareMapping.printer
+      }
+      
+      // Ensure new structure exists
+      if (!hardwareMapping) {
+        hardwareMapping = {
+          invoicePrinter: {
+            enabled: true,
+            printerName: installedPrinters[0]?.name || '',
+            timeout: 5000,
+          },
+          barcodePrinter: {
+            enabled: false,
+            printerName: installedPrinters[1]?.name || '',
+            timeout: 5000,
+          },
+          customerDisplay: {
+            enabled: false,
+            displayType: 'VFD',
+            comPort: availableComPorts[0] || 'COM1',
+            vfdModel: 'VFD_20X2',
+            baudRate: 9600,
+            displayItems: true,
+            displayPrice: true,
+            displayTotal: true,
+            displayDiscount: true,
+          },
+        }
+      }
+      
+      // Ensure customerDisplay exists
+      if (!hardwareMapping.customerDisplay) {
+        hardwareMapping.customerDisplay = {
+          enabled: false,
+          displayType: 'VFD',
+          comPort: availableComPorts[0] || 'COM1',
+          vfdModel: 'VFD_20X2',
+          baudRate: 9600,
+          displayItems: true,
+          displayPrice: true,
+          displayTotal: true,
+          displayDiscount: true,
+        }
+      }
+      
       setFormData(prev => ({
         ...prev,
-        ...terminal
+        ...terminal,
+        invoiceControls: terminal.invoiceControls || prev.invoiceControls,
+        formatMapping: terminal.formatMapping || prev.formatMapping,
+        hardwareMapping,
       }))
     }
-  }, [terminal])
+  }, [terminal, installedPrinters, availableComPorts])
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -38,25 +436,60 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
     }))
   }
 
+  const handleNestedChange = (section, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: value,
+      }
+    }))
+  }
+
+  const handleDeepNestedChange = (section, subsection, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [subsection]: {
+          ...prev[section][subsection],
+          [field]: value,
+        }
+      }
+    }))
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
+    
+    // Prevent submit if there are validation errors
+    if (terminalIdError) {
+      toast.error('Please fix the validation errors before saving')
+      return
+    }
+    
+    if (!formData.terminalId) {
+      toast.error('Terminal ID is required')
+      return
+    }
+
     onSave(formData)
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style={{ scrollbarGutter: 'stable' }}>
       <div
         className="bg-white rounded-2xl flex flex-col"
-        style={{ maxHeight: modalHeight, width: '90%', maxWidth: '600px' }}
+        style={{ maxHeight: modalHeight, width: '95%', maxWidth: '900px', scrollbarGutter: 'stable' }}
       >
         {/* Sticky Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-start flex-shrink-0 z-20">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-2 flex justify-between items-start flex-shrink-0 z-20">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-base font-semibold text-gray-900">
               {terminal ? 'Edit Terminal' : 'Add New Terminal'}
             </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              {terminal ? 'Update terminal configuration' : 'Create a new terminal configuration'}
+            <p className="text-xs text-gray-600 mt-0.5">
+              Configure terminal type, document formats, and hardware
             </p>
           </div>
           <button
@@ -68,101 +501,633 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
           </button>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="sticky top-[50px] bg-gray-50 border-b border-gray-200 px-4 py-2 flex gap-1 flex-shrink-0 z-10">
+          <button
+            onClick={() => setActiveTab('basic')}
+            className={`px-3 py-1 text-xs font-medium rounded transition ${
+              activeTab === 'basic'
+                ? 'bg-white text-blue-600 border border-blue-300'
+                : 'text-gray-700 hover:bg-white'
+            }`}
+          >
+            Basic Info
+          </button>
+          <button
+            onClick={() => setActiveTab('formats')}
+            className={`px-3 py-1 text-xs font-medium rounded transition ${
+              activeTab === 'formats'
+                ? 'bg-white text-blue-600 border border-blue-300'
+                : 'text-gray-700 hover:bg-white'
+            }`}
+          >
+            Document Formats
+          </button>
+          <button
+            onClick={() => setActiveTab('hardware')}
+            className={`px-3 py-1 text-xs font-medium rounded transition ${
+              activeTab === 'hardware'
+                ? 'bg-white text-blue-600 border border-blue-300'
+                : 'text-gray-700 hover:bg-white'
+            }`}
+          >
+            Hardware
+          </button>
+        </div>
+
         {/* Scrollable Content */}
         <div
-          className="flex-1 overflow-y-auto px-6 py-4"
+          className="flex-1 overflow-y-auto px-4 py-2"
           style={{ scrollbarGutter: 'stable' }}
         >
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Terminal Information */}
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Terminal Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Terminal ID *
-                  </label>
-                  <input
-                    type="text"
-                    name="terminalId"
-                    value={formData.terminalId}
-                    onChange={handleInputChange}
-                    placeholder="e.g., TRM001"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
+          <form onSubmit={handleSubmit} className="space-y-2">
+
+            {/* BASIC INFO TAB */}
+            {activeTab === 'basic' && (
+              <>
+                {/* Terminal Information */}
+                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <h4 className="text-xs font-semibold text-gray-900 mb-2">Terminal Information</h4>
+                  {deviceFingerprint && (
+                    <div className="mb-2 p-2 bg-blue-50 rounded border border-blue-200">
+                      <p className="text-xs text-gray-700">
+                        <span className="font-medium">Device:</span> {deviceFingerprint}
+                      </p>
+                      {deviceTerminals.length > 0 && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          <span className="font-medium">{deviceTerminals.length} terminal(s) on this device</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Terminal ID * {!terminal && formData.terminalType === 'SALES' && '(Auto-generated)'}
+                      </label>
+                      <div className="flex gap-2 items-start">
+                        <input
+                          type="text"
+                          name="terminalId"
+                          value={formData.terminalId}
+                          onChange={(e) => {
+                            handleInputChange(e)
+                            validateTerminalId(e.target.value, formData.terminalType)
+                          }}
+                          placeholder={formData.terminalType === 'SALES' ? 'e.g., TERM-ABC123DEF456-001' : 'e.g., BACKOFFICE-DEFAULT'}
+                          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          disabled={!terminal && deviceFingerprint && formData.terminalType === 'SALES'} // Disable if auto-generated for new SALES terminal
+                          required
+                        />
+                        {formData.terminalType === 'SALES' && validatingTerminalId && (
+                          <span className="text-xs mt-2">🔄</span>
+                        )}
+                        {formData.terminalType === 'SALES' && !validatingTerminalId && !terminalIdError && formData.terminalId && (
+                          <span className="text-xs mt-2">✅</span>
+                        )}
+                      </div>
+                      {formData.terminalType === 'SALES' && terminalIdError && (
+                        <p className="text-xs text-red-600 mt-1">⚠️ {terminalIdError}</p>
+                      )}
+                      {!terminal && deviceFingerprint && formData.terminalType === 'SALES' && (
+                        <p className="text-xs text-gray-600 mt-1">Device-based ID prevents cloning</p>
+                      )}
+                      {formData.terminalType === 'BACKOFFICE' && (
+                        <p className="text-xs text-gray-600 mt-1">BACKOFFICE terminals do not require Terminal ID validation</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Terminal Name *
+                      </label>
+                      <input
+                        type="text"
+                        name="terminalName"
+                        value={formData.terminalName}
+                        onChange={handleInputChange}
+                        placeholder="e.g., Counter 1"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Terminal Type *
+                      </label>
+                      <select
+                        name="terminalType"
+                        value={formData.terminalType}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="SALES">Sales (Point-of-Sale Terminal)</option>
+                        <option value="BACKOFFICE">Backoffice (Administrative Terminal)</option>
+                      </select>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {formData.terminalType === 'SALES' 
+                          ? 'Use for customer transactions and receipts'
+                          : 'Use for administrative and back office operations'
+                        }
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Terminal Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="terminalName"
-                    value={formData.terminalName}
-                    onChange={handleInputChange}
-                    placeholder="e.g., Counter 1"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  />
+
+                {/* Invoice Number Prefix */}
+                <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <h4 className="text-xs font-semibold text-gray-900 mb-2">Invoice Settings</h4>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Invoice Number Prefix
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.invoiceControls.invoiceNumberPrefix}
+                      onChange={(e) => handleNestedChange('invoiceControls', 'invoiceNumberPrefix', e.target.value)}
+                      placeholder="e.g., C1"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">Prefix for invoice numbers at this terminal</p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* FORMATS TAB */}
+            {activeTab === 'formats' && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-gray-900 mb-2">Document Format Configuration</h4>
+                {loadingTemplates && (
+                  <div className="p-2 bg-blue-50 rounded text-center text-xs text-gray-700">
+                    Loading available templates...
+                  </div>
+                )}
+                
+                {/* Invoice */}
+                <div className="bg-blue-50 rounded p-2 border border-blue-200">
+                  <h4 className="font-semibold text-xs text-gray-900 mb-2">Invoice</h4>
+                  <div className="space-y-1 p-2 bg-white rounded border border-blue-100">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                      <select
+                        value={formData.formatMapping.invoice.templateId || ''}
+                        onChange={(e) => handleDeepNestedChange('formatMapping', 'invoice', 'templateId', e.target.value || null)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value="">-- Select Invoice Template --</option>
+                        {availableTemplates.invoice.map((template) => (
+                          <option key={template._id} value={template._id}>
+                            {template.templateName} ({template.language || 'EN'})
+                          </option>
+                        ))}
+                      </select>
+                      {availableTemplates.invoice.length === 0 && !loadingTemplates && (
+                        <p className="text-xs text-red-600 mt-1">No invoice templates available</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Delivery Note */}
+                <div className="bg-green-50 rounded p-2 border border-green-200">
+                  <h4 className="font-semibold text-xs text-gray-900 mb-2">Delivery Note</h4>
+                  <div className="space-y-1 p-2 bg-white rounded border border-green-100">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                      <select
+                        value={formData.formatMapping.deliveryNote.templateId || ''}
+                        onChange={(e) => handleDeepNestedChange('formatMapping', 'deliveryNote', 'templateId', e.target.value || null)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value="">-- Select Delivery Note Template --</option>
+                        {availableTemplates.deliveryNote.map((template) => (
+                          <option key={template._id} value={template._id}>
+                            {template.templateName}
+                          </option>
+                        ))}
+                      </select>
+                      {availableTemplates.deliveryNote.length === 0 && !loadingTemplates && (
+                        <p className="text-xs text-orange-600 mt-1">No delivery note templates available</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quotation */}
+                <div className="bg-purple-50 rounded p-2 border border-purple-200">
+                  <h4 className="font-semibold text-xs text-gray-900 mb-2">Quotation</h4>
+                  <div className="space-y-1 p-2 bg-white rounded border border-purple-100">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                      <select
+                        value={formData.formatMapping.quotation.templateId || ''}
+                        onChange={(e) => handleDeepNestedChange('formatMapping', 'quotation', 'templateId', e.target.value || null)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value="">-- Select Quotation Template --</option>
+                        {availableTemplates.quotation.map((template) => (
+                          <option key={template._id} value={template._id}>
+                            {template.templateName}
+                          </option>
+                        ))}
+                      </select>
+                      {availableTemplates.quotation.length === 0 && !loadingTemplates && (
+                        <p className="text-xs text-orange-600 mt-1">No quotation templates available</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sales Order */}
+                <div className="bg-yellow-50 rounded p-2 border border-yellow-200">
+                  <h4 className="font-semibold text-xs text-gray-900 mb-2">Sales Order</h4>
+                  <div className="space-y-1 p-2 bg-white rounded border border-yellow-100">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                      <select
+                        value={formData.formatMapping.salesOrder.templateId || ''}
+                        onChange={(e) => handleDeepNestedChange('formatMapping', 'salesOrder', 'templateId', e.target.value || null)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value="">-- Select Sales Order Template --</option>
+                        {availableTemplates.salesOrder.map((template) => (
+                          <option key={template._id} value={template._id}>
+                            {template.templateName}
+                          </option>
+                        ))}
+                      </select>
+                      {availableTemplates.salesOrder.length === 0 && !loadingTemplates && (
+                        <p className="text-xs text-orange-600 mt-1">No sales order templates available</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sales Return */}
+                <div className="bg-red-50 rounded p-2 border border-red-200">
+                  <h4 className="font-semibold text-xs text-gray-900 mb-2">Sales Return</h4>
+                  <div className="space-y-1 p-2 bg-white rounded border border-red-100">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                      <select
+                        value={formData.formatMapping.salesReturn.templateId || ''}
+                        onChange={(e) => handleDeepNestedChange('formatMapping', 'salesReturn', 'templateId', e.target.value || null)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      >
+                        <option value="">-- Select Return Template --</option>
+                        {availableTemplates.salesReturn.map((template) => (
+                          <option key={template._id} value={template._id}>
+                            {template.templateName}
+                          </option>
+                        ))}
+                      </select>
+                      {availableTemplates.salesReturn.length === 0 && !loadingTemplates && (
+                        <p className="text-xs text-orange-600 mt-1">No return templates available</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Invoice Settings */}
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Invoice Settings</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Invoice Number Prefix
+            {/* HARDWARE TAB */}
+            {activeTab === 'hardware' && (
+              <div className="space-y-2">
+                {/* Invoice Printer Configuration */}
+                <div className="bg-blue-50 rounded p-2 border border-blue-200">
+                  <div className="flex items-center gap-1 mb-2">
+                    <Printer size={14} className="text-blue-600" />
+                    <h4 className="font-semibold text-xs text-gray-900">Invoice Printer</h4>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-2">For printing receipts and invoices</p>
+                  
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.hardwareMapping.invoicePrinter.enabled}
+                      onChange={(e) => handleDeepNestedChange('hardwareMapping', 'invoicePrinter', 'enabled', e.target.checked)}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span className="text-xs text-gray-700">Enable invoice printer</span>
                   </label>
-                  <input
-                    type="text"
-                    name="invoiceNumberPrefix"
-                    value={formData.invoiceNumberPrefix}
-                    onChange={handleInputChange}
-                    placeholder="e.g., C1"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+
+                  {formData.hardwareMapping.invoicePrinter.enabled && (
+                    <div className="ml-4 space-y-2 p-2 bg-white rounded border border-blue-100">
+                      {/* Installed Printers Dropdown */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-medium text-gray-700">Select Installed Printer</label>
+                          <button
+                            type="button"
+                            onClick={fetchHardwareDevices}
+                            disabled={loadingHardware}
+                            className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >
+                            {loadingHardware ? '🔄 Detecting...' : '🔍 Detect'}
+                          </button>
+                        </div>
+                        <select
+                          value={formData.hardwareMapping.invoicePrinter.printerName}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'invoicePrinter', 'printerName', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="">-- Select from installed printers --</option>
+                          {installedPrinters.length > 0 ? (
+                            installedPrinters.map((printer, idx) => (
+                              <option key={idx} value={typeof printer === 'string' ? printer : printer.name}>
+                                {typeof printer === 'string' ? printer : (printer.displayName || printer.name)}
+                              </option>
+                            ))
+                          ) : (
+                            <option disabled>No printers detected</option>
+                          )}
+                        </select>
+                        {loadingHardware && <p className="text-xs text-gray-500 mt-1">🔄 Detecting printers...</p>}
+                        {!loadingHardware && installedPrinters.length > 0 && (
+                          <p className="text-xs text-green-600 mt-1">✅ {installedPrinters.length} printer(s) detected</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Timeout (ms)</label>
+                        <input
+                          type="number"
+                          min="1000"
+                          step="1000"
+                          value={formData.hardwareMapping.invoicePrinter.timeout}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'invoicePrinter', 'timeout', parseInt(e.target.value))}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Invoice Format
+
+                {/* Barcode/Label Printer Configuration */}
+                <div className="bg-purple-50 rounded p-2 border border-purple-200">
+                  <div className="flex items-center gap-1 mb-2">
+                    <Download size={14} className="text-purple-600" />
+                    <h4 className="font-semibold text-xs text-gray-900">Barcode Printer</h4>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-2">For printing barcode labels and product labels</p>
+                  
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.hardwareMapping.barcodePrinter.enabled}
+                      onChange={(e) => handleDeepNestedChange('hardwareMapping', 'barcodePrinter', 'enabled', e.target.checked)}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span className="text-xs text-gray-700">Enable barcode printer</span>
                   </label>
-                  <select
-                    name="invoiceFormat"
-                    value={formData.invoiceFormat}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="STANDARD">Standard</option>
-                    <option value="THERMAL">Thermal (58mm)</option>
-                    <option value="THERMAL80">Thermal (80mm)</option>
-                    <option value="A4">A4</option>
-                  </select>
+
+                  {formData.hardwareMapping.barcodePrinter.enabled && (
+                    <div className="ml-4 space-y-2 p-2 bg-white rounded border border-purple-100">
+                      {/* Installed Printers Dropdown */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-medium text-gray-700">Select Installed Printer</label>
+                          <button
+                            type="button"
+                            onClick={fetchHardwareDevices}
+                            disabled={loadingHardware}
+                            className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >
+                            {loadingHardware ? '🔄 Detecting...' : '🔍 Detect'}
+                          </button>
+                        </div>
+                        <select
+                          value={formData.hardwareMapping.barcodePrinter.printerName}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'barcodePrinter', 'printerName', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="">-- Select from installed printers --</option>
+                          {installedPrinters.length > 0 ? (
+                            installedPrinters.map((printer, idx) => (
+                              <option key={idx} value={typeof printer === 'string' ? printer : printer.name}>
+                                {typeof printer === 'string' ? printer : (printer.displayName || printer.name)}
+                              </option>
+                            ))
+                          ) : (
+                            <option disabled>No printers detected</option>
+                          )}
+                        </select>
+                        {loadingHardware && <p className="text-xs text-gray-500 mt-1">🔄 Detecting printers...</p>}
+                        {!loadingHardware && installedPrinters.length > 0 && (
+                          <p className="text-xs text-green-600 mt-1">✅ {installedPrinters.length} printer(s) detected</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Timeout (ms)</label>
+                        <input
+                          type="number"
+                          min="1000"
+                          step="1000"
+                          value={formData.hardwareMapping.barcodePrinter.timeout}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'barcodePrinter', 'timeout', parseInt(e.target.value))}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Customer Display Configuration */}
+                <div className="bg-green-50 rounded p-2 border border-green-200">
+                  <div className="flex items-center gap-1 mb-2">
+                    <Monitor size={14} className="text-green-600" />
+                    <h4 className="font-semibold text-xs text-gray-900">Customer Display</h4>
+                  </div>
+                  
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.hardwareMapping.customerDisplay.enabled}
+                      onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'enabled', e.target.checked)}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span className="text-xs text-gray-700">Enable customer display</span>
+                  </label>
+
+                  {formData.hardwareMapping.customerDisplay.enabled && (
+                    <div className="ml-4 space-y-2 p-2 bg-white rounded border border-green-100">
+                      {/* Display Type Selection */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Display Type *</label>
+                        <select
+                          value={formData.hardwareMapping.customerDisplay.displayType}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'displayType', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="VFD">VFD (Serial Command LCD)</option>
+                          <option value="SECONDARY_MONITOR">Secondary Monitor (HDMI/VGA)</option>
+                        </select>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {formData.hardwareMapping.customerDisplay.displayType === 'VFD'
+                            ? 'Connect via COM port, data sent as commands'
+                            : 'Dedicated secondary monitor showing customer display'}
+                        </p>
+                      </div>
+
+                      {/* For VFD Display */}
+                      {formData.hardwareMapping.customerDisplay.displayType === 'VFD' && (
+                        <>
+                          {/* COM Port Selection */}
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-xs font-medium text-gray-700">COM Port *</label>
+                              <button
+                                type="button"
+                                onClick={fetchHardwareDevices}
+                                disabled={loadingHardware}
+                                className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                              >
+                                {loadingHardware ? '🔄 Detecting...' : '🔍 Detect'}
+                              </button>
+                            </div>
+                            <select
+                              value={formData.hardwareMapping.customerDisplay.comPort}
+                              onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'comPort', e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            >
+                              <option value="">-- Select COM port --</option>
+                              {availableComPorts.length > 0 ? (
+                                availableComPorts.map((port, idx) => (
+                                  <option key={idx} value={typeof port === 'string' ? port : port.name || port}>
+                                    {typeof port === 'string' ? port : port.name || port}
+                                  </option>
+                                ))
+                              ) : (
+                                <option disabled>-- COM ports not detected --</option>
+                              )}
+                            </select>
+                            {loadingHardware && <p className="text-xs text-gray-500 mt-1">🔄 Detecting COM ports...</p>}
+                            {!loadingHardware && availableComPorts.length > 0 && (
+                              <p className="text-xs text-green-600 mt-1">✅ {availableComPorts.length} COM port(s) detected</p>
+                            )}
+                          </div>
+
+                          {/* VFD Model Selection */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">VFD Model *</label>
+                            <select
+                              value={formData.hardwareMapping.customerDisplay.vfdModel}
+                              onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'vfdModel', e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            >
+                              {vfdModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {model.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Baud Rate */}
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Baud Rate</label>
+                            <select
+                              value={formData.hardwareMapping.customerDisplay.baudRate}
+                              onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'baudRate', parseInt(e.target.value))}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            >
+                              <option value="2400">2400</option>
+                              <option value="4800">4800</option>
+                              <option value="9600">9600</option>
+                              <option value="19200">19200</option>
+                              <option value="38400">38400</option>
+                              <option value="57600">57600</option>
+                              <option value="115200">115200</option>
+                            </select>
+                          </div>
+
+                          <div className="p-2 bg-green-50 rounded border border-green-200 text-xs text-gray-700">
+                            📡 Commands will be sent via {formData.hardwareMapping.customerDisplay.comPort} at {formData.hardwareMapping.customerDisplay.baudRate} baud
+                          </div>
+                        </>
+                      )}
+
+                      {/* For Secondary Monitor */}
+                      {formData.hardwareMapping.customerDisplay.displayType === 'SECONDARY_MONITOR' && (
+                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                          <p className="text-xs text-gray-700 mb-2">Secondary monitor will display:</p>
+                          <ul className="text-xs text-gray-600 space-y-1 ml-3">
+                            <li>✓ Current items being scanned</li>
+                            <li>✓ Running total amount</li>
+                            <li>✓ Discount information</li>
+                            <li>✓ Payment status</li>
+                          </ul>
+                          <p className="text-xs text-gray-600 mt-2">Preview will be shown in sales terminal during checkout</p>
+                        </div>
+                      )}
+
+                      {/* Display Content Options */}
+                      <div className="border-t border-green-100 pt-2 space-y-2">
+                        <p className="text-xs font-semibold text-gray-700">Display Content:</p>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={formData.hardwareMapping.customerDisplay.displayItems}
+                            onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'displayItems', e.target.checked)}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="text-xs text-gray-700">Show item details</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={formData.hardwareMapping.customerDisplay.displayPrice}
+                            onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'displayPrice', e.target.checked)}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="text-xs text-gray-700">Show price</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={formData.hardwareMapping.customerDisplay.displayTotal}
+                            onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'displayTotal', e.target.checked)}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="text-xs text-gray-700">Show running total</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={formData.hardwareMapping.customerDisplay.displayDiscount}
+                            onChange={(e) => handleDeepNestedChange('hardwareMapping', 'customerDisplay', 'displayDiscount', e.target.checked)}
+                            className="w-4 h-4 rounded"
+                          />
+                          <span className="text-xs text-gray-700">Show discount info</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Action Buttons */}
-            <div className="flex gap-2 justify-end border-t border-gray-200 pt-4">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-              >
-                <Save size={16} />
-                Save Terminal
-              </button>
-            </div>
           </form>
+        </div>
+
+        {/* Sticky Footer - Action Buttons */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-2 flex gap-2 justify-end flex-shrink-0">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+          >
+            <Save size={14} />
+            Save Terminal
+          </button>
         </div>
       </div>
     </div>

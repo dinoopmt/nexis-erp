@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Menu, dialog, webContents, globalShortcut }
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { loadConfig, validateConfig } = require("./config-loader.cjs");
+const { loadConfig, validateConfig, updateConfig } = require("./config-loader.cjs");
 
 // ================== GLOBAL VARIABLES ==================
 let mainWindow;
@@ -121,6 +121,21 @@ function createWindow() {
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
       v8CacheOptions: "code",
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "http://localhost:5173"],
+          styleSrc: ["'self'", "'unsafe-inline'", "http://localhost:5173"],
+          connectSrc: ["'self'", "http://localhost:5000", "http://localhost:5173", "ws://localhost:5173"],
+          imgSrc: ["'self'", "data:", "http:", "https:"],
+          fontSrc: ["'self'", "data:"],
+          mediaSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameSrc: ["'none'"],
+          formAction: ["'self'"],
+          upgradeInsecureRequests: isDev ? [] : ["'self'"],
+        },
+      },
     },
   });
 
@@ -181,6 +196,27 @@ function createWindow() {
     }
   );
 
+  // ✅ Add CSP headers to responses
+  mainWindow.webContents.session.webRequest.onHeadersReceived(
+    (details, callback) => {
+      const headers = details.responseHeaders;
+      
+      // Set CSP headers (using system fonts - no internet required)
+      const cspPolicy = isDev
+        ? "default-src 'self'; script-src 'self' 'unsafe-inline' http://localhost:5173; style-src 'self' 'unsafe-inline' http://localhost:5173; connect-src 'self' http://localhost:5000 http://localhost:5173 ws://localhost:5173; img-src 'self' data: http: https:; font-src 'self' data:; object-src 'none'; frame-src 'none';"
+        : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:5000; img-src 'self' data: https:; font-src 'self'; object-src 'none'; frame-src 'none'; upgrade-insecure-requests";
+      
+      headers["content-security-policy"] = [cspPolicy];
+      
+      // Additional security headers
+      headers["x-content-type-options"] = ["nosniff"];
+      headers["x-frame-options"] = ["DENY"];
+      headers["x-xss-protection"] = ["1; mode=block"];
+      
+      callback({ responseHeaders: headers });
+    }
+  );
+
   // ✅ Log API responses
   mainWindow.webContents.session.webRequest.onCompleted(
     { urls: ["*://*/api/*"] },
@@ -201,15 +237,59 @@ function createWindow() {
   );
 }
 
+// ================== SECURITY SETUP ==================
+/**
+ * Apply security best practices
+ */
+function setupSecurity() {
+  // Disable navigation to external sites
+  app.on("web-contents-created", (event, contents) => {
+    contents.on("will-navigate", (event, navigationUrl) => {
+      const parsedUrl = new URL(navigationUrl);
+      
+      // Only allow navigation to localhost in dev, file:// in prod
+      if (isDev) {
+        if (parsedUrl.origin !== "http://localhost:5173") {
+          event.preventDefault();
+          console.warn(`⚠️ Navigation blocked: ${navigationUrl}`);
+        }
+      } else {
+        if (parsedUrl.protocol !== "file:") {
+          event.preventDefault();
+          console.warn(`⚠️ Navigation blocked: ${navigationUrl}`);
+        }
+      }
+    });
+
+    // Block external scripts
+    contents.on("preload-error", (event, preloadPath, error) => {
+      console.error(`❌ Preload error in ${preloadPath}:`, error);
+    });
+  });
+
+  // Disable permission requests (camera, microphone, etc.)
+  if (mainWindow) {
+    mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+      console.warn(`⚠️ Permission request denied: ${permission} from ${requestingOrigin}`);
+      return false; // Deny all permissions
+    });
+  }
+
+  console.log("🔒 Security measures applied");
+}
+
 // ================== APP LIFECYCLE ==================
-app.on("ready", () => {
+app.on("ready", async () => {
+  // Apply security first
+  setupSecurity();
+  
   // Show splash immediately
   createSplash();
 
   // Load config and create main window
   initializeConfig();
   createWindow();
-  setupIPC();
+  await setupIPC();
   // Menu disabled - using DevTools F12 instead
   // createMenu();
   
@@ -291,6 +371,35 @@ function setupTerminalIPC() {
     };
     console.log("🔍 Debug Info:", JSON.stringify(debugInfo, null, 2));
     return debugInfo;
+  });
+
+  // Update configuration (terminal type or ID)
+  ipcMain.handle("config:update-config", (event, newValues) => {
+    try {
+      console.log("🔄 Updating config with:", newValues);
+      const success = updateConfig(newValues);
+      
+      if (success) {
+        // Reload config in memory
+        terminalConfig = loadConfig();
+        console.log("✅ Config updated successfully");
+        console.log(`   Terminal Type: ${terminalConfig.terminalType}`);
+        console.log(`   Terminal ID: ${terminalConfig.terminalId}`);
+        
+        // Notify all windows about config update
+        webContents.getAllWebContents().forEach(contents => {
+          contents.send("config:updated", terminalConfig);
+        });
+        
+        return { success: true, config: terminalConfig };
+      } else {
+        console.error("❌ Failed to update config");
+        return { success: false, error: "Failed to write config file" };
+      }
+    } catch (error) {
+      console.error("❌ Error updating config:", error.message);
+      return { success: false, error: error.message };
+    }
   });
 }
 
@@ -377,6 +486,198 @@ function setupPrinterIPC() {
     } catch (error) {
       console.error("❌ Test print error:", error);
       return { success: false, message: error.message };
+    }
+  });
+}
+
+// ================== IPC HANDLERS - HARDWARE API (System Devices) ==================
+function setupHardwareIPC() {
+  // Get list of available COM ports / Serial devices
+  ipcMain.handle("hardware:get-com-ports", async () => {
+    try {
+      // Try to use serialport if available, otherwise use common ports
+      try {
+        const { SerialPort } = require("serialport");
+        const ports = await SerialPort.list();
+        return ports.map(port => ({
+          path: port.path,
+          manufacturer: port.manufacturer,
+          serialNumber: port.serialNumber,
+          productId: port.productId,
+          vendorId: port.vendorId,
+        }));
+      } catch (err) {
+        // serialport not installed, return common ports with detection
+        const commonPorts = ["COM1", "COM2", "COM3", "COM4", "LPT1"];
+        if (process.platform === "linux") {
+          commonPorts.splice(0, 5, "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM0");
+        } else if (process.platform === "darwin") {
+          commonPorts.splice(0, 5, "/dev/tty.usbserial-*", "/dev/cu.usbserial-*");
+        }
+        return commonPorts.map(port => ({ path: port }));
+      }
+    } catch (error) {
+      console.error("❌ Error getting COM ports:", error);
+      return [];
+    }
+  });
+
+  // Get list of available printers
+  ipcMain.handle("hardware:get-printers", async (event) => {
+    const response = { printers: [], debug: [], error: null };
+    
+    console.log('\n══════════════════════════════════════════════════════════');
+    console.log('🖨️  [MAIN] PRINTER DETECTION STARTED');
+    console.log('══════════════════════════════════════════════════════════');
+    
+    try {
+      response.debug.push("🖨️ Attempting to detect printers via Electron API...");
+      response.debug.push(`Platform: ${process.platform}`);
+      response.debug.push(`mainWindow exists: ${!!mainWindow}`);
+      
+      console.log('[MAIN] Initial state:');
+      console.log('   Platform:', process.platform);
+      console.log('   mainWindow:', !!mainWindow);
+      console.log('   response object:', response);
+      
+      if (!mainWindow) {
+        response.debug.push("❌ mainWindow not available");
+        response.error = "mainWindow not available";
+        console.warn("⚠️ [MAIN] mainWindow not available");
+        console.log('[MAIN] RETURNING (no mainWindow):', response);
+        console.log('══════════════════════════════════════════════════════════\n');
+        return response;
+      }
+      
+      response.debug.push(`webContents exists: ${!!mainWindow.webContents}`);
+      console.log('[MAIN] webContents:', !!mainWindow.webContents);
+      
+      // ✅ Use getPrintersAsync() - the correct Electron API
+      response.debug.push("📡 Calling webContents.getPrintersAsync()...");
+      console.log('[MAIN] Calling getPrintersAsync()...');
+      
+      let printers;
+      try {
+        printers = await mainWindow.webContents.getPrintersAsync();
+        console.log('[MAIN] getPrintersAsync() succeeded');
+      } catch (apiErr) {
+        response.debug.push(`❌ getPrintersAsync() threw error: ${apiErr.message}`);
+        response.error = apiErr.message;
+        console.error('[MAIN] getPrintersAsync() error:', apiErr);
+        printers = [];
+      }
+      
+      response.debug.push(`✓ Result type: ${typeof printers}`);
+      response.debug.push(`✓ Is array: ${Array.isArray(printers)}`);
+      response.debug.push(`✓ Length: ${printers?.length || 0}`);
+      
+      console.log('[MAIN] Result:');
+      console.log('   Type:', typeof printers);
+      console.log('   Is array:', Array.isArray(printers));
+      console.log('   Length:', printers?.length);
+      if (printers && printers.length > 0) {
+        console.log('   First printer:', JSON.stringify(printers[0], null, 2));
+      }
+      
+      if (printers && printers.length > 0) {
+        response.debug.push(`✅ Found ${printers.length} printer(s) via Electron API`);
+        response.printers = printers.map(p => ({
+          name: p.name || p.displayName,
+          displayName: p.displayName || p.name || p,
+          isDefault: p.isDefault,
+          type: (p.name || p.displayName || '').toLowerCase().includes("label") ? "label" : "invoice",
+        }));
+        console.log('[MAIN] Mapped printers:');
+        response.printers.forEach((p, i) => console.log(`   [${i}] ${p.displayName}`));
+        console.log('[MAIN] RETURNING (printers found):', response);
+        console.log('══════════════════════════════════════════════════════════\n');
+        return response;
+      }
+      
+      response.debug.push("⚠️ Electron API returned 0 printers");
+      response.debug.push("🔍 Trying Windows PowerShell fallback...");
+      console.log('[MAIN] No printers from API, trying PowerShell...');
+      
+      // Fallback for Windows
+      if (process.platform === "win32") {
+        try {
+          const { execSync } = require("child_process");
+          
+          response.debug.push("💻 Executing PowerShell Get-Printer...");
+          console.log('[MAIN] Executing PowerShell command...');
+          
+          try {
+            const psExePath = "powershell.exe";
+            const psCommand = 'Get-Printer -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name';
+            
+            const fullCmd = `"${psExePath}" -Command "${psCommand}"`;
+            response.debug.push(`Executing: ${fullCmd}`);
+            console.log('[MAIN] Command:', fullCmd);
+            
+            const psOutput = execSync(fullCmd, {
+              encoding: "utf8",
+              stdio: ["pipe", "pipe", "pipe"],
+              shell: true,
+              timeout: 10000,
+              maxBuffer: 10 * 1024 * 1024
+            });
+            
+            console.log('[MAIN] PowerShell output length:', psOutput.length);
+            console.log('[MAIN] Output:', psOutput);
+            
+            if (psOutput && psOutput.trim()) {
+              const printerNames = psOutput
+                .split("\n")
+                .map(line => line.trim())
+                .filter(line => line && line.length > 0);
+              
+              response.debug.push(`✅ Found ${printerNames.length} printer(s) via PowerShell`);
+              printerNames.forEach((name, i) => {
+                response.debug.push(`   [${i}] "${name}"`);
+              });
+              
+              console.log('[MAIN] Parsed printer names:', printerNames);
+              
+              response.printers = printerNames.map(name => ({
+                name: name,
+                displayName: name,
+                isDefault: false,
+                type: name.toLowerCase().includes("label") || name.toLowerCase().includes("zebra") ? "label" : "invoice",
+              }));
+              
+              console.log('[MAIN] RETURNING (PowerShell success):', response);
+              console.log('══════════════════════════════════════════════════════════\n');
+              return response;
+            } else {
+              response.debug.push("⚠️ PowerShell returned empty output");
+              console.log('[MAIN] PowerShell output was empty');
+            }
+          } catch (psErr) {
+            response.debug.push(`❌ PowerShell error: ${psErr.message}`);
+            console.log('[MAIN] PowerShell error:', psErr.message);
+          }
+          
+        } catch (error) {
+          response.debug.push(`❌ Windows fallback error: ${error.message}`);
+          console.log('[MAIN] Windows fallback error:', error.message);
+        }
+      }
+      
+      response.debug.push("❌ All detection methods failed");
+      console.log('[MAIN] RETURNING (all methods failed):', response);
+      console.log('══════════════════════════════════════════════════════════\n');
+      return response;
+      
+    } catch (error) {
+      response.debug.push(`❌ EXCEPTION: ${error.message}`);
+      response.debug.push(`Stack: ${error.stack}`);
+      response.error = error.message;
+      console.error("❌ [MAIN] EXCEPTION in printer handler:");
+      console.error('   Message:', error.message);
+      console.error('   Stack:', error.stack);
+      console.log('[MAIN] RETURNING (exception):', response);
+      console.log('══════════════════════════════════════════════════════════\n');
+      return response;
     }
   });
 }
@@ -579,16 +880,115 @@ function setupAppIPC() {
   });
 }
 
+// ================== IPC HANDLERS - DEVICE FINGERPRINTING API ==================
+async function setupDeviceFingerprintIPC() {
+  // ✅ Import electron-store as ES module
+  const { default: Store } = await import("electron-store");
+  const deviceUtils = require("./utils/deviceFingerprint.cjs");
+  
+  // Persistent store for device configuration
+  const store = new Store({
+    name: "device-config",
+  });
+
+  /**
+   * Get or create device fingerprint
+   * Stored locally to ensure consistency
+   */
+  ipcMain.handle("device:getFingerprint", () => {
+    try {
+      let fingerprint = store.get("deviceFingerprint");
+
+      if (!fingerprint) {
+        fingerprint = deviceUtils.generateDeviceFingerprint();
+        store.set("deviceFingerprint", fingerprint);
+        console.log("✅ New device fingerprint generated:", fingerprint);
+      } else {
+        console.log("✅ Device fingerprint retrieved:", fingerprint);
+      }
+
+      return fingerprint;
+    } catch (error) {
+      console.error("❌ Error getting device fingerprint:", error);
+      return null;
+    }
+  });
+
+  /**
+   * Generate Terminal ID for new terminal
+   * Prevents accidental duplicate IDs across devices
+   */
+  ipcMain.handle("device:generateTerminalId", (event, terminalNumber = 1) => {
+    try {
+      const terminalId = deviceUtils.generateTerminalId(terminalNumber);
+      console.log("✅ Terminal ID generated:", terminalId);
+      return terminalId;
+    } catch (error) {
+      console.error("❌ Error generating terminal ID:", error);
+      return null;
+    }
+  });
+
+  /**
+   * Validate Terminal ID belongs to this device
+   */
+  ipcMain.handle("device:validateTerminalId", (event, terminalId) => {
+    try {
+      const parsed = deviceUtils.parseTerminalId(terminalId);
+      if (!parsed) return false;
+
+      const currentFingerprint = store.get("deviceFingerprint");
+      if (!currentFingerprint) {
+        // Generate and store if not exists
+        const newFingerprint = deviceUtils.generateDeviceFingerprint();
+        store.set("deviceFingerprint", newFingerprint);
+        return parsed.deviceFingerprint === newFingerprint;
+      }
+
+      return parsed.deviceFingerprint === currentFingerprint;
+    } catch (error) {
+      console.error("❌ Error validating terminal ID:", error);
+      return false;
+    }
+  });
+
+  /**
+   * Get device configuration
+   */
+  ipcMain.handle("device:getConfig", () => {
+    try {
+      let fingerprint = store.get("deviceFingerprint");
+      if (!fingerprint) {
+        fingerprint = deviceUtils.generateDeviceFingerprint();
+        store.set("deviceFingerprint", fingerprint);
+      }
+
+      return {
+        deviceFingerprint: fingerprint,
+        lastUpdated: store.get("lastUpdated"),
+        terminalCount: store.get("terminalCount", 0),
+      };
+    } catch (error) {
+      console.error("❌ Error getting device config:", error);
+      return null;
+    }
+  });
+
+  console.log("✅ Device fingerprinting IPC handlers registered");
+}
+
 // ================== SETUP ALL IPC ==================
-function setupIPC() {
+async function setupIPC() {
   console.log("📡 Setting up IPC handlers...");
   setupTerminalIPC();
   setupPrinterIPC();
+  setupHardwareIPC();
   setupScannerIPC();
   setupFileIPC();
   setupWindowIPC();
   setupStorageIPC();
   setupAppIPC();
+  await setupDeviceFingerprintIPC();
   console.log("✅ IPC handlers ready");
 }
 

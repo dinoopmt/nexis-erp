@@ -11,6 +11,7 @@
 import express from "express";
 import {
   createTerminal,
+  getAllTerminals,
   getStoreterminals,
   getTerminalById,
   updateTerminalConfig,
@@ -39,6 +40,12 @@ const router = express.Router();
  * Create a new terminal configuration
  */
 router.post("/create", createTerminal);
+
+/**
+ * GET /terminals
+ * Get all terminals (system-wide)
+ */
+router.get("/", getAllTerminals);
 
 /**
  * GET /terminals/store/:storeId

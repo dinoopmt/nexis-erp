@@ -9,7 +9,7 @@
  * - Auto-capitalization on save
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../../config/config';
 import { NAMING_RULES } from '../../../utils/productNamingConvention';
@@ -28,9 +28,14 @@ const ProductNamingSettings = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  
+  // ✅ Prevent duplicate API calls in StrictMode
+  const hasFetched = useRef(false);
 
-  // ✅ Load current settings on mount
+  // ✅ Load current settings on mount (only once)
   useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
     loadSettings();
   }, []);
 

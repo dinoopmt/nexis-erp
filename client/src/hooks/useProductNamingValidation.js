@@ -9,7 +9,7 @@
  * - Store settings integration
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   validateProductName,
   normalizeProductName,
@@ -30,9 +30,15 @@ export const useProductNamingValidation = (productId = null) => {
   // ✅ NEW: Track last validated name to prevent re-validation on non-name field changes
   const [lastValidatedName, setLastValidatedName] = useState(null);
   const [validationCache, setValidationCache] = useState({});
+  
+  // ✅ Prevent duplicate API calls in StrictMode
+  const hasFetched = useRef(false);
 
-  // ✅ Load store naming rules on mount
+  // ✅ Load store naming rules on mount (only once)
   useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+    
     const loadRules = async () => {
       try {
         const rules = await getStoreNamingRules();

@@ -19,7 +19,7 @@ const InvoiceTemplateSchema = new mongoose.Schema(
     
     templateType: {
       type: String,
-      enum: ['INVOICE', 'GRN', 'RTV', 'DELIVERY_NOTE'],
+      enum: ['INVOICE', 'GRN', 'RTV', 'DELIVERY_NOTE', 'QUOTATION', 'SALES_ORDER', 'SALES_RETURN'],
       default: 'INVOICE'
     },
     

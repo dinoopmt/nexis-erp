@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useEffect } from 'react'
+import React, { createContext, useState, useCallback, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { showToast } from '../components/shared/AnimatedCenteredToast.jsx'
 import { API_URL } from '../config/config'
@@ -29,9 +29,14 @@ export const CompanyProvider = ({ children }) => {
   const [taxMaster, setTaxMaster] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  
+  // ✅ Prevent duplicate API calls in StrictMode
+  const hasFetched = useRef(false)
 
-  // Fetch company data on mount
+  // Fetch company data on mount (only once)
   useEffect(() => {
+    if (hasFetched.current) return
+    hasFetched.current = true
     fetchCompanyData()
   }, [])
 

@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, X, Printer, Barcode, Settings, Scale, Building, Co
 import axios from 'axios';
 import { API_URL } from '../../../config/config';
 import TerminalFormModal from './TerminalFormModal';
+import TerminalTypeSwitcher from './TerminalTypeSwitcher';
 
 const StoreSettings = () => {
   const [storeData, setStoreData] = useState({
@@ -74,6 +75,8 @@ const StoreSettings = () => {
   const [storeId, setStoreId] = useState(null);
   const [terminals, setTerminals] = useState([]);
   const [loadingTerminals, setLoadingTerminals] = useState(false);
+  // ✅ Terminal Type Switcher state
+  const [currentConfig, setCurrentConfig] = useState(null);
 
   useEffect(() => {
     fetchStoreSettings();
@@ -199,6 +202,11 @@ const StoreSettings = () => {
         scaleDevice: { ...prev.weightScaleSettings.scaleDevice, [field]: value }
       }
     }));
+  };
+
+  // ✅ Handle terminal config loaded from TerminalTypeSwitcher
+  const handleConfigLoaded = (config) => {
+    setCurrentConfig(config);
   };
 
   const addTerminal = () => {
@@ -598,36 +606,66 @@ const StoreSettings = () => {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Terminal ID</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Terminal Name</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Invoice Format</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Features</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Name</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Enabled Formats</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Hardware</th>
                 <th className="px-3 py-2 text-center font-medium text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {terminals.map((terminal, index) => (
-                <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-900">{terminal.terminalId || '-'}</td>
-                  <td className="px-3 py-2 text-gray-900">{terminal.terminalName || '-'}</td>
-                  <td className="px-3 py-2 text-gray-700">{terminal.invoiceFormat}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-1 flex-wrap">
-                      {terminal.enableCreditSale && <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">Credit</span>}
-                      {terminal.enableReturns && <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded">Returns</span>}
-                      {terminal.enablePromotions && <span className="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">Promo</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="flex justify-center gap-1">
-                      <button
-                        onClick={() => handleEditTerminal(index)}
-                        className="p-1 hover:bg-blue-50 rounded transition"
-                        title="Edit"
-                      >
-                        <Edit2 size={14} className="text-blue-600" />
-                      </button>
-                      {terminals.length > 1 && (
+              {terminals.map((terminal, index) => {
+                const enabledFormats = [];
+                if (terminal.formatMapping?.invoice?.enabled) enabledFormats.push('Invoice');
+                if (terminal.formatMapping?.deliveryNote?.enabled) enabledFormats.push('DN');
+                if (terminal.formatMapping?.quotation?.enabled) enabledFormats.push('Quo');
+                if (terminal.formatMapping?.salesOrder?.enabled) enabledFormats.push('SO');
+                if (terminal.formatMapping?.salesReturn?.enabled) enabledFormats.push('Return');
+
+                const hardware = [];
+                if (terminal.hardwareMapping?.printer?.enabled) hardware.push('🖨️');
+                if (terminal.hardwareMapping?.customerDisplay?.enabled) hardware.push('🖥️');
+
+                return (
+                  <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-900 font-medium">{terminal.terminalId || '-'}</td>
+                    <td className="px-3 py-2 text-gray-900">{terminal.terminalName || '-'}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        terminal.terminalType === 'SALES'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {terminal.terminalType === 'SALES' ? 'POS' : 'BO'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1 flex-wrap">
+                        {enabledFormats.length > 0 ? (
+                          enabledFormats.map((format) => (
+                            <span key={format} className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded">
+                              {format}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-gray-500">-</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="text-lg">{hardware.length > 0 ? hardware.join(' ') : '-'}</div>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex justify-center gap-1">
                         <button
+                          onClick={() => handleEditTerminal(index)}
+                          className="p-1 hover:bg-blue-50 rounded transition"
+                          title="Edit"
+                        >
+                          <Edit2 size={14} className="text-blue-600" />
+                        </button>
+                        {terminals.length > 1 && (
+                          <button
                           onClick={() => removeTerminal(index)}
                           className="p-1 hover:bg-red-50 rounded transition"
                           title="Delete"
@@ -638,11 +676,19 @@ const StoreSettings = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* ✅ Terminal Type Switcher - Load/Switch between configurations */}
+      <TerminalTypeSwitcher 
+        storeId={storeId}
+        onConfigLoaded={handleConfigLoaded}
+        currentConfig={currentConfig}
+      />
       </>
       )}
 

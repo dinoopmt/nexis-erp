@@ -104,6 +104,30 @@ export const getStoreterminals = async (req, res) => {
 };
 
 // ========================================
+// GET ALL TERMINALS (System-wide)
+// ========================================
+export const getAllTerminals = async (req, res) => {
+  try {
+    const terminals = await TerminalManagement.find().sort({
+      createdAt: -1,
+    });
+
+    res.status(200).json({
+      success: true,
+      count: terminals.length,
+      data: terminals,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching all terminals:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch terminals",
+      error: error.message,
+    });
+  }
+};
+
+// ========================================
 // GET TERMINAL BY ID
 // ========================================
 export const getTerminalById = async (req, res) => {

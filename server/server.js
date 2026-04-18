@@ -29,8 +29,13 @@ import productPackingRoutes from './modules/inventory/routes/productPackingRoute
 import stockBatchRoutes from './modules/inventory/routes/stockBatchRoutes.js';
 import organizationRoutes from './modules/organization/routes/organizationRoutes.js';
 import invoiceTemplateRoutes from './routes/invoiceTemplateRoutes.js';
+import barcodeTemplateRoutes from './routes/barcodeTemplateRoutes.js';
 import invoicePdfRoutes from './routes/invoicePdfRoutes.js';
+import { validateTerminalIdRoute } from './routes/terminalValidationRoute.js';
 import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
+import { seedDocumentTemplates } from './seedDocumentTemplates.js';
+import { seedBarcodeTemplates, seedAdditionalBarcodeTemplates } from './Seeders/barcodeSeed.js';
+import { seedDefaultTerminals } from './seedDefaultTerminals.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,7 +43,35 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Initialize database
-await connectDB();
+let db;
+try {
+  db = await connectDB();
+  // Create indexes for terminal management
+  console.log('🔑 Setting up terminal database indexes...');
+  try {
+    await db.collection('terminals').createIndex({ terminalId: 1 }, { unique: true });
+    console.log('✅ Terminal ID unique index created');
+  } catch (indexErr) {
+    if (indexErr.code === 11000 || indexErr.message.includes('already exists')) {
+      console.log('✅ Terminal ID unique index already exists');
+    } else {
+      console.warn('⚠️ Terminal ID index error:', indexErr.message);
+    }
+  }
+  try {
+    await db.collection('terminals').createIndex({ deviceFingerprint: 1 });
+    console.log('✅ Device fingerprint index created');
+  } catch (indexErr) {
+    if (indexErr.message.includes('already exists')) {
+      console.log('✅ Device fingerprint index already exists');
+    } else {
+      console.warn('⚠️ Device fingerprint index error:', indexErr.message);
+    }
+  }
+} catch (dbErr) {
+  console.error('❌ Database connection failed:', dbErr.message);
+  process.exit(1);
+}
 
 // ✅ Initialize Meilisearch for full-text search
 await initializeMeilisearch();
@@ -82,6 +115,32 @@ try {
   await seedInvoiceTemplates();
 } catch (seedErr) {
   console.error('❌ Error seeding invoice templates:', seedErr.message);
+}
+
+// ✅ STEP 3B: Seed document format templates (Delivery Note, Quotation, Sales Order, Sales Return)
+console.log('📋 Seeding document format templates...');
+try {
+  await seedDocumentTemplates();
+} catch (seedErr) {
+  console.error('❌ Error seeding document templates:', seedErr.message);
+}
+
+// ✅ STEP 4: Seed barcode templates on startup
+console.log('📦 Seeding barcode templates...');
+try {
+  await seedBarcodeTemplates();
+  await seedAdditionalBarcodeTemplates();
+  console.log('✅ Barcode templates seeded successfully');
+} catch (barcodeErr) {
+  console.error('❌ Error seeding barcode templates:', barcodeErr.message);
+}
+
+// ✅ STEP 5: Seed default terminals on startup (REQUIRED for license control)
+console.log('🖥️  Seeding default terminals...');
+try {
+  await seedDefaultTerminals();
+} catch (terminalErr) {
+  console.error('❌ Error seeding default terminals:', terminalErr.message);
 }
 
 // Middleware
@@ -146,6 +205,10 @@ app.use(`${apiV1}/financial-years`, masterRoutes.financialYearRoutes);
 // Settings module
 app.use(`${apiV1}/settings`, settingsRoutes.settingsRoutes);
 
+// Terminal Validation API (Device-based Terminal ID system) - MUST be before terminalManagementRoutes
+// to prevent GET /:terminalId from catching /device-info and /validate-id
+validateTerminalIdRoute(app, db);
+
 // Terminal Management module
 app.use(`${apiV1}/terminals`, settingsRoutes.terminalManagementRoutes);
 
@@ -186,9 +249,22 @@ app.use(`${apiV1}/organizations`, organizationRoutes);
 
 // Invoice Printing System - Templates & PDF Generation
 app.use(`${apiV1}/invoice-templates`, invoiceTemplateRoutes);
+
+// Barcode Template Management
+app.use(`${apiV1}/barcode-templates`, barcodeTemplateRoutes);
 app.use(`${apiV1}`, invoicePdfRoutes);
 
 // Health check endpoints
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'NEXIS ERP API Server',
+    version: '1.0.0',
+    status: 'running',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.get('/', (req, res) => {
   res.json({
     success: true,

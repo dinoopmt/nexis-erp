@@ -2,6 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' http://localhost:5173; style-src 'self' 'unsafe-inline' http://localhost:5173; connect-src 'self' http://localhost:5000 http://localhost:5173 ws://localhost:5173; img-src 'self' data: http: https:; font-src 'self' data:; object-src 'none'; frame-src 'none';" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <meta name="X-Content-Type-Options" content="nosniff" />
+    <meta name="X-Frame-Options" content="DENY" />
+    <meta name="X-XSS-Protection" content="1; mode=block" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nexis-ERP</title>

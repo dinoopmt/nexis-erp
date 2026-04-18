@@ -20,6 +20,12 @@ const terminalManagementSchema = new mongoose.Schema(
       trim: true,
       description: "Friendly name for terminal (e.g., 'Main Counter', 'Billing Point 1')",
     },
+    terminalType: {
+      type: String,
+      enum: ["SALES", "BACKOFFICE"],
+      default: "SALES",
+      description: "Terminal type - SALES for point-of-sale, BACKOFFICE for administrative",
+    },
     storeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Store",
@@ -53,6 +59,191 @@ const terminalManagementSchema = new mongoose.Schema(
         default: "STANDARD",
         description: "Invoice printing format",
       },
+    },
+
+    // ========================================
+    // ✅ NEW: FORMAT MAPPING (Document Type Configurations)
+    // ========================================
+    formatMapping: {
+      invoice: {
+        enabled: {
+          type: Boolean,
+          default: true,
+          description: "Enable invoice generation at this terminal"
+        },
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "InvoiceTemplate",
+          description: "Default invoice template for this terminal"
+        },
+        printOnSale: {
+          type: Boolean,
+          default: true,
+          description: "Auto-print invoice after sale"
+        },
+        copies: {
+          type: Number,
+          default: 1,
+          description: "Number of invoice copies to print"
+        }
+      },
+      deliveryNote: {
+        enabled: {
+          type: Boolean,
+          default: false,
+          description: "Enable delivery note generation"
+        },
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "InvoiceTemplate",
+          description: "Delivery note template"
+        },
+        requiresSignature: {
+          type: Boolean,
+          default: false,
+          description: "Require customer/driver signature"
+        }
+      },
+      quotation: {
+        enabled: {
+          type: Boolean,
+          default: false,
+          description: "Enable quotation generation"
+        },
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "InvoiceTemplate",
+          description: "Quotation template"
+        },
+        validityDays: {
+          type: Number,
+          default: 30,
+          description: "Quotation validity period in days"
+        }
+      },
+      salesOrder: {
+        enabled: {
+          type: Boolean,
+          default: false,
+          description: "Enable sales order generation"
+        },
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "InvoiceTemplate",
+          description: "Sales order template"
+        },
+        requiresApproval: {
+          type: Boolean,
+          default: false,
+          description: "Require manager approval for orders"
+        }
+      },
+      salesReturn: {
+        enabled: {
+          type: Boolean,
+          default: true,
+          description: "Enable sales return/credit note"
+        },
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "InvoiceTemplate",
+          description: "Return/credit note template"
+        },
+        requiresReason: {
+          type: Boolean,
+          default: true,
+          description: "Require return reason documentation"
+        }
+      }
+    },
+
+    // ========================================
+    // ✅ NEW: HARDWARE MAPPING (Printer & Customer Display)
+    // ========================================
+    hardwareMapping: {
+      printer: {
+        enabled: {
+          type: Boolean,
+          default: true,
+          description: "Enable printer at this terminal"
+        },
+        printerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "PrinterConfiguration",
+          description: "Reference to printer configuration"
+        },
+        printerName: {
+          type: String,
+          default: "",
+          description: "Local printer name or IP"
+        },
+        printerModel: {
+          type: String,
+          enum: ["EPSON", "CANON", "STAR", "TSC", "ZEBRA", "CUSTOM"],
+          default: "EPSON",
+          description: "Printer model type"
+        },
+        paperSize: {
+          type: String,
+          enum: ["80MM", "58MM", "A4", "A5"],
+          default: "80MM",
+          description: "Receipt paper size"
+        },
+        copies: {
+          type: Number,
+          default: 1,
+          description: "Default number of copies"
+        },
+        timeout: {
+          type: Number,
+          default: 5000,
+          description: "Printer timeout in milliseconds"
+        }
+      },
+      customerDisplay: {
+        enabled: {
+          type: Boolean,
+          default: false,
+          description: "Enable customer-facing display at this terminal"
+        },
+        displayType: {
+          type: String,
+          enum: ["LCD", "LED", "USB_DISPLAY", "NETWORK", "TABLET"],
+          default: "LCD",
+          description: "Type of customer display"
+        },
+        displayId: {
+          type: String,
+          default: "",
+          description: "Display device identifier or IP"
+        },
+        protocol: {
+          type: String,
+          enum: ["SERIAL", "USB", "NETWORK", "HDMI"],
+          default: "USB",
+          description: "Connection protocol"
+        },
+        displayItems: {
+          type: Boolean,
+          default: true,
+          description: "Show item details on customer display"
+        },
+        displayPrice: {
+          type: Boolean,
+          default: true,
+          description: "Show price on customer display"
+        },
+        displayTotal: {
+          type: Boolean,
+          default: true,
+          description: "Show running total on customer display"
+        },
+        displayDiscount: {
+          type: Boolean,
+          default: true,
+          description: "Show discount information"
+        }
+      }
     },
 
     // ========================================
@@ -100,7 +291,9 @@ terminalManagementSchema.index({ terminalId: 1 });
 terminalManagementSchema.index({ storeId: 1 });
 terminalManagementSchema.index({ organizationId: 1 });
 terminalManagementSchema.index({ terminalStatus: 1 });
+terminalManagementSchema.index({ terminalType: 1 });
 terminalManagementSchema.index({ storeId: 1, terminalStatus: 1 });
+terminalManagementSchema.index({ storeId: 1, terminalType: 1 });
 
 // ========================================
 // VIRTUAL FIELDS

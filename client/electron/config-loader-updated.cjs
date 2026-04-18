@@ -3,31 +3,42 @@ const path = require("path");
 
 /**
  * Load terminal identification from JSON file
- * Contains only: terminalId and apiBaseUrl
- * All other config (hardware, ui, features) comes from backend database
+ * Contains: terminalId, terminalType, and apiBaseUrl
+ * terminalType: "SALES" (device-based Terminal ID validation) or "BACKOFFICE" (no validation)
  * 
- * In production: config is bundled inside resources/
- * In development: config is read from client/config/
+ * Fresh Installation Flow:
+ * 1. No config found → Create BACKOFFICE default
+ * 2. User logs in → No Terminal ID validation for BACKOFFICE
+ * 3. User switches type to SALES → Generate device-based Terminal ID
+ * 4. Config updated with new type + ID
  */
 function loadConfig() {
   let configPath;
 
   // Determine config path based on environment
-  // In production: app.asar/config/terminal.json
-  // In development: ../config/terminal.json (relative to electron folder)
-  
   if (process.env.NODE_ENV === "development") {
-    // Development: reads from project root config folder
     configPath = path.join(__dirname, "../config/terminal.json");
   } else {
-    // Production: reads from resources after electron-builder packages it
     configPath = path.join(process.resourcesPath || __dirname, "../config/terminal.json");
   }
 
   try {
     if (!fs.existsSync(configPath)) {
       console.warn(`⚠️ Config file not found at ${configPath}`);
-      return getDefaultConfig();
+      console.log("📝 Creating new default BACKOFFICE configuration...");
+      const defaultConfig = getDefaultConfig();
+      // Try to create config file for future use
+      const configDir = path.dirname(configPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      try {
+        fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+        console.log(`✅ New BACKOFFICE config created at: ${configPath}`);
+      } catch (writeErr) {
+        console.warn(`⚠️ Could not persist config file: ${writeErr.message}`);
+      }
+      return defaultConfig;
     }
 
     const rawData = fs.readFileSync(configPath, "utf-8");
@@ -46,9 +57,9 @@ function loadConfig() {
 }
 
 /**
- * Fallback configuration if file cannot be read
- * Default: BACKOFFICE type for fresh installations (no validation needed)
- * Later user can switch to SALES type + generate device-based Terminal ID
+ * Default configuration for fresh installations
+ * BACKOFFICE type: No Terminal ID validation required
+ * User can later switch to SALES + generate device-based Terminal ID
  */
 function getDefaultConfig() {
   return {
@@ -109,7 +120,7 @@ function updateConfig(newValues) {
 
 /**
  * Validate configuration structure
- * Returns true if config has required fields
+ * Returns true if config has required fields and valid values
  */
 function validateConfig(config) {
   const requiredFields = ["terminalId", "apiBaseUrl", "terminalType"];
@@ -146,4 +157,3 @@ function validateConfig(config) {
 }
 
 module.exports = { loadConfig, validateConfig, updateConfig, getDefaultConfig };
-

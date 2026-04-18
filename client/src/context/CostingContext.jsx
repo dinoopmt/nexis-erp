@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useState, useCallback, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 export const CostingContext = createContext();
@@ -10,6 +10,9 @@ export const CostingProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const companyId = localStorage.getItem('companyId');
   const API_URL = '/api';
+  
+  // ✅ Prevent duplicate API calls in StrictMode
+  const hasFetched = useRef(false);
 
   // Fetch costing method configuration from backend
   const fetchCostingConfig = useCallback(async () => {
@@ -29,8 +32,10 @@ export const CostingProvider = ({ children }) => {
     }
   }, [companyId]);
 
-  // Initialize on mount
+  // Initialize on mount (only once)
   useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
     fetchCostingConfig();
   }, [fetchCostingConfig]);
 

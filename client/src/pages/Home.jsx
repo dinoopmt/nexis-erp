@@ -20,7 +20,7 @@ import UserManagement from "../components/settings/general/UserManagement";
 import StoreSettings from "../components/settings/general/StoreSettings";
 import UnitTypeManagement from "../components/settings/general/UnitTypeManagement";
 import BulkProductUpload from "../components/settings/general/BulkProductUpload";
-import PrinterConfigurationManagement from "../components/settings/general/PrinterConfigurationManagement";
+import TemplateConfigurationForm from "../components/settings/general/TemplateConfigurationForm";
 import StockReconciliation from "../components/settings/general/StockReconciliation";
 import ProductNamingSettings from "../components/settings/general/ProductNamingSettings";
 
@@ -383,7 +383,7 @@ const menus = [
       { name: "Store Settings", id: "StoreSettings", path: "/store-settings" },
       { name: "Unit Type Management", id: "UnitTypeManagement", path: "/unit-type-management" },
       { name: "Bulk Product Upload", id: "BulkProductUpload", path: "/bulk-product-upload" },
-      { name: "Printer Management", id: "PrinterManagement", path: "/printer-configuration-management" },
+      { name: "Template Management", id: "TemplateManagement", path: "/template-configuration-management" },
       { name: "Stock Reconciliation", id: "StockReconciliation", path: "/stock-reconciliation" },
       { name: "Product Naming Settings", id: "ProductNamingSettings", path: "/product-naming-settings" },
 
@@ -684,7 +684,7 @@ function Home() {
               <Route path="/store-settings" element={<StoreSettings />} />
               <Route path="/unit-type-management" element={<UnitTypeManagement />} />
               <Route path="/bulk-product-upload" element={<BulkProductUpload />} />
-              <Route path="/printer-configuration-management" element={<PrinterConfigurationManagement />} />
+              <Route path="/template-configuration-management" element={<TemplateConfigurationForm />} />
               <Route path="/stock-reconciliation" element={<StockReconciliation />} />
               <Route path="/product-naming-settings" element={<ProductNamingSettings />} />
               
