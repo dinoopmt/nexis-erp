@@ -1,4 +1,6 @@
 // Middleware exports
+import jwt from 'jsonwebtoken';
+import environment from '../config/environment.js';
 
 /**
  * Simple error handling middleware
@@ -78,9 +80,27 @@ const authenticateToken = (req, res, next) => {
     });
   }
   
-  // TODO: Verify JWT token
-  // For now, just pass through
-  next();
+  try {
+    // Verify and decode JWT token
+    const decoded = jwt.verify(token, environment.JWT_SECRET);
+    
+    // Attach user info to request
+    req.user = {
+      _id: decoded.userId,
+      username: decoded.username,
+      role: decoded.role,
+    };
+    
+    console.log(`✅ Auth successful: User ${decoded.username} (${decoded.userId})`);
+    next();
+  } catch (err) {
+    console.error('❌ JWT verification failed:', err.message);
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid or expired token',
+      error: err.message,
+    });
+  }
 };
 
 export {

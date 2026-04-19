@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Edit2, Trash2, X, Printer, Barcode, Settings, Scale, Building, Cog, Monitor } from 'lucide-react';
-import axios from 'axios';
-import { API_URL } from '../../../config/config';
+import apiClient from '../../../services/apiClient';
+import { showToast } from '../../shared/AnimatedCenteredToast';
 import TerminalFormModal from './TerminalFormModal';
 import TerminalTypeSwitcher from './TerminalTypeSwitcher';
 
@@ -9,16 +9,11 @@ const StoreSettings = () => {
   const [storeData, setStoreData] = useState({
     storeName: '',
     storeCode: '',
-    address: '',
+    address1: '',
+    address2: '',
     phone: '',
     email: '',
     taxNumber: '',
-    barcodePrefix: '',
-    barcodeFormat: 'EAN13',
-    printerModel: '',
-    printerPort: 'COM1',
-    labelWidth: '4',
-    labelHeight: '6',
     salesControls: {
       enableInvoiceNumbering: true,
       invoiceNumberFormat: 'INV-YYMMDD-XXXX',
@@ -65,8 +60,6 @@ const StoreSettings = () => {
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [activeTerminalIndex, setActiveTerminalIndex] = useState(0);
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [editingTerminal, setEditingTerminal] = useState(null);
@@ -92,8 +85,8 @@ const StoreSettings = () => {
   const fetchStoreSettings = async () => {
     try {
       setIsLoading(true);
-      const response = await axios.get(`${API_URL}/settings/store`);
-      if (response.data.data) {
+      const response = await apiClient.get(`/settings/store`);
+      if (response.ok && response.data.data) {
         // Merge API response with default state to ensure all fields are defined
         setStoreData(prev => ({
           ...prev,
@@ -127,7 +120,6 @@ const StoreSettings = () => {
           setStoreId(response.data.data.storeId);
         }
       }
-      setError('');
     } catch (err) {
       // Initialize with default if not found
       console.error('Failed to fetch store settings:', err);
@@ -141,8 +133,8 @@ const StoreSettings = () => {
     if (!currentStoreId) return;
     try {
       setLoadingTerminals(true);
-      const response = await axios.get(`${API_URL}/terminals/store/${currentStoreId}`);
-      if (response.data.data) {
+      const response = await apiClient.get(`/terminals/store/${currentStoreId}`);
+      if (response.ok && response.data.data) {
         setTerminals(Array.isArray(response.data.data) ? response.data.data : [response.data.data]);
       } else {
         setTerminals([]);
@@ -221,14 +213,19 @@ const StoreSettings = () => {
       if (editingTerminal !== null) {
         // Update existing terminal via Terminal Management API
         // Use terminalId (not MongoDB _id) as the route parameter
-        await axios.put(`${API_URL}/terminals/${terminals[editingTerminal].terminalId}`, terminalData);
-        setSuccess('Terminal updated successfully');
+        await apiClient.put(`/terminals/${terminals[editingTerminal].terminalId}`, terminalData);
+        showToast('success', 'Terminal updated successfully');
       } else {
         // Create new terminal via Terminal Management API
         // Add storeId to terminal data before creating
         const terminalWithStoreId = { ...terminalData, storeId };
-        await axios.post(`${API_URL}/terminals/create`, terminalWithStoreId);
-        setSuccess('Terminal added successfully');
+        
+        // Debug logging
+        console.log("📤 Sending terminal data to backend:");
+        console.log(JSON.stringify(terminalWithStoreId, null, 2));
+        
+        await apiClient.post(`/terminals/create`, terminalWithStoreId);
+        showToast('success', 'Terminal added successfully');
       }
       
       // Refresh terminals list
@@ -236,9 +233,23 @@ const StoreSettings = () => {
         await fetchTerminals(storeId);
       }
       setShowTerminalModal(false);
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save terminal');
+      console.error("❌ Terminal save error:");
+      console.error("Status:", err.response?.status);
+      console.error("Message:", err.response?.data?.message);
+      console.error("Full error:", err.response?.data);
+      
+      // Get detailed error message
+      let errorMessage = 'Failed to save terminal';
+      
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message === 'Network Error') {
+        errorMessage = 'Network error - please check your connection';
+      }
+      
+      console.error("Showing error to user:", errorMessage);
+      showToast('error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -251,24 +262,23 @@ const StoreSettings = () => {
 
   const removeTerminal = async (index) => {
     if (terminals.length <= 1) {
-      setError('At least one terminal configuration is required');
+      showToast('error', 'At least one terminal configuration is required');
       return;
     }
 
     try {
       setIsLoading(true);
       // Delete from Terminal Management API using terminalId (not MongoDB _id)
-      await axios.delete(`${API_URL}/terminals/${terminals[index].terminalId}`);
-      setSuccess('Terminal deleted successfully');
+      await apiClient.delete(`/terminals/${terminals[index].terminalId}`);
+      showToast('success', 'Terminal deleted successfully');
       
       // Refresh terminals list
       if (storeId) {
         await fetchTerminals(storeId);
       }
       setActiveTerminalIndex(0);
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete terminal');
+      showToast('error', err.response?.data?.message || 'Failed to delete terminal');
     } finally {
       setIsLoading(false);
     }
@@ -276,18 +286,16 @@ const StoreSettings = () => {
 
   const handleSave = async () => {
     if (!storeData.storeName) {
-      setError('Store name is required');
+      showToast('error', 'Store name is required');
       return;
     }
 
     try {
       setIsLoading(true);
-      setError('');
-      const response = await axios.post(`${API_URL}/settings/store`, storeData);
-      setSuccess('Store settings saved successfully');
-      setTimeout(() => setSuccess(''), 3000);
+      const response = await apiClient.post(`/settings/store`, storeData);
+      showToast('success', 'Store settings saved successfully');
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save store settings');
+      showToast('error', err.response?.data?.message || 'Failed to save store settings');
     } finally {
       setIsLoading(false);
     }
@@ -300,25 +308,6 @@ const StoreSettings = () => {
         <h2 className="text-2xl font-bold text-gray-900 mb-1">Store Settings</h2>
         <p className="text-sm text-gray-600">Configure store information, inventory controls, and operational settings</p>
       </div>
-
-      {/* Error & Success Messages */}
-      {error && (
-        <div className="p-3 bg-red-100 text-red-700 rounded-lg flex justify-between items-center text-sm">
-          {error}
-          <button onClick={() => setError('')} className="text-red-900">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="p-3 bg-green-100 text-green-700 rounded-lg flex justify-between items-center text-sm">
-          {success}
-          <button onClick={() => setSuccess('')} className="text-green-900">
-            <X size={16} />
-          </button>
-        </div>
-      )}
 
       {/* Grouped Tab Navigation */}
       <div className="flex gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200 overflow-x-auto">
@@ -366,14 +355,25 @@ const StoreSettings = () => {
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Address</label>
-            <textarea
-              name="address"
-              value={storeData.address}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Address Line 1</label>
+            <input
+              type="text"
+              name="address1"
+              value={storeData.address1}
               onChange={handleInputChange}
-              placeholder="Store address"
-              rows="1"
+              placeholder="Street address"
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">Address Line 2</label>
+            <input
+              type="text"
+              name="address2"
+              value={storeData.address2}
+              onChange={handleInputChange}
+              placeholder="City, state, postal code (for invoice header)"
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -419,100 +419,9 @@ const StoreSettings = () => {
       {activeTab === 'store-settings' && (
       <>
 
-      {/* Barcode Configuration */}
-      <div className="bg-white p-3 rounded-lg shadow">
-        <div className="flex items-center gap-2 mb-2">
-          <Barcode size={16} className="text-blue-600" />
-          <h3 className="text-sm font-semibold text-gray-900">Barcode Configuration</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Barcode Prefix</label>
-            <input
-              type="text"
-              name="barcodePrefix"
-              value={storeData.barcodePrefix}
-              onChange={handleInputChange}
-              placeholder="e.g., 800"
-              maxLength="3"
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Barcode Format</label>
-            <select
-              name="barcodeFormat"
-              value={storeData.barcodeFormat}
-              onChange={handleInputChange}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="EAN13">EAN-13</option>
-              <option value="EAN8">EAN-8</option>
-              <option value="CODE128">CODE-128</option>
-              <option value="QR">QR Code</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Printer Configuration */}
-      <div className="bg-white p-3 rounded-lg shadow">
-        <div className="flex items-center gap-2 mb-2">
-          <Printer size={16} className="text-green-600" />
-          <h3 className="text-sm font-semibold text-gray-900">Label Printer Configuration</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Printer Model</label>
-            <select
-              name="printerModel"
-              value={storeData.printerModel}
-              onChange={handleInputChange}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select printer...</option>
-              <option value="ZEBRA">Zebra</option>
-              <option value="BROTHER">Brother</option>
-              <option value="DYMO">Dymo</option>
-              <option value="EPSON">Epson</option>
-              <option value="CUSTOM">Custom</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Printer Port</label>
-            <input
-              type="text"
-              name="printerPort"
-              value={storeData.printerPort}
-              onChange={handleInputChange}
-              placeholder="e.g., COM1, LPT1, USB"
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Label Width (inches)</label>
-            <input
-              type="number"
-              name="labelWidth"
-              value={storeData.labelWidth}
-              onChange={handleInputChange}
-              step="0.1"
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Label Height (inches)</label>
-            <input
-              type="number"
-              name="labelHeight"
-              value={storeData.labelHeight}
-              onChange={handleInputChange}
-              step="0.1"
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-      </div>
+      {/* Barcode and Printer Settings - Now at Terminal Level */}
+      {/* Note: These settings (barcodePrefix, barcodeFormat, printerModel, printerPort, labelWidth, labelHeight)
+          are now managed per-terminal in the Terminal Management settings tab */}
 
       {/* Sales Controls */}
       <div className="bg-white p-3 rounded-lg shadow">
@@ -1085,6 +994,7 @@ const StoreSettings = () => {
       {showTerminalModal && (
         <TerminalFormModal
           terminal={editingTerminal !== null ? terminals[editingTerminal] : null}
+          existingTerminals={terminals}
           onSave={handleSaveTerminal}
           onCancel={() => setShowTerminalModal(false)}
         />

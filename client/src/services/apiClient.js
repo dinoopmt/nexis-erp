@@ -81,6 +81,9 @@ class APIClient {
     // Add authentication token
     if (this.authToken) {
       headers['Authorization'] = `Bearer ${this.authToken}`;
+      console.log('✅ Auth header added');
+    } else {
+      console.warn('⚠️ No auth token available for request');
     }
 
     // Add terminal ID if available
@@ -109,9 +112,11 @@ class APIClient {
    */
   loadAuthToken() {
     try {
-      const token = localStorage.getItem('authToken');
+      // Check both 'token' and 'authToken' keys for backwards compatibility
+      let token = localStorage.getItem('token') || localStorage.getItem('authToken');
       if (token) {
         this.authToken = token;
+        console.log('✅ Auth token loaded from localStorage');
       }
     } catch (error) {
       console.warn('Failed to load auth token:', error);
@@ -124,7 +129,7 @@ class APIClient {
   setAuthToken(token) {
     this.authToken = token;
     try {
-      localStorage.setItem('authToken', token);
+      localStorage.setItem('token', token);
     } catch (error) {
       console.warn('Failed to save auth token:', error);
     }
@@ -136,6 +141,7 @@ class APIClient {
   clearAuthToken() {
     this.authToken = null;
     try {
+      localStorage.removeItem('token');
       localStorage.removeItem('authToken');
     } catch (error) {
       console.warn('Failed to clear auth token:', error);
@@ -239,7 +245,15 @@ class APIClient {
    * GET request
    */
   async get(endpoint, options = {}) {
-    const url = `${this.baseURL}${endpoint}`;
+    let url = `${this.baseURL}${endpoint}`;
+    
+    // Handle query parameters if provided
+    if (options.params) {
+      const queryString = new URLSearchParams(options.params).toString();
+      url = `${url}?${queryString}`;
+      delete options.params; // Remove params from options before spreading
+    }
+    
     return this._fetch(url, {
       method: 'GET',
       headers: this.buildHeaders(options.headers),

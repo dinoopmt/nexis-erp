@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { X, Save, Printer, Monitor, Download } from 'lucide-react'
 import axios from 'axios'
+import apiClient from '../../../services/apiClient'
 import { API_URL } from '../../../config/config'
-import toast from 'react-hot-toast'
+import { showToast } from '../../shared/AnimatedCenteredToast'
+import useValidationToast from '../../../hooks/useValidationToast'
 
-const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
+const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel }) => {
+  const { showApiError, showSuccess } = useValidationToast()
   const [modalHeight, setModalHeight] = useState('90vh')
   const [activeTab, setActiveTab] = useState('basic')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [lastValidationTime, setLastValidationTime] = useState(0) // ✅ Debounce rapid clicks
   const [availableTemplates, setAvailableTemplates] = useState({
     invoice: [],
     deliveryNote: [],
@@ -20,20 +25,7 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
   const [loadingHardware, setLoadingHardware] = useState(false)
   const [deviceFingerprint, setDeviceFingerprint] = useState(null)
   const [deviceTerminals, setDeviceTerminals] = useState([])
-  const [terminalIdError, setTerminalIdError] = useState('')
   const [validatingTerminalId, setValidatingTerminalId] = useState(false)
-  const [printerModels] = useState({
-    invoice: [
-      { id: 'EPSON_TM', name: 'EPSON TM Series', type: 'EPSON' },
-      { id: 'STAR_TSP', name: 'STAR TSP', type: 'STAR' },
-      { id: 'CANON_P', name: 'Canon P Series', type: 'CANON' },
-    ],
-    label: [
-      { id: 'ZEBRA_GK', name: 'ZEBRA GK420d', type: 'ZEBRA' },
-      { id: 'TSC_TTP', name: 'TSC TTP-244 Plus', type: 'TSC' },
-      { id: 'BROTHER_QL', name: 'Brother QL-800', type: 'BROTHER' },
-    ]
-  })
   const [vfdModels] = useState([
     { id: 'VFD_20X2', name: 'VFD 20x2 Characters', rows: 2, cols: 20 },
     { id: 'VFD_40X2', name: 'VFD 40x2 Characters', rows: 2, cols: 40 },
@@ -46,6 +38,7 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
     invoiceControls: {
       invoiceNumberPrefix: '',
     },
+    // ✅ Simplified: formatMapping only has templateId
     formatMapping: {
       invoice: {
         templateId: null,
@@ -244,9 +237,9 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
   const fetchAvailableTemplates = async () => {
     try {
       setLoadingTemplates(true)
-      const response = await axios.get(`${API_URL}/invoice-templates`)
+      const response = await apiClient.get(`/invoice-templates`)
       
-      if (response.data.data) {
+      if (response.ok && response.data.data) {
         const templates = Array.isArray(response.data.data) ? response.data.data : [response.data.data]
         
         // Organize templates by templateType
@@ -263,7 +256,7 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
       }
     } catch (error) {
       console.error('Failed to fetch invoice templates:', error)
-      toast.error('Failed to load document templates')
+      showToast('error', 'Failed to load document templates')
     } finally {
       setLoadingTemplates(false)
     }
@@ -281,7 +274,7 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
         console.log('✅ Device fingerprint:', fingerprint)
 
         // Fetch existing device terminals
-        const response = await axios.get(`${API_URL}/terminals/device-info`, {
+        const response = await apiClient.get(`/terminals/device-info`, {
           params: { deviceFingerprint: fingerprint },
         })
 
@@ -311,7 +304,6 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
   const validateTerminalId = async (terminalId, terminalType = 'SALES') => {
     // Only validate Terminal ID if type is SALES
     if (terminalType !== 'SALES') {
-      setTerminalIdError('')
       return
     }
 
@@ -319,9 +311,8 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
 
     try {
       setValidatingTerminalId(true)
-      setTerminalIdError('')
 
-      const response = await axios.post(`${API_URL}/terminals/validate-id`, {
+      const response = await apiClient.post(`/terminals/validate-id`, {
         terminalId,
         excludeId: terminal?._id, // Exclude current terminal if editing
       })
@@ -332,9 +323,10 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
     } catch (error) {
       if (error.response?.data?.code === 'DUPLICATE_TERMINAL_ID') {
         const errorMsg = `Terminal ID already exists: ${error.response.data.details.existingTerminal}`
-        setTerminalIdError(errorMsg)
+        showToast('error', errorMsg)
         console.error('❌ Duplicate Terminal ID:', errorMsg)
       } else {
+        showApiError(error)
         console.error('Error validating Terminal ID:', error)
       }
     } finally {
@@ -354,7 +346,7 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
 
   useEffect(() => {
     if (terminal) {
-      // Handle both old and new hardware mapping structures
+      // ✅ Migrate old hardwareMapping structure to new one if needed
       let hardwareMapping = terminal.hardwareMapping
       
       // If old structure with 'printer' exists, migrate to new structure
@@ -418,15 +410,33 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
         }
       }
       
+      // Load formatMapping and hardwareMapping
+      let formatMapping = terminal.formatMapping || {}
+      
+      // Ensure all keys exist in formatMapping
+      Object.keys(formData.formatMapping).forEach(key => {
+        if (!formatMapping[key]) {
+          formatMapping[key] = { templateId: null }
+        }
+      })
+      
       setFormData(prev => ({
         ...prev,
         ...terminal,
         invoiceControls: terminal.invoiceControls || prev.invoiceControls,
-        formatMapping: terminal.formatMapping || prev.formatMapping,
+        formatMapping,
         hardwareMapping,
       }))
     }
   }, [terminal, installedPrinters, availableComPorts])
+
+  // Cleanup effect: reset isSubmitting and debounce on unmount
+  useEffect(() => {
+    return () => {
+      setIsSubmitting(false)
+      setLastValidationTime(0) // ✅ Reset debounce on close
+    }
+  }, [])
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -459,21 +469,61 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
     }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     
-    // Prevent submit if there are validation errors
-    if (terminalIdError) {
-      toast.error('Please fix the validation errors before saving')
-      return
-    }
-    
-    if (!formData.terminalId) {
-      toast.error('Terminal ID is required')
+    // ✅ Prevent multiple submissions
+    if (isSubmitting) {
       return
     }
 
-    onSave(formData)
+    // ✅ Debounce rapid validation clicks (prevent blinking)
+    // User must wait 2 seconds between validation attempts
+    const now = Date.now()
+    if (now - lastValidationTime < 2000) {
+      return
+    }
+    setLastValidationTime(now)
+    
+    if (!formData.terminalId) {
+      showToast('error', 'Terminal ID is required', 6000) // Show for 6 seconds
+      return
+    }
+
+    if (!formData.terminalName) {
+      showToast('error', 'Terminal Name is required', 6000)
+      return
+    }
+
+    // Check for duplicate Terminal ID (only when creating new, not editing)
+    if (!terminal) {
+      const isDuplicate = existingTerminals.some(t => t.terminalId === formData.terminalId)
+      if (isDuplicate) {
+        showToast('error', `Terminal ID "${formData.terminalId}" already exists. Please use a different ID or edit the existing terminal.`, 6000)
+        return
+      }
+    }
+
+    setIsSubmitting(true)
+    try {
+      // ✅ Await the parent's API call
+      // If parent handles error and shows toast, isSubmitting will still reset
+      // allowing user to try again
+      await onSave(formData)
+    } catch (error) {
+      // Parent error handling shows toast, but also catch here
+      // in case we need to handle modal-level errors
+      console.error('Terminal save error:', error)
+    } finally {
+      // ✅ Always reset isSubmitting so button is clickable again
+      // even if API call failed
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setIsSubmitting(false)
+    onCancel()
   }
 
   return (
@@ -493,9 +543,10 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
             </p>
           </div>
           <button
-            onClick={onCancel}
+            onClick={handleCancel}
             className="bg-gray-600 hover:bg-gray-700 text-white w-8 h-8 rounded flex items-center justify-center transition flex-shrink-0"
             title="Close"
+            disabled={isSubmitting}
           >
             <X size={18} />
           </button>
@@ -582,13 +633,10 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
                         {formData.terminalType === 'SALES' && validatingTerminalId && (
                           <span className="text-xs mt-2">🔄</span>
                         )}
-                        {formData.terminalType === 'SALES' && !validatingTerminalId && !terminalIdError && formData.terminalId && (
+                        {formData.terminalType === 'SALES' && !validatingTerminalId && formData.terminalId && (
                           <span className="text-xs mt-2">✅</span>
                         )}
                       </div>
-                      {formData.terminalType === 'SALES' && terminalIdError && (
-                        <p className="text-xs text-red-600 mt-1">⚠️ {terminalIdError}</p>
-                      )}
                       {!terminal && deviceFingerprint && formData.terminalType === 'SALES' && (
                         <p className="text-xs text-gray-600 mt-1">Device-based ID prevents cloning</p>
                       )}
@@ -657,135 +705,125 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
             {/* FORMATS TAB */}
             {activeTab === 'formats' && (
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold text-gray-900 mb-2">Document Format Configuration</h4>
+                <h4 className="text-xs font-semibold text-gray-900 mb-2">Document Templates Configuration</h4>
                 {loadingTemplates && (
                   <div className="p-2 bg-blue-50 rounded text-center text-xs text-gray-700">
                     Loading available templates...
                   </div>
                 )}
                 
-                {/* Invoice */}
+                {/* Invoice Template */}
                 <div className="bg-blue-50 rounded p-2 border border-blue-200">
                   <h4 className="font-semibold text-xs text-gray-900 mb-2">Invoice</h4>
                   <div className="space-y-1 p-2 bg-white rounded border border-blue-100">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
-                      <select
-                        value={formData.formatMapping.invoice.templateId || ''}
-                        onChange={(e) => handleDeepNestedChange('formatMapping', 'invoice', 'templateId', e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      >
-                        <option value="">-- Select Invoice Template --</option>
-                        {availableTemplates.invoice.map((template) => (
-                          <option key={template._id} value={template._id}>
-                            {template.templateName} ({template.language || 'EN'})
-                          </option>
-                        ))}
-                      </select>
-                      {availableTemplates.invoice.length === 0 && !loadingTemplates && (
-                        <p className="text-xs text-red-600 mt-1">No invoice templates available</p>
-                      )}
-                    </div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                    <select
+                      value={formData.formatMapping.invoice.templateId || ''}
+                      onChange={(e) => handleDeepNestedChange('formatMapping', 'invoice', 'templateId', e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">-- Select Invoice Template --</option>
+                      {availableTemplates.invoice.map((template) => (
+                        <option key={template._id} value={template._id}>
+                          {template.templateName} ({template.language || 'EN'})
+                        </option>
+                      ))}
+                    </select>
+                    {availableTemplates.invoice.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-red-600 mt-1">No invoice templates available</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Delivery Note */}
+                {/* Delivery Note Template */}
                 <div className="bg-green-50 rounded p-2 border border-green-200">
                   <h4 className="font-semibold text-xs text-gray-900 mb-2">Delivery Note</h4>
                   <div className="space-y-1 p-2 bg-white rounded border border-green-100">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
-                      <select
-                        value={formData.formatMapping.deliveryNote.templateId || ''}
-                        onChange={(e) => handleDeepNestedChange('formatMapping', 'deliveryNote', 'templateId', e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      >
-                        <option value="">-- Select Delivery Note Template --</option>
-                        {availableTemplates.deliveryNote.map((template) => (
-                          <option key={template._id} value={template._id}>
-                            {template.templateName}
-                          </option>
-                        ))}
-                      </select>
-                      {availableTemplates.deliveryNote.length === 0 && !loadingTemplates && (
-                        <p className="text-xs text-orange-600 mt-1">No delivery note templates available</p>
-                      )}
-                    </div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                    <select
+                      value={formData.formatMapping.deliveryNote.templateId || ''}
+                      onChange={(e) => handleDeepNestedChange('formatMapping', 'deliveryNote', 'templateId', e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">-- Select Delivery Note Template --</option>
+                      {availableTemplates.deliveryNote.map((template) => (
+                        <option key={template._id} value={template._id}>
+                          {template.templateName}
+                        </option>
+                      ))}
+                    </select>
+                    {availableTemplates.deliveryNote.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-orange-600 mt-1">No delivery note templates available</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Quotation */}
+                {/* Quotation Template */}
                 <div className="bg-purple-50 rounded p-2 border border-purple-200">
                   <h4 className="font-semibold text-xs text-gray-900 mb-2">Quotation</h4>
                   <div className="space-y-1 p-2 bg-white rounded border border-purple-100">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
-                      <select
-                        value={formData.formatMapping.quotation.templateId || ''}
-                        onChange={(e) => handleDeepNestedChange('formatMapping', 'quotation', 'templateId', e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      >
-                        <option value="">-- Select Quotation Template --</option>
-                        {availableTemplates.quotation.map((template) => (
-                          <option key={template._id} value={template._id}>
-                            {template.templateName}
-                          </option>
-                        ))}
-                      </select>
-                      {availableTemplates.quotation.length === 0 && !loadingTemplates && (
-                        <p className="text-xs text-orange-600 mt-1">No quotation templates available</p>
-                      )}
-                    </div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                    <select
+                      value={formData.formatMapping.quotation.templateId || ''}
+                      onChange={(e) => handleDeepNestedChange('formatMapping', 'quotation', 'templateId', e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">-- Select Quotation Template --</option>
+                      {availableTemplates.quotation.map((template) => (
+                        <option key={template._id} value={template._id}>
+                          {template.templateName}
+                        </option>
+                      ))}
+                    </select>
+                    {availableTemplates.quotation.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-orange-600 mt-1">No quotation templates available</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Sales Order */}
+                {/* Sales Order Template */}
                 <div className="bg-yellow-50 rounded p-2 border border-yellow-200">
                   <h4 className="font-semibold text-xs text-gray-900 mb-2">Sales Order</h4>
                   <div className="space-y-1 p-2 bg-white rounded border border-yellow-100">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
-                      <select
-                        value={formData.formatMapping.salesOrder.templateId || ''}
-                        onChange={(e) => handleDeepNestedChange('formatMapping', 'salesOrder', 'templateId', e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      >
-                        <option value="">-- Select Sales Order Template --</option>
-                        {availableTemplates.salesOrder.map((template) => (
-                          <option key={template._id} value={template._id}>
-                            {template.templateName}
-                          </option>
-                        ))}
-                      </select>
-                      {availableTemplates.salesOrder.length === 0 && !loadingTemplates && (
-                        <p className="text-xs text-orange-600 mt-1">No sales order templates available</p>
-                      )}
-                    </div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                    <select
+                      value={formData.formatMapping.salesOrder.templateId || ''}
+                      onChange={(e) => handleDeepNestedChange('formatMapping', 'salesOrder', 'templateId', e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">-- Select Sales Order Template --</option>
+                      {availableTemplates.salesOrder.map((template) => (
+                        <option key={template._id} value={template._id}>
+                          {template.templateName}
+                        </option>
+                      ))}
+                    </select>
+                    {availableTemplates.salesOrder.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-orange-600 mt-1">No sales order templates available</p>
+                    )}
                   </div>
                 </div>
 
-                {/* Sales Return */}
+                {/* Sales Return Template */}
                 <div className="bg-red-50 rounded p-2 border border-red-200">
                   <h4 className="font-semibold text-xs text-gray-900 mb-2">Sales Return</h4>
                   <div className="space-y-1 p-2 bg-white rounded border border-red-100">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
-                      <select
-                        value={formData.formatMapping.salesReturn.templateId || ''}
-                        onChange={(e) => handleDeepNestedChange('formatMapping', 'salesReturn', 'templateId', e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      >
-                        <option value="">-- Select Return Template --</option>
-                        {availableTemplates.salesReturn.map((template) => (
-                          <option key={template._id} value={template._id}>
-                            {template.templateName}
-                          </option>
-                        ))}
-                      </select>
-                      {availableTemplates.salesReturn.length === 0 && !loadingTemplates && (
-                        <p className="text-xs text-orange-600 mt-1">No return templates available</p>
-                      )}
-                    </div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Select Template</label>
+                    <select
+                      value={formData.formatMapping.salesReturn.templateId || ''}
+                      onChange={(e) => handleDeepNestedChange('formatMapping', 'salesReturn', 'templateId', e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">-- Select Return Template --</option>
+                      {availableTemplates.salesReturn.map((template) => (
+                        <option key={template._id} value={template._id}>
+                          {template.templateName}
+                        </option>
+                      ))}
+                    </select>
+                    {availableTemplates.salesReturn.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-orange-600 mt-1">No return templates available</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1116,17 +1154,19 @@ const TerminalFormModal = ({ terminal, onSave, onCancel }) => {
         <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-2 flex gap-2 justify-end flex-shrink-0">
           <button
             type="button"
-            onClick={onCancel}
-            className="px-3 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition"
+            onClick={handleCancel}
+            disabled={isSubmitting}
+            className="px-3 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+            disabled={isSubmitting}
+            className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save size={14} />
-            Save Terminal
+            {isSubmitting ? 'Saving...' : 'Save Terminal'}
           </button>
         </div>
       </div>

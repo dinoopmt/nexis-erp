@@ -108,42 +108,162 @@ function updateConfig(newValues) {
 }
 
 /**
- * Validate configuration structure
- * Returns true if config has required fields
+ * Validate configuration structure - STRICT MODE
+ * Returns object with { isValid: boolean, error: string | null }
+ * If validation fails, returns error message to show on splash screen
  */
 function validateConfig(config) {
   const requiredFields = ["terminalId", "apiBaseUrl", "terminalType"];
 
   for (const field of requiredFields) {
     if (!config[field]) {
-      console.warn(`⚠️ Missing config field: ${field}`);
-      return false;
+      return {
+        isValid: false,
+        error: `❌ CONFIG ERROR\n\nMissing required field: ${field}`
+      };
     }
   }
 
   // Validate terminalId is not empty
   if (typeof config.terminalId !== "string" || config.terminalId.trim() === "") {
-    console.warn("⚠️ terminalId must be a non-empty string");
-    return false;
+    return {
+      isValid: false,
+      error: `❌ CONFIG ERROR\n\nterminalId must be a non-empty string`
+    };
   }
 
-  // Validate terminalType is one of allowed values
+  // Validate terminalType is one of allowed values - STRICT
   const validTypes = ["SALES", "BACKOFFICE"];
   if (!validTypes.includes(config.terminalType)) {
-    console.warn(`⚠️ terminalType must be one of: ${validTypes.join(", ")}`);
-    return false;
+    return {
+      isValid: false,
+      error: `❌ CONFIG ERROR\n\nterminalType must be one of: ${validTypes.join(", ")}\n\nFound: "${config.terminalType}"\n\nPlease fix the configuration file.`
+    };
   }
 
   // Validate apiBaseUrl is a valid URL
   try {
     new URL(config.apiBaseUrl);
   } catch {
-    console.warn(`⚠️ apiBaseUrl is not a valid URL: ${config.apiBaseUrl}`);
-    return false;
+    return {
+      isValid: false,
+      error: `❌ CONFIG ERROR\n\napiBaseUrl is not a valid URL:\n${config.apiBaseUrl}`
+    };
   }
 
-  return true;
+  return { isValid: true, error: null };
 }
 
-module.exports = { loadConfig, validateConfig, updateConfig, getDefaultConfig };
+/**
+ * Verify terminal exists in backend database AND check type match
+ * Makes HTTP request to check if terminalId is registered and type matches
+ * @param {string} terminalId - Terminal ID to verify
+ * @param {string} terminalType - Expected terminal type (SALES or BACKOFFICE)
+ * @param {string} apiBaseUrl - Base URL for API calls
+ * @returns {Promise<{valid: boolean, error: string | null, terminal: object | null}>}
+ */
+async function verifyTerminalExists(terminalId, terminalType, apiBaseUrl) {
+  try {
+    const http = require("http");
+    const https = require("https");
+    
+    // Remove /api/v1 suffix if present, we'll add the endpoint ourselves
+    let baseUrl = apiBaseUrl.replace(/\/api\/v\d+\/?$/, "");
+    const url = `${baseUrl}/api/v1/terminals/verify/${terminalId}`;
+    
+    console.log(`🔍 Verifying terminal: ${terminalId} (Type: ${terminalType})`);
+    
+    return new Promise((resolve) => {
+      const client = url.startsWith("https") ? https : http;
+      
+      const req = client.get(url, { timeout: 5000 }, (res) => {
+        let data = "";
+        
+        res.on("data", chunk => {
+          data += chunk;
+        });
+        
+        res.on("end", () => {
+          if (res.statusCode === 200) {
+            try {
+              const terminal = JSON.parse(data);
+              
+              // Check if terminal type matches
+              if (terminal.terminalType !== terminalType) {
+                console.error(`❌ Terminal type mismatch!`);
+                console.error(`   Config says: ${terminalType}`);
+                console.error(`   Database has: ${terminal.terminalType}`);
+                
+                return resolve({
+                  valid: false,
+                  error: `❌ TERMINAL TYPE MISMATCH\n\nTerminal ID: ${terminalId}\n\nConfig Type: ${terminalType}\nDatabase Type: ${terminal.terminalType}\n\nPlease correct the configuration or contact administrator.`,
+                  terminal: null
+                });
+              }
+              
+              console.log(`✅ Terminal verified: ${terminalId} (${terminal.terminalType})`);
+              resolve({ 
+                valid: true, 
+                error: null,
+                terminal: terminal
+              });
+            } catch (parseError) {
+              console.error(`❌ Failed to parse terminal response: ${parseError.message}`);
+              resolve({
+                valid: false,
+                error: `❌ TERMINAL VERIFICATION ERROR\n\nFailed to parse server response.`,
+                terminal: null
+              });
+            }
+          } else if (res.statusCode === 404) {
+            console.error(`❌ Terminal not found in database: ${terminalId}`);
+            resolve({
+              valid: false,
+              error: `❌ TERMINAL NOT AVAILABLE\n\nTerminal ID: ${terminalId}\n\nThis terminal is not registered in the system.\n\nPlease configure the terminal in Settings first.`,
+              terminal: null
+            });
+          } else {
+            console.error(`❌ Terminal verification failed (Status: ${res.statusCode})`);
+            resolve({
+              valid: false,
+              error: `❌ TERMINAL VERIFICATION ERROR\n\nServer returned status: ${res.statusCode}\n\nPlease try again or contact administrator.`,
+              terminal: null
+            });
+          }
+        });
+      });
+      
+      req.on("error", (error) => {
+        // If API is down, allow startup with warning
+        console.warn(`⚠️ Could not verify terminal (API unavailable): ${error.message}`);
+        console.warn(`⚠️ Allowing startup - please ensure terminal is configured correctly`);
+        resolve({ 
+          valid: true, 
+          error: null,
+          terminal: null
+        }); // Allow startup if network issue
+      });
+      
+      req.on("timeout", () => {
+        req.destroy();
+        console.warn(`⚠️ Terminal verification timeout (API slow)`);
+        resolve({ 
+          valid: true, 
+          error: null,
+          terminal: null
+        }); // Allow startup if timeout
+      });
+    });
+  } catch (error) {
+    console.error(`❌ Terminal verification failed: ${error.message}`);
+    // On error, allow startup but log it
+    return { 
+      valid: true, 
+      error: null,
+      terminal: null
+    };
+  }
+}
+
+module.exports = { loadConfig, validateConfig, updateConfig, getDefaultConfig, verifyTerminalExists };
 

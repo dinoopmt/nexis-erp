@@ -23,8 +23,8 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
       <div class="company-info">
         <h1 class="company-name">{{company.companyName}}</h1>
         <p class="company-details">
-          {{company.address}}<br>
-          {{company.city}}, {{company.state}} {{company.country}}<br>
+          {{company.address1}}<br>
+          {{company.address2}}<br>
           Email: {{company.email}} | Phone: {{company.phone}}<br>
           Tax ID: {{company.taxId}}
         </p>
@@ -344,8 +344,8 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
       <div class="company-info">
         <h1 class="company-name">{{company.companyName}}</h1>
         <p class="company-details">
-          {{company.address}}<br>
-          {{company.city}}, {{company.state}} {{company.country}}<br>
+          {{company.address1}}<br>
+          {{company.address2}}<br>
           البريد الإلكتروني: {{company.email}} | الهاتف: {{company.phone}}<br>
           معرف الضريبة: {{company.taxId}}
         </p>

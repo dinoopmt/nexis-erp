@@ -13,7 +13,11 @@ const storeSettingsSchema = new mongoose.Schema(
       sparse: true,
       trim: true,
     },
-    address: {
+    address1: {
+      type: String,
+      default: "",
+    },
+    address2: {
       type: String,
       default: "",
     },
@@ -29,34 +33,9 @@ const storeSettingsSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    // Barcode Configuration
-    barcodePrefix: {
-      type: String,
-      default: "",
-    },
-    barcodeFormat: {
-      type: String,
-      enum: ["EAN13", "EAN8", "CODE128", "QR"],
-      default: "EAN13",
-    },
-    // Printer Configuration
-    printerModel: {
-      type: String,
-      enum: ["ZEBRA", "BROTHER", "DYMO", "EPSON", "CUSTOM", ""],
-      default: "",
-    },
-    printerPort: {
-      type: String,
-      default: "COM1",
-    },
-    labelWidth: {
-      type: Number,
-      default: 4,
-    },
-    labelHeight: {
-      type: Number,
-      default: 6,
-    },
+    // ✅ NOTE: Barcode, Printer, and Label settings moved to Terminal level
+    // barcodePrefix, barcodeFormat, printerModel, printerPort, labelWidth, labelHeight
+    // are now managed per-terminal in Terminal Management settings
     // Sales Controls
     salesControls: {
       enableInvoiceNumbering: {

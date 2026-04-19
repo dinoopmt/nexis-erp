@@ -22,13 +22,37 @@ export const createTerminal = async (req, res) => {
       terminalName,
       storeId,
       organizationId,
+      terminalType,
+      invoiceControls,
+      formatMapping,
+      hardwareMapping,
+      notes,
     } = req.body;
 
-    // Validate required fields
-    if (!terminalId || !terminalName || !storeId) {
+    console.log("📥 Received create terminal request:", { terminalId, terminalName, storeId, terminalType });
+
+    // Validate required fields with detailed logging
+    if (!terminalId) {
+      console.error("❌ Missing terminalId");
       return res.status(400).json({
         success: false,
-        message: "Terminal ID, name, and store ID are required",
+        message: "Terminal ID is required",
+      });
+    }
+    
+    if (!terminalName) {
+      console.error("❌ Missing terminalName");
+      return res.status(400).json({
+        success: false,
+        message: "Terminal Name is required",
+      });
+    }
+    
+    if (!storeId) {
+      console.error("❌ Missing storeId");
+      return res.status(400).json({
+        success: false,
+        message: "Store ID is required",
       });
     }
 
@@ -47,15 +71,44 @@ export const createTerminal = async (req, res) => {
       terminalName: terminalName.trim(),
       storeId,
       organizationId,
+      terminalType: terminalType || "SALES",
       terminalStatus: "ACTIVE",
       createdBy: req.user?._id || "SYSTEM",
       invoiceControls: {
-        invoiceNumberPrefix: req.body?.invoiceNumberPrefix?.trim() || "",
-        invoiceFormat: req.body?.invoiceFormat || "STANDARD",
+        invoiceNumberPrefix: invoiceControls?.invoiceNumberPrefix || "",
       },
-      printingFormats: req.body?.printingFormats || {},
-      notes: req.body?.notes?.trim() || "",
+      formatMapping: formatMapping ? {
+        invoice: { templateId: formatMapping.invoice?.templateId || null },
+        deliveryNote: { templateId: formatMapping.deliveryNote?.templateId || null },
+        quotation: { templateId: formatMapping.quotation?.templateId || null },
+        salesOrder: { templateId: formatMapping.salesOrder?.templateId || null },
+        salesReturn: { templateId: formatMapping.salesReturn?.templateId || null },
+      } : {
+        invoice: { templateId: null },
+        deliveryNote: { templateId: null },
+        quotation: { templateId: null },
+        salesOrder: { templateId: null },
+        salesReturn: { templateId: null },
+      },
+      hardwareMapping: hardwareMapping || {
+        invoicePrinter: { enabled: true, printerName: "", timeout: 5000 },
+        barcodePrinter: { enabled: false, printerName: "", timeout: 5000 },
+        customerDisplay: {
+          enabled: false,
+          displayType: "VFD",
+          comPort: "COM1",
+          vfdModel: "VFD_20X2",
+          baudRate: 9600,
+          displayItems: true,
+          displayPrice: true,
+          displayTotal: true,
+          displayDiscount: true,
+        },
+      },
+      notes: notes?.trim() || "",
     };
+
+    console.log("📊 Terminal data to save:", JSON.stringify(terminalData, null, 2));
 
     // Create new terminal
     const terminal = await TerminalManagement.create(terminalData);
@@ -68,11 +121,13 @@ export const createTerminal = async (req, res) => {
       data: terminal,
     });
   } catch (error) {
-    console.error("❌ Error creating terminal:", error);
+    console.error("❌ Error creating terminal:", error.message);
+    console.error("❌ Error details:", error.errors || error);
     res.status(500).json({
       success: false,
       message: "Failed to create terminal",
       error: error.message,
+      details: error.errors || {},
     });
   }
 };
@@ -160,6 +215,48 @@ export const getTerminalById = async (req, res) => {
 };
 
 // ========================================
+// VERIFY TERMINAL (PUBLIC - NO AUTH)
+// ========================================
+/**
+ * Public endpoint for terminal verification during Electron startup
+ * Returns only: terminalId, terminalType, terminalStatus
+ * No authentication required
+ */
+export const verifyTerminal = async (req, res) => {
+  try {
+    const { terminalId } = req.params;
+
+    console.log(`🔍 Public terminal verification request: ${terminalId}`);
+
+    const terminal = await TerminalManagement.findOne({ terminalId });
+
+    if (!terminal) {
+      console.log(`❌ Terminal not found: ${terminalId}`);
+      return res.status(404).json({
+        success: false,
+        message: "Terminal not found",
+      });
+    }
+
+    // Return only verification fields
+    res.status(200).json({
+      terminalId: terminal.terminalId,
+      terminalType: terminal.terminalType,
+      terminalStatus: terminal.terminalStatus,
+    });
+
+    console.log(`✅ Terminal verified: ${terminalId} (${terminal.terminalType})`);
+  } catch (error) {
+    console.error(`❌ Error verifying terminal: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: "Failed to verify terminal",
+      error: error.message,
+    });
+  }
+};
+
+// ========================================
 // UPDATE TERMINAL CONFIGURATION
 // ========================================
 export const updateTerminalConfig = async (req, res) => {
@@ -167,9 +264,10 @@ export const updateTerminalConfig = async (req, res) => {
     const { terminalId } = req.params;
     const {
       terminalName,
-      invoiceNumberPrefix,
-      invoiceFormat,
-      printingFormats,
+      terminalType,
+      invoiceControls,
+      formatMapping,
+      hardwareMapping,
       notes,
     } = req.body;
 
@@ -181,14 +279,17 @@ export const updateTerminalConfig = async (req, res) => {
 
     // Update basic fields
     if (terminalName !== undefined) updates.terminalName = terminalName.trim();
+    if (terminalType !== undefined) updates.terminalType = terminalType;
     if (notes !== undefined) updates.notes = notes.trim();
 
-    // Update invoice controls - nested using dot notation
-    if (invoiceNumberPrefix !== undefined) updates["invoiceControls.invoiceNumberPrefix"] = invoiceNumberPrefix.trim();
-    if (invoiceFormat !== undefined) updates["invoiceControls.invoiceFormat"] = invoiceFormat;
+    // Update invoice controls
+    if (invoiceControls !== undefined) updates.invoiceControls = invoiceControls;
 
-    // Update printing formats
-    if (printingFormats !== undefined) updates.printingFormats = printingFormats;
+    // Update format mapping (templates only)
+    if (formatMapping !== undefined) updates.formatMapping = formatMapping;
+
+    // Update hardware mapping
+    if (hardwareMapping !== undefined) updates.hardwareMapping = hardwareMapping;
 
     // Find and update terminal
     const terminal = await TerminalManagement.findOneAndUpdate(

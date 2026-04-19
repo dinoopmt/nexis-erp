@@ -35,7 +35,7 @@ import { validateTerminalIdRoute } from './routes/terminalValidationRoute.js';
 import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
 import { seedDocumentTemplates } from './seedDocumentTemplates.js';
 import { seedBarcodeTemplates, seedAdditionalBarcodeTemplates } from './Seeders/barcodeSeed.js';
-import { seedDefaultTerminals } from './seedDefaultTerminals.js';
+import { seedDefaultTerminals } from './seeders/seedDefaultTerminals.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

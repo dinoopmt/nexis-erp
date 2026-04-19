@@ -9,11 +9,13 @@
  */
 
 import express from "express";
+import { authenticateToken } from "../../../middleware/index.js";
 import {
   createTerminal,
   getAllTerminals,
   getStoreterminals,
   getTerminalById,
+  verifyTerminal,
   updateTerminalConfig,
   updateHardwareConfig,
   updatePrintingFormats,
@@ -39,37 +41,45 @@ const router = express.Router();
  * POST /terminals/create
  * Create a new terminal configuration
  */
-router.post("/create", createTerminal);
+router.post("/create", authenticateToken, createTerminal);
 
 /**
  * GET /terminals
  * Get all terminals (system-wide)
  */
-router.get("/", getAllTerminals);
+router.get("/", authenticateToken, getAllTerminals);
 
 /**
  * GET /terminals/store/:storeId
  * Get all terminals for a store
  */
-router.get("/store/:storeId", getStoreterminals);
+router.get("/store/:storeId", authenticateToken, getStoreterminals);
+
+/**
+ * GET /terminals/verify/:terminalId
+ * PUBLIC: Verify terminal exists and get its type (no auth required)
+ * Used during Electron app startup for terminal validation
+ * Returns: { terminalId, terminalType, terminalStatus }
+ */
+router.get("/verify/:terminalId", verifyTerminal);
 
 /**
  * GET /terminals/:terminalId
  * Get specific terminal configuration
  */
-router.get("/:terminalId", getTerminalById);
+router.get("/:terminalId", authenticateToken, getTerminalById);
 
 /**
  * PUT /terminals/:terminalId
  * Update entire terminal configuration
  */
-router.put("/:terminalId", updateTerminalConfig);
+router.put("/:terminalId", authenticateToken, updateTerminalConfig);
 
 /**
  * DELETE /terminals/:terminalId
  * Delete terminal configuration
  */
-router.delete("/:terminalId", deleteTerminal);
+router.delete("/:terminalId", authenticateToken, deleteTerminal);
 
 // ========================================
 // HARDWARE CONFIGURATION
@@ -79,14 +89,14 @@ router.delete("/:terminalId", deleteTerminal);
  * PUT /terminals/:terminalId/hardware
  * Update hardware configuration (printers, scanners, scales, etc.)
  */
-router.put("/:terminalId/hardware", updateHardwareConfig);
+router.put("/:terminalId/hardware", authenticateToken, updateHardwareConfig);
 
 /**
  * POST /terminals/:terminalId/hardware/test-printer
  * Test printer connection
  * Body: { printerType: "primaryPrinter" | "labelPrinter" }
  */
-router.post("/:terminalId/hardware/test-printer", testPrinterConnection);
+router.post("/:terminalId/hardware/test-printer", authenticateToken, testPrinterConnection);
 
 // ========================================
 // PRINTING FORMATS
@@ -96,7 +106,7 @@ router.post("/:terminalId/hardware/test-printer", testPrinterConnection);
  * PUT /terminals/:terminalId/printing-formats
  * Update printing formats (receipt, invoice, label)
  */
-router.put("/:terminalId/printing-formats", updatePrintingFormats);
+router.put("/:terminalId/printing-formats", authenticateToken, updatePrintingFormats);
 
 // ========================================
 // SALES CONTROLS
@@ -106,7 +116,7 @@ router.put("/:terminalId/printing-formats", updatePrintingFormats);
  * PUT /terminals/:terminalId/sales-controls
  * Update sales controls (credit sales, returns, discounts, etc.)
  */
-router.put("/:terminalId/sales-controls", updateSalesControls);
+router.put("/:terminalId/sales-controls", authenticateToken, updateSalesControls);
 
 // ========================================
 // INVOICE CONTROLS
@@ -116,13 +126,13 @@ router.put("/:terminalId/sales-controls", updateSalesControls);
  * PUT /terminals/:terminalId/invoice-controls
  * Update invoice numbering and controls
  */
-router.put("/:terminalId/invoice-controls", updateInvoiceControls);
+router.put("/:terminalId/invoice-controls", authenticateToken, updateInvoiceControls);
 
 /**
  * GET /terminals/:terminalId/invoice/next-number
  * Get next invoice number (auto-increments counter)
  */
-router.get("/:terminalId/invoice/next-number", getNextInvoiceNumber);
+router.get("/:terminalId/invoice/next-number", authenticateToken, getNextInvoiceNumber);
 
 // ========================================
 // TERMINAL STATUS & CONNECTIVITY
@@ -133,20 +143,20 @@ router.get("/:terminalId/invoice/next-number", getNextInvoiceNumber);
  * Update terminal status (ACTIVE, INACTIVE, MAINTENANCE, OFFLINE)
  * Body: { terminalStatus: "ACTIVE" }
  */
-router.patch("/:terminalId/status", updateTerminalStatus);
+router.patch("/:terminalId/status", authenticateToken, updateTerminalStatus);
 
 /**
  * PATCH /terminals/:terminalId/connectivity
  * Update connectivity status (heartbeat, online/offline)
  * Body: { isOnline: true, ipAddress: "192.168.1.100", macAddress: "..." }
  */
-router.patch("/:terminalId/connectivity", updateConnectivityStatus);
+router.patch("/:terminalId/connectivity", authenticateToken, updateConnectivityStatus);
 
 /**
  * GET /terminals/:terminalId/health
  * Get terminal health status and diagnostics
  */
-router.get("/:terminalId/health", getTerminalHealth);
+router.get("/:terminalId/health", authenticateToken, getTerminalHealth);
 
 // ========================================
 // HARDWARE FAULT MANAGEMENT
@@ -157,12 +167,12 @@ router.get("/:terminalId/health", getTerminalHealth);
  * Log a hardware fault
  * Body: { hardwareType: "PRINTER", faultDescription: "...", notes: "..." }
  */
-router.post("/:terminalId/faults", logHardwareFault);
+router.post("/:terminalId/faults", authenticateToken, logHardwareFault);
 
 /**
  * PATCH /terminals/:terminalId/faults/:faultId/resolve
  * Mark a fault as resolved
  */
-router.patch("/:terminalId/faults/:faultId/resolve", resolveHardwareFault);
+router.patch("/:terminalId/faults/:faultId/resolve", authenticateToken, resolveHardwareFault);
 
 export default router;

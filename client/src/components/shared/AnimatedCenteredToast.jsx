@@ -29,10 +29,12 @@ const toastConfig = {
 // ✅ Clean showToast - No position conflicts
 // Only show ONE toast at a time (replace previous)
 // Close on: click on toast, keyboard (Escape/Enter/Space), click anywhere else, or timeout
-export const showToast = (type = 'success', message = '') => {
+export const showToast = (type = 'success', message = '', duration = 3000) => {
   const { bg, icon, color } = toastConfig[type] || toastConfig.success;
 
-  toast.dismiss(); // Remove all previous toasts
+  // ✅ ALWAYS dismiss all previous toasts first
+  // This prevents overlapping/blinking when same type appears again
+  toast.dismiss();
 
   const handleDismiss = (toastId) => {
     toast.dismiss(toastId);
@@ -83,6 +85,7 @@ export const showToast = (type = 'success', message = '') => {
     </div>
   ), {
     icon,
+    duration: duration, // Support custom duration
     style: {
       background: bg,
       color: color,

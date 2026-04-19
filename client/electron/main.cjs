@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Menu, dialog, webContents, globalShortcut }
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { loadConfig, validateConfig, updateConfig } = require("./config-loader.cjs");
+const { loadConfig, validateConfig, updateConfig, verifyTerminalExists } = require("./config-loader.cjs");
 
 // ================== GLOBAL VARIABLES ==================
 let mainWindow;
@@ -30,14 +30,19 @@ if (!gotLock) {
 
 // ================== INITIALIZATION ==================
 /**
- * Load configuration on app startup
+ * Load configuration on app startup - STRICT VALIDATION
+ * Returns true if config is valid, false otherwise
  */
 function initializeConfig() {
   try {
     terminalConfig = loadConfig();
+    const validation = validateConfig(terminalConfig);
     
-    if (!validateConfig(terminalConfig)) {
-      console.warn("⚠️ Config validation failed, using defaults");
+    if (!validation.isValid) {
+      console.error(`❌ CONFIG VALIDATION FAILED: ${validation.error}`);
+      // Store error for splash screen to display
+      global.configError = validation.error;
+      return false;
     }
     
     console.log(`
@@ -49,9 +54,11 @@ function initializeConfig() {
   ║ Environment: ${String(isDev ? "Development" : "Production").padEnd(27)} ║
   ╚════════════════════════════════════════════╝
   `);
+    return true;
   } catch (error) {
     console.error("❌ Config initialization failed:", error);
-    app.quit();
+    global.configError = `❌ CONFIG ERROR\n\n${error.message}`;
+    return false;
   }
 }
 
@@ -286,8 +293,79 @@ app.on("ready", async () => {
   // Show splash immediately
   createSplash();
 
-  // Load config and create main window
-  initializeConfig();
+  // Load and validate config - STRICT
+  const configValid = initializeConfig();
+  
+  if (!configValid) {
+    // Config validation failed - show error dialog (blocks until user clicks OK)
+    console.error("❌ Config validation failed, showing error dialog");
+    
+    // Destroy splash window completely to ensure dialog appears on top
+    if (splash && !splash.isDestroyed()) {
+      splash.destroy();
+    }
+    
+    // Show error dialog and wait for user to close it before quitting
+    const configErrorPromise = dialog.showErrorBox(
+      "Configuration Error",
+      global.configError || "Configuration validation failed. Please fix the configuration file and restart the application."
+    );
+    
+    if (configErrorPromise && typeof configErrorPromise.then === "function") {
+      configErrorPromise.then(() => {
+        console.log("User closed error dialog, quitting app");
+        app.quit();
+      }).catch(() => {
+        app.quit();
+      });
+    } else {
+      setTimeout(() => {
+        app.quit();
+      }, 100);
+    }
+    
+    return;
+  }
+  
+  // Verify terminal exists in database AND type matches
+  console.log("🔒 Verifying terminal registration and type match...");
+  const verification = await verifyTerminalExists(terminalConfig.terminalId, terminalConfig.terminalType, terminalConfig.apiBaseUrl);
+  
+  if (!verification.valid) {
+    // Terminal verification failed - show error dialog
+    console.error("❌ Terminal verification failed");
+    
+    // Destroy splash window
+    if (splash && !splash.isDestroyed()) {
+      splash.destroy();
+    }
+    
+    // Show error dialog and handle response properly
+    const errorPromise = dialog.showErrorBox(
+      "Terminal Verification Error",
+      verification.error || "Terminal verification failed. Please check your configuration."
+    );
+    
+    // Handle promise if available, otherwise quit directly
+    if (errorPromise && typeof errorPromise.then === "function") {
+      errorPromise.then(() => {
+        console.log("User closed error dialog, quitting app");
+        app.quit();
+      }).catch(() => {
+        app.quit();
+      });
+    } else {
+      // Fallback for older Electron versions
+      setTimeout(() => {
+        console.log("Error dialog closed, quitting app");
+        app.quit();
+      }, 100);
+    }
+    
+    return;
+  }
+  
+  // Config is valid and terminal verified - create main window
   createWindow();
   await setupIPC();
   // Menu disabled - using DevTools F12 instead

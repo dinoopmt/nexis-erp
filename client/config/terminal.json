@@ -1,6 +1,6 @@
 {
-  "terminalId": "BACKOFFICE-DEFAULT",
-  "terminalType": "BACKOFFICE",
+  "terminalId": "TERM-878E52C7953F-001",
+  "terminalType": "SALES",
   "apiBaseUrl": "http://localhost:5000/api/v1",
   "createdAt": "2026-04-08T00:00:00.000Z",
   "note": "BACKOFFICE type: Terminal ID validation skipped. Switch to SALES type in Settings to enable device-based Terminal ID."

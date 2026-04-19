@@ -8,8 +8,8 @@
  * - User license verification
  */
 
-import TerminalManagement from './Models/TerminalManagement.js';
-import StoreSettings from './Models/StoreSettings.js';
+import TerminalManagement from '../Models/TerminalManagement.js';
+import StoreSettings from '../Models/StoreSettings.js';
 import mongoose from 'mongoose';
 
 export const seedDefaultTerminals = async () => {
@@ -54,50 +54,31 @@ export const seedDefaultTerminals = async () => {
       storeId: storeId,
       invoiceControls: {
         invoiceNumberPrefix: 'BO',
-        invoiceFormat: 'STANDARD',
       },
       formatMapping: {
-        invoice: {
-          enabled: true,
-          templateId: null,
-          printOnSale: true,
-          copies: 1,
-        },
-        deliveryNote: {
-          enabled: false,
-          templateId: null,
-          requiresSignature: false,
-        },
-        quotation: {
-          enabled: false,
-          templateId: null,
-          validityDays: 30,
-        },
-        salesOrder: {
-          enabled: false,
-          templateId: null,
-          requiresApproval: false,
-        },
-        salesReturn: {
-          enabled: true,
-          templateId: null,
-          requiresReason: true,
-        },
+        invoice: { templateId: null },
+        deliveryNote: { templateId: null },
+        quotation: { templateId: null },
+        salesOrder: { templateId: null },
+        salesReturn: { templateId: null },
       },
       hardwareMapping: {
-        printer: {
+        invoicePrinter: {
           enabled: false,
           printerName: '',
-          printerModel: 'EPSON',
-          paperSize: '80MM',
-          copies: 1,
+          timeout: 5000,
+        },
+        barcodePrinter: {
+          enabled: false,
+          printerName: '',
           timeout: 5000,
         },
         customerDisplay: {
           enabled: false,
-          displayType: 'LCD',
-          displayId: '',
-          protocol: 'USB',
+          displayType: 'VFD',
+          comPort: 'COM1',
+          vfdModel: 'VFD_20X2',
+          baudRate: 9600,
           displayItems: true,
           displayPrice: true,
           displayTotal: true,

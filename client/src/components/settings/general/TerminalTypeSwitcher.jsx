@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { ArrowRight, Zap, AlertCircle, CheckCircle2 } from 'lucide-react'
-import axios from 'axios'
+import apiClient from '../../../services/apiClient'
 import toast from 'react-hot-toast'
-import { API_URL } from '../../../config/config'
 
 const TerminalTypeSwitcher = ({ currentConfig, onConfigUpdate }) => {
   const [isLoading, setIsLoading] = useState(false)
@@ -21,12 +20,8 @@ const TerminalTypeSwitcher = ({ currentConfig, onConfigUpdate }) => {
 
   const loadTerminalStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}/terminals`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        }
-      })
-      if (response.data.success) {
+      const response = await apiClient.get(`/terminals`)
+      if (response.ok) {
         const terminals = response.data.data || []
         setTerminalStats({
           backofficeTerminals: terminals.filter(t => t.terminalType === 'BACKOFFICE').length,
@@ -45,7 +40,6 @@ const TerminalTypeSwitcher = ({ currentConfig, onConfigUpdate }) => {
         message: error.message,
         status: error.response?.status,
         data: error.response?.data,
-        url: `${API_URL}/terminals`,
       })
     }
   }
@@ -96,11 +90,11 @@ const TerminalTypeSwitcher = ({ currentConfig, onConfigUpdate }) => {
       }
 
       // Validate the generated Terminal ID
-      const validateResponse = await axios.post(`${API_URL}/terminals/validate-id`, {
+      const validateResponse = await apiClient.post(`/terminals/validate-id`, {
         terminalId,
       })
 
-      if (!validateResponse.data.success) {
+      if (!validateResponse.ok || !validateResponse.data.success) {
         toast.error(`Terminal ID validation failed: ${validateResponse.data.message}`)
         return
       }
