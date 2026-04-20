@@ -4,6 +4,7 @@ import Customer from '../../../Models/Customer.js';
 import ChartOfAccounts from '../../../Models/ChartOfAccounts.js';
 import AccountGroup from '../../../Models/AccountGroup.js';
 import JournalEntry from '../../../Models/JournalEntry.js';
+import FinancialYear from '../../../Models/FinancialYear.js';
 import CreditSaleReceipt from '../../../Models/Sales/CreditSaleReceipt.js';
 import CustomerReceipt from '../../../Models/CustomerReceipt.js';
 
@@ -14,13 +15,31 @@ export const getNextInvoiceNumber = async (req, res) => {
     if (!financialYear) {
       return res.status(400).json({ error: 'Financial year is required' });
     }
+    
+    // First, ensure the counter exists with lastNumber initialized to 0
+    await Counter.findOneAndUpdate(
+      { module: 'sales_invoice', financialYear },
+      { 
+        $setOnInsert: { 
+          module: 'sales_invoice',
+          financialYear,
+          prefix: 'SI',
+          lastNumber: 0
+        }
+      },
+      { new: false, upsert: true }
+    );
+    
+    // Now increment and get the new value
     const counter = await Counter.findOneAndUpdate(
       { module: 'sales_invoice', financialYear },
-      { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SI' } },
-      { new: true, upsert: true }
+      { $inc: { lastNumber: 1 } },
+      { new: true }
     );
+    
     const paddedNumber = String(counter.lastNumber).padStart(4, '0');
     const invoiceNumber = `SI/${financialYear}/${paddedNumber}`;
+    console.log(`✅ Generated invoice number: ${invoiceNumber} (counter lastNumber: ${counter.lastNumber})`);
     res.json({ invoiceNumber });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -75,25 +94,24 @@ export const createSalesInvoice = async (req, res) => {
           });
 
           if (!salesAccount) {
-            let salesGroup = await AccountGroup.findOne({
-              code: "SR",
-              isActive: true
-            });
-
-            if (!salesGroup) {
-              salesGroup = new AccountGroup({
-                name: "SALES REVENUE",
-                code: "SR",
-                description: "Sales Revenue Accounts",
-                level: 1,
-                type: "INCOME",
-                accountCategory: "PROFIT_LOSS",
-                nature: "CREDIT",
-                allowPosting: true,
-                isActive: true
-              });
-              await salesGroup.save();
-            }
+            // Use findOneAndUpdate with upsert to avoid duplicate key errors
+            let salesGroup = await AccountGroup.findOneAndUpdate(
+              { name: "SALES REVENUE" },  // Use unique field (name)
+              {
+                $setOnInsert: {
+                  name: "SALES REVENUE",
+                  code: "SR",
+                  description: "Sales Revenue Accounts",
+                  level: 1,
+                  type: "INCOME",
+                  accountCategory: "PROFIT_LOSS",
+                  nature: "CREDIT",
+                  allowPosting: true,
+                  isActive: true
+                }
+              },
+              { upsert: true, new: true }
+            );
 
             salesAccount = new ChartOfAccounts({
               accountNumber: "SALES-001",
@@ -108,41 +126,80 @@ export const createSalesInvoice = async (req, res) => {
             console.log("Created Sales Revenue account:", salesAccount._id);
           }
 
-          // Debit: Sundry Debtors/Customer Account (increase receivable)
-          const debitEntry = new JournalEntry({
-            voucherType: "Sales Invoice",
-            voucherNumber: invoiceNumber,
-            voucherDate: new Date(date),
-            financialYear,
-            narration: `Credit sale to ${customerName} - Invoice ${invoiceNumber}`,
-            accountId: customer.ledgerAccountId,
-            accountName: `${customer.name} (${customer.customerCode})`,
-            debitAmount: invoice.totalIncludeVat,
-            creditAmount: 0,
-            isPosted: true,
-            createdDate: new Date(),
-          });
+          // Get financial year for journal entry
+          let finYear = null;
+          
+          // Try 1: Find by yearCode with FY prefix
+          finYear = await FinancialYear.findOne({ yearCode: `FY${financialYear}`, status: "OPEN" });
+          console.log(`FY lookup 1 (FY${financialYear}):`, finYear ? "Found" : "Not found");
+          
+          // Try 2: Find by yearCode without prefix
+          if (!finYear) {
+            finYear = await FinancialYear.findOne({ yearCode: financialYear, status: "OPEN" });
+            console.log(`FY lookup 2 (${financialYear}):`, finYear ? "Found" : "Not found");
+          }
+          
+          // Try 3: Find any OPEN financial year
+          if (!finYear) {
+            finYear = await FinancialYear.findOne({ status: "OPEN" });
+            console.log(`FY lookup 3 (any OPEN):`, finYear ? "Found" : "Not found");
+          }
+          
+          // Try 4: Find current financial year
+          if (!finYear) {
+            finYear = await FinancialYear.findOne({ isCurrent: true });
+            console.log(`FY lookup 4 (current):`, finYear ? "Found" : "Not found");
+          }
+          
+          if (!finYear) {
+            console.warn(`⚠️ Financial year not found for ${financialYear}. Journal entry creation skipped.`);
+          } else {
+            try {
+              console.log(`✅ Using financial year: ${finYear.yearCode} (${finYear.yearName})`);
+              // Generate voucher number for Journal Voucher
+              const lastJV = await JournalEntry.findOne({ voucherType: "JV" })
+                .sort({ createdDate: -1 }).lean();
+              let voucherNum = "JV-00001";
+              if (lastJV?.voucherNumber) {
+                const num = parseInt(lastJV.voucherNumber.replace(/\D/g, ''));
+                voucherNum = `JV-${String(num + 1).padStart(5, '0')}`;
+              }
 
-          const savedDebitEntry = await debitEntry.save();
-          console.log("Created debit entry (Sundry Debtors):", savedDebitEntry._id);
-
-          // Credit: Sales Revenue (record sale)
-          const creditEntry = new JournalEntry({
-            voucherType: "Sales Invoice",
-            voucherNumber: invoiceNumber,
-            voucherDate: new Date(date),
-            financialYear,
-            narration: `Credit sale to ${customerName} - Invoice ${invoiceNumber}`,
-            accountId: salesAccount._id,
-            accountName: salesAccount.accountName,
-            debitAmount: 0,
-            creditAmount: invoice.totalIncludeVat,
-            isPosted: true,
-            createdDate: new Date(),
-          });
-
-          const savedCreditEntry = await creditEntry.save();
-          console.log("Created credit entry (Sales Revenue):", savedCreditEntry._id);
+              // Create double-entry journal entry with line items
+              const journalEntry = new JournalEntry({
+                voucherNumber: voucherNum,
+                voucherType: "JV",  // Journal Voucher
+                entryDate: new Date(date),
+                financialYearId: finYear._id,
+                description: `Credit sale invoice ${invoiceNumber} to ${customerName}`,
+                referenceNumber: invoiceNumber,
+                lineItems: [
+                  {
+                    accountId: customer.ledgerAccountId,  // Sundry Debtors
+                    debitAmount: Math.round(invoice.totalIncludeVat * 100),
+                    creditAmount: 0,
+                    description: `Credit sale to ${customerName}`
+                  },
+                  {
+                    accountId: salesAccount._id,  // Sales Revenue
+                    debitAmount: 0,
+                    creditAmount: Math.round(invoice.totalIncludeVat * 100),
+                    description: `Sales revenue for invoice ${invoiceNumber}`
+                  }
+                ],
+                totalDebit: Math.round(invoice.totalIncludeVat * 100),
+                totalCredit: Math.round(invoice.totalIncludeVat * 100),
+                status: "POSTED",
+                postedBy: "System",
+                postedDate: new Date()
+              });
+              
+              await journalEntry.save();
+              console.log("✅ Created credit sale journal entry:", journalEntry._id);
+            } catch (jeError) {
+              console.warn("⚠️ Failed to create journal entry for credit sale:", jeError.message);
+            }
+          }
 
           // Create initial credit sale receipt (Unpaid status)
           const lastReceipt = await CreditSaleReceipt.findOne()
@@ -233,25 +290,24 @@ export const createSalesInvoice = async (req, res) => {
           });
 
           if (!salesAccount) {
-            let salesGroup = await AccountGroup.findOne({
-              code: "SR",
-              isActive: true
-            });
-
-            if (!salesGroup) {
-              salesGroup = new AccountGroup({
-                name: "SALES REVENUE",
-                code: "SR",
-                description: "Sales Revenue Accounts",
-                level: 1,
-                type: "INCOME",
-                accountCategory: "PROFIT_LOSS",
-                nature: "CREDIT",
-                allowPosting: true,
-                isActive: true
-              });
-              await salesGroup.save();
-            }
+            // Use findOneAndUpdate with upsert to avoid duplicate key errors
+            let salesGroup = await AccountGroup.findOneAndUpdate(
+              { name: "SALES REVENUE" },  // Use unique field (name)
+              {
+                $setOnInsert: {
+                  name: "SALES REVENUE",
+                  code: "SR",
+                  description: "Sales Revenue Accounts",
+                  level: 1,
+                  type: "INCOME",
+                  accountCategory: "PROFIT_LOSS",
+                  nature: "CREDIT",
+                  allowPosting: true,
+                  isActive: true
+                }
+              },
+              { upsert: true, new: true }
+            );
 
             salesAccount = new ChartOfAccounts({
               accountNumber: "SALES-001",
@@ -274,27 +330,27 @@ export const createSalesInvoice = async (req, res) => {
           });
 
           if (!contraAccount) {
-            let bankCashGroup = await AccountGroup.findOne({
-              code: paymentType === "Cash" ? "CASH" : "BAM",
-              isActive: true
-            });
-
-            if (!bankCashGroup) {
-              const groupName = paymentType === "Cash" ? "CASH ACCOUNTS" : "BANK ACCOUNTS";
-              const groupCode = paymentType === "Cash" ? "CASH" : "BAM";
-              bankCashGroup = new AccountGroup({
-                name: groupName,
-                code: groupCode,
-                description: `All ${groupName}`,
-                level: 1,
-                type: "ASSET",
-                accountCategory: "BALANCE_SHEET",
-                nature: "DEBIT",
-                allowPosting: true,
-                isActive: true
-              });
-              await bankCashGroup.save();
-            }
+            const groupName = paymentType === "Cash" ? "CASH ACCOUNTS" : "BANK ACCOUNTS";
+            const groupCode = paymentType === "Cash" ? "CASH" : "BAM";
+            
+            // Use findOneAndUpdate with upsert to avoid duplicate key errors
+            let bankCashGroup = await AccountGroup.findOneAndUpdate(
+              { name: groupName },  // Use unique field (name)
+              {
+                $setOnInsert: {
+                  name: groupName,
+                  code: groupCode,
+                  description: `All ${groupName}`,
+                  level: 1,
+                  type: "ASSET",
+                  accountCategory: "BALANCE_SHEET",
+                  nature: "DEBIT",
+                  allowPosting: true,
+                  isActive: true
+                }
+              },
+              { upsert: true, new: true }
+            );
 
             contraAccount = new ChartOfAccounts({
               accountNumber: paymentType === "Cash" ? "CASH-001" : "BANK-001",
@@ -309,48 +365,92 @@ export const createSalesInvoice = async (req, res) => {
             console.log(`Created ${contraAccountName}:`, contraAccount._id);
           }
 
-          // Debit: Cash/Bank Account (receive payment)
-          const debitEntry = new JournalEntry({
-            voucherType: "Sales Invoice",
-            voucherNumber: invoiceNumber,
-            voucherDate: new Date(date),
-            financialYear,
-            narration: `${paymentType} sale to ${customerName} - Invoice ${invoiceNumber}`,
-            accountId: contraAccount._id,
-            accountName: contraAccount.accountName,
-            debitAmount: invoice.totalIncludeVat,
-            creditAmount: 0,
-            isPosted: true,
-            createdDate: new Date(),
-          });
+          // Get financial year for journal entry
+          let finYear = null;
+          
+          // Try 1: Find by yearCode with FY prefix
+          finYear = await FinancialYear.findOne({ yearCode: `FY${financialYear}`, status: "OPEN" });
+          console.log(`FY lookup 1 (FY${financialYear}):`, finYear ? "Found" : "Not found");
+          
+          // Try 2: Find by yearCode without prefix
+          if (!finYear) {
+            finYear = await FinancialYear.findOne({ yearCode: financialYear, status: "OPEN" });
+            console.log(`FY lookup 2 (${financialYear}):`, finYear ? "Found" : "Not found");
+          }
+          
+          // Try 3: Find any OPEN financial year
+          if (!finYear) {
+            finYear = await FinancialYear.findOne({ status: "OPEN" });
+            console.log(`FY lookup 3 (any OPEN):`, finYear ? "Found" : "Not found");
+          }
+          
+          // Try 4: Find current financial year
+          if (!finYear) {
+            finYear = await FinancialYear.findOne({ isCurrent: true });
+            console.log(`FY lookup 4 (current):`, finYear ? "Found" : "Not found");
+          }
+          
+          if (!finYear) {
+            console.warn(`⚠️ Financial year not found for ${financialYear}. Journal entry creation skipped.`);
+          } else {
+            try {
+              console.log(`✅ Using financial year: ${finYear.yearCode} (${finYear.yearName})`);
+              // Generate voucher number for Journal Voucher
+              const lastJV = await JournalEntry.findOne({ voucherType: "JV" })
+                .sort({ createdDate: -1 }).lean();
+              let voucherNum = "JV-00001";
+              if (lastJV?.voucherNumber) {
+                const num = parseInt(lastJV.voucherNumber.replace(/\D/g, ''));
+                voucherNum = `JV-${String(num + 1).padStart(5, '0')}`;
+              }
 
-          const savedDebitEntry = await debitEntry.save();
-          console.log(`Created debit entry (${contraAccountName}):`, savedDebitEntry._id);
+              // Create double-entry journal entry with line items
+              const journalEntry = new JournalEntry({
+                voucherNumber: voucherNum,
+                voucherType: "JV",  // Journal Voucher
+                entryDate: new Date(date),
+                financialYearId: finYear._id,
+                description: `${paymentType} sale invoice ${invoiceNumber} to ${customerName}`,
+                referenceNumber: invoiceNumber,
+                lineItems: [
+                  {
+                    accountId: contraAccount._id,  // Cash/Bank Account
+                    debitAmount: Math.round(invoice.totalIncludeVat * 100),
+                    creditAmount: 0,
+                    description: `${paymentType} received for invoice ${invoiceNumber}`
+                  },
+                  {
+                    accountId: salesAccount._id,  // Sales Revenue
+                    debitAmount: 0,
+                    creditAmount: Math.round(invoice.totalIncludeVat * 100),
+                    description: `Sales revenue for invoice ${invoiceNumber}`
+                  }
+                ],
+                totalDebit: Math.round(invoice.totalIncludeVat * 100),
+                totalCredit: Math.round(invoice.totalIncludeVat * 100),
+                status: "POSTED",
+                postedBy: "System",
+                postedDate: new Date()
+              });
+              
+              await journalEntry.save();
+              console.log(`✅ Created ${paymentType} sale journal entry:`, journalEntry._id);
 
-          // Credit: Sales Revenue (record sale)
-          const creditEntry = new JournalEntry({
-            voucherType: "Sales Invoice",
-            voucherNumber: invoiceNumber,
-            voucherDate: new Date(date),
-            financialYear,
-            narration: `${paymentType} sale to ${customerName} - Invoice ${invoiceNumber}`,
-            accountId: salesAccount._id,
-            accountName: salesAccount.accountName,
-            debitAmount: 0,
-            creditAmount: invoice.totalIncludeVat,
-            isPosted: true,
-            createdDate: new Date(),
-          });
-
-          const savedCreditEntry = await creditEntry.save();
-          console.log("Created credit entry (Sales Revenue):", savedCreditEntry._id);
-
-          // Update invoice payment status to Paid (immediate payment)
-          invoice.paymentStatus = "Paid";
-          invoice.totalReceived = invoice.totalIncludeVat;
-          invoice.lastPaymentDate = new Date();
-          await invoice.save();
-          console.log(`Invoice marked as Paid for ${paymentType} sale`);
+              // Update invoice payment status to Paid (immediate payment)
+              invoice.paymentStatus = "Paid";
+              invoice.totalReceived = invoice.totalIncludeVat;
+              invoice.lastPaymentDate = new Date();
+              await invoice.save();
+              console.log(`✅ Invoice marked as Paid for ${paymentType} sale`);
+            } catch (jeError) {
+              console.warn(`⚠️ Failed to create journal entry for ${paymentType} sale:`, jeError.message);
+              // Still update payment status even if journal entry fails
+              invoice.paymentStatus = "Paid";
+              invoice.totalReceived = invoice.totalIncludeVat;
+              invoice.lastPaymentDate = new Date();
+              await invoice.save();
+            }
+          }
         }
       } catch (ledgerError) {
         console.error("Error creating ledger entries:", ledgerError);

@@ -189,17 +189,21 @@ export const getTerminalById = async (req, res) => {
   try {
     const { terminalId } = req.params;
 
-    const terminal = await TerminalManagement.findOne({
-      terminalId,
-    }).populate("storeId organizationId");
+    console.log(`📡 Fetching terminal: ${terminalId}`);
+
+    // Fetch terminal without populate
+    // Frontend only needs terminal config, not store/organization details
+    const terminal = await TerminalManagement.findOne({ terminalId });
 
     if (!terminal) {
+      console.log(`❌ Terminal not found: ${terminalId}`);
       return res.status(404).json({
         success: false,
         message: "Terminal not found",
       });
     }
 
+    console.log(`✅ Terminal fetched: ${terminalId}`);
     res.status(200).json({
       success: true,
       data: terminal,

@@ -180,7 +180,7 @@ const InvoicePrintingComponent = ({ invoiceId, invoiceNumber, onClose }) => {
         </div>
 
         {/* Preview Area */}
-        <div className="p-8 bg-gray-100 min-h-[600px]">
+        <div className="flex-1 p-8 bg-gray-100 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-96">
               <div className="text-center">
@@ -201,6 +201,58 @@ const InvoicePrintingComponent = ({ invoiceId, invoiceNumber, onClose }) => {
           ) : (
             <div className="flex items-center justify-center h-96">
               <p className="text-gray-500">No preview available</p>
+            </div>
+          )}
+        </div>
+
+        {/* Terminal Settings Footer */}
+        <div className="border-t bg-gray-50 p-4 flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2 text-gray-700 font-medium">
+            <Settings size={18} className="text-blue-600" />
+            <span>Terminal Settings:</span>
+          </div>
+
+          {/* Language Setting */}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">Language:</span>
+            <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-300 rounded-lg">
+              <span className="text-sm font-medium">
+                {language === 'EN' ? '🇬🇧 English' : '🇸🇦 العربية'}
+              </span>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="ml-2 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="EN">English</option>
+                <option value="AR">العربية</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Logo Setting */}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">Logo:</span>
+            <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-300 rounded-lg">
+              <span className="text-sm font-medium">
+                {withLogo ? '✓ With Logo' : '✗ Without Logo'}
+              </span>
+              <select
+                value={withLogo ? 'yes' : 'no'}
+                onChange={(e) => setWithLogo(e.target.value === 'yes')}
+                className="ml-2 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="yes">With Logo</option>
+                <option value="no">Without Logo</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Terminal ID Display */}
+          {terminalSettings?.terminalId && (
+            <div className="ml-auto flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-200 rounded-lg">
+              <span className="text-xs text-gray-600">Terminal:</span>
+              <span className="text-xs font-medium text-blue-600">{terminalSettings.terminalId}</span>
             </div>
           )}
         </div>

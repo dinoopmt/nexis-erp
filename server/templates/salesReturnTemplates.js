@@ -16,7 +16,7 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
     <div class="sales-return-container">
       {{#withLogo}}
       <div class="header">
-        <img src="{{company.logoUrl}}" alt="Logo" class="logo">
+        <img src="{{store.logoUrl}}" alt="Logo" class="logo">
       </div>
       {{/withLogo}}
 

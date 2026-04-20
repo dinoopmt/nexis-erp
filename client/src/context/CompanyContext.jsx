@@ -1,13 +1,16 @@
-import React, { createContext, useState, useCallback, useEffect, useRef } from 'react'
+import React, { createContext, useState, useCallback, useEffect, useRef, useContext } from 'react'
 import axios from 'axios'
 import { showToast } from '../components/shared/AnimatedCenteredToast.jsx'
 import { API_URL } from '../config/config'
+import { ServerReadyContext } from './ServerReadyContext'
 
 // Create the context
 export const CompanyContext = createContext()
 
 // Provider component
 export const CompanyProvider = ({ children }) => {
+  const { serverReady, serverError } = useContext(ServerReadyContext)
+  
   const [company, setCompany] = useState({
     countryCode: 'AE',
     countryName: 'UAE',
@@ -33,12 +36,20 @@ export const CompanyProvider = ({ children }) => {
   // ✅ Prevent duplicate API calls in StrictMode
   const hasFetched = useRef(false)
 
-  // Fetch company data on mount (only once)
+  // Set error if server is not available
   useEffect(() => {
-    if (hasFetched.current) return
+    if (serverError) {
+      setError(serverError)
+      showToast('error', 'Cannot connect to server. Please restart the application.')
+    }
+  }, [serverError])
+
+  // Fetch company data on mount (only once) - but only after server is ready
+  useEffect(() => {
+    if (hasFetched.current || !serverReady) return
     hasFetched.current = true
     fetchCompanyData()
-  }, [])
+  }, [serverReady])
 
   // Fetch company settings
   const fetchCompanyData = useCallback(async () => {

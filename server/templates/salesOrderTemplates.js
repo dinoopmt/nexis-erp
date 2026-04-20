@@ -16,7 +16,7 @@ export const SALES_ORDER_TEMPLATE_EN_WITH_LOGO = {
     <div class="sales-order-container">
       {{#withLogo}}
       <div class="header">
-        <img src="{{company.logoUrl}}" alt="Logo" class="logo">
+        <img src="{{store.logoUrl}}" alt="Logo" class="logo">
       </div>
       {{/withLogo}}
 

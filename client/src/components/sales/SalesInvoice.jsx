@@ -30,6 +30,7 @@ import { useGlobalBarcodeScanner } from "../../hooks/useGlobalBarcodeScanner";
 import { createBarcodeHandler } from "../../utils/barcodeHandler";
 import { normalizeBarcode } from "../../utils/barcodeUtils";
 import { CompanyContext } from "../../context/CompanyContext";
+import { useTerminalFeature } from "../../context/TerminalContext";
 import InvoiceViewModal from "./salesInvoice/InvoiceViewModal";
 import ProductLookupModal from "./salesInvoice/ProductLookupModal";
 import InvoicePrintingComponent from "./salesInvoice/InvoicePrintingComponent";
@@ -37,6 +38,13 @@ import InvoicePrintingComponent from "./salesInvoice/InvoicePrintingComponent";
 const SalesInvoice = () => {
   // Get full company data from context
   const { company } = useContext(CompanyContext);
+  
+  // ✅ Terminal Feature Controls
+  const allowReturns = useTerminalFeature('allowReturns');
+  const allowDiscounts = useTerminalFeature('allowDiscounts');
+  const allowExchanges = useTerminalFeature('allowExchanges');
+  const allowPromotions = useTerminalFeature('allowPromotions');
+  
   // Get decimal formatting functions based on company currency settings
   const { round, formatCurrency, formatNumber, config } = useDecimalFormat();
   // Get tax master data for customer-based tax calculations
@@ -150,6 +158,7 @@ const SalesInvoice = () => {
   const [viewedInvoice, setViewedInvoice] = useState(null);
   const [showPrintingModal, setShowPrintingModal] = useState(false);
   const [invoiceToView, setInvoiceToView] = useState(null);
+  const [savedInvoiceId, setSavedInvoiceId] = useState(null); // For Save & Print flow
   const [historyDateFilter, setHistoryDateFilter] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -293,37 +302,70 @@ const SalesInvoice = () => {
 
   // clear screen after saving invoice
   const resetForm = async () => {
-    const newInvoiceNumber = await axios.get(
-      `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
-    );
-    setInvoiceData({
-      invoiceNo:
-        newInvoiceNumber.data.sequence || newInvoiceNumber.data.invoiceNumber,
-      invoiceDate: new Date().toISOString().split("T")[0],
-      paymentType: "",
-      paymentTerms: "",
-      partyName: "",
-      partyPhone: "",
-      discount: 0,
-      discountAmount: 0,
-      items: [],
-      notes: "",
-    });
-    // Clear serial numbers and notes
-    setSerialNumbers({});
-    setItemNotes({});
-    setShowSerialModal(false);
-    setShowItemNoteModal(false);
-    setSelectedItemSerial(null);
-    setSelectedItemNote(null);
-    setNewSerialInput("");
+    try {
+      const newInvoiceNumber = await axios.get(
+        `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
+      );
+      setInvoiceData({
+        invoiceNo:
+          newInvoiceNumber.data.sequence || newInvoiceNumber.data.invoiceNumber,
+        invoiceDate: new Date().toISOString().split("T")[0],
+        paymentType: "",
+        paymentTerms: "",
+        partyName: "",
+        partyPhone: "",
+        discount: 0,
+        discountAmount: 0,
+        items: [],
+        notes: "",
+      });
+      // Clear serial numbers and notes
+      setSerialNumbers({});
+      setItemNotes({});
+      setShowSerialModal(false);
+      setShowItemNoteModal(false);
+      setSelectedItemSerial(null);
+      setSelectedItemNote(null);
+      setNewSerialInput("");
 
-    // Clear customer selection and input
-    setSelectedCustomerId(null);
-    setSelectedCustomerDetails(null);
-    setHoveredCustomer(null);
-    setCustomerSearch("");
-    setShowCustomerDropdown(false);
+      // Clear customer selection and input
+      setSelectedCustomerId(null);
+      setSelectedCustomerDetails(null);
+      setHoveredCustomer(null);
+      setCustomerSearch("");
+      setShowCustomerDropdown(false);
+      
+      // Clear all error and validation states
+      setError(null);
+      setActiveErrorId(null);
+      setActiveValidationId(null);
+      setLastErrorBarcode(null);
+      setViewedInvoice(null);
+      setEditId(null);
+    } catch (err) {
+      console.error('Error resetting form:', err);
+      // Still reset the form data even if fetching next invoice number fails
+      setInvoiceData({
+        invoiceNo: 'SI/ERROR',
+        invoiceDate: new Date().toISOString().split("T")[0],
+        paymentType: "",
+        paymentTerms: "",
+        partyName: "",
+        partyPhone: "",
+        discount: 0,
+        discountAmount: 0,
+        items: [],
+        notes: "",
+      });
+      setSerialNumbers({});
+      setItemNotes({});
+      setSelectedCustomerId(null);
+      setSelectedCustomerDetails(null);
+      setCustomerSearch("");
+      setError(null);
+      setActiveErrorId(null);
+      setActiveValidationId(null);
+    }
   };
 
   // Fetch all invoices
@@ -1350,12 +1392,21 @@ const SalesInvoice = () => {
           payload,
         );
         savedInvoiceId = editId;
+        console.log('✅ Invoice updated:', savedInvoiceId);
       } else {
         const response = await axios.post(
           `${API_URL}/sales-invoices/createSalesInvoice`,
           payload,
         );
-        savedInvoiceId = response.data._id || response.data.id;
+        console.log('📡 API Response:', response.data);
+        // Try multiple paths to get the ID - handle both wrapped and unwrapped responses
+        savedInvoiceId = response.data?.invoice?._id || response.data?._id || response.data?.id || response.data?.invoiceId;
+        console.log('✅ Invoice created:', savedInvoiceId);
+      }
+
+      if (!savedInvoiceId) {
+        console.error('Response structure:', response.data);
+        throw new Error('Failed to get saved invoice ID from API response');
       }
 
       // Auto-reduce stock for all items in the invoice (FIFO)
@@ -1385,13 +1436,16 @@ const SalesInvoice = () => {
       fetchInvoices();
       setError(null);
       setEditId(null);
+      setActiveErrorId(null);
+      setActiveValidationId(null);
+      setViewedInvoice(null);
       await resetForm();
       showToast("Invoice saved successfully", "success", 3000);
-      return true;
+      return { success: true, invoiceId: savedInvoiceId };
     } catch (err) {
       setError("Failed to save invoice");
       showToast("Failed to save invoice. Please try again.", "error", 3000);
-      return false;
+      return { success: false, invoiceId: null };
     } finally {
       setLoading(false);
     }
@@ -1402,13 +1456,14 @@ const SalesInvoice = () => {
     window.print();
   };
 
-  // Save and Print
+  // Save and Print - Use existing InvoicePrintingComponent with terminal template
   const handleSaveAndPrint = async () => {
-    const saved = await handleSaveInvoice();
-    if (saved) {
-      setTimeout(() => {
-        window.print();
-      }, 500);
+    const result = await handleSaveInvoice();
+    if (result.success) {
+      // Use existing component which handles terminal template mapping
+      setSavedInvoiceId(result.invoiceId);
+      setInvoiceToView({ _id: result.invoiceId });
+      setShowPrintingModal(true);
     }
   };
 
@@ -2180,36 +2235,40 @@ const SalesInvoice = () => {
                   </p>
                 </div>
                 <div className="h-8 w-px bg-gray-200"></div>
-                <div className="text-center">
-                  <p className="text-gray-400 text-xs">Discount</p>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      step={getInputStep()}
-                      min="0"
-                      name="discount"
-                      value={invoiceData.discount ?? 0}
-                      onChange={handleInputChange}
-                      className="w-12 text-center border border-gray-200 rounded px-1 py-0.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
-                    />
-                    <span className="text-gray-400 text-xs">%</span>
-                  </div>
-                </div>
-                <div className="h-8 w-px bg-gray-200"></div>
-                <div className="text-center">
-                  <p className="text-gray-400 text-xs">Disc Amt</p>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step={getInputStep()}
-                    min="0"
-                    name="discountAmount"
-                    value={invoiceData.discountAmount ?? 0}
-                    onChange={handleInputChange}
-                    className="w-12 text-center border border-gray-200 rounded px-1 py-0.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
-                  />
-                </div>
+                {allowDiscounts && (
+                  <>
+                    <div className="text-center">
+                      <p className="text-gray-400 text-xs">Discount</p>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step={getInputStep()}
+                          min="0"
+                          name="discount"
+                          value={invoiceData.discount ?? 0}
+                          onChange={handleInputChange}
+                          className="w-12 text-center border border-gray-200 rounded px-1 py-0.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                        <span className="text-gray-400 text-xs">%</span>
+                      </div>
+                    </div>
+                    <div className="h-8 w-px bg-gray-200"></div>
+                    <div className="text-center">
+                      <p className="text-gray-400 text-xs">Disc Amt</p>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step={getInputStep()}
+                        min="0"
+                        name="discountAmount"
+                        value={invoiceData.discountAmount ?? 0}
+                        onChange={handleInputChange}
+                        className="w-12 text-center border border-gray-200 rounded px-1 py-0.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="h-8 w-px bg-gray-200"></div>
                 <div className="text-center group relative">
                   <p className="text-gray-400 text-xs">{totals.taxLabel}</p>
@@ -2464,13 +2523,14 @@ const SalesInvoice = () => {
         formatNumber={formatNumber} 
       />
 
-      {/* INVOICE PRINTING & PDF MODAL */}
+      {/* INVOICE PRINTING & PDF MODAL - Terminal Template Mapped */}
       {showPrintingModal && invoiceToView && (
         <InvoicePrintingComponent
           invoiceId={invoiceToView._id}
           onClose={() => {
             setShowPrintingModal(false);
             setInvoiceToView(null);
+            setSavedInvoiceId(null);
           }}
         />
       )}

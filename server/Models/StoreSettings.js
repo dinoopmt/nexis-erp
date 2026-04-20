@@ -33,6 +33,13 @@ const storeSettingsSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    // ✅ NEW: Store Logo Only (branding per location)
+    // Company Name, Currency, Decimal Places come from Company Master (single source of truth)
+    logoUrl: {
+      type: String,
+      default: "",
+      description: "Store logo uploaded as base64 or URL (each store can have unique logo)"
+    },
     // ✅ NOTE: Barcode, Printer, and Label settings moved to Terminal level
     // barcodePrefix, barcodeFormat, printerModel, printerPort, labelWidth, labelHeight
     // are now managed per-terminal in Terminal Management settings

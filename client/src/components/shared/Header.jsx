@@ -2,12 +2,14 @@ import React, { useState, useEffect } from "react";
 import { FaUserCircle, FaBell } from "react-icons/fa";
 import { LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useTerminal } from "../../context/TerminalContext";
 
 
 export default function Header() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const { terminalConfig } = useTerminal();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -37,17 +39,24 @@ export default function Header() {
         <h1 className="text-lg lg:text-xl font-bold">Nexis ERP</h1>
       </div>
 
-      {/* Live Date and Time */}
+      {/* Date/Time and Terminal Info */}
       <div className="text-xs lg:text-sm text-gray-300 hidden lg:block">
-        {currentTime.toLocaleString("en-US", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })}
+        <div>
+          {currentTime.toLocaleString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })}
+        </div>
+        {terminalConfig && (
+          <div className="text-xs text-gray-400 mt-1">
+            Terminal: <span className="font-semibold text-gray-200">{terminalConfig.terminalName || 'Unknown'}</span>
+          </div>
+        )}
       </div>
 
       {/* Spacer */}

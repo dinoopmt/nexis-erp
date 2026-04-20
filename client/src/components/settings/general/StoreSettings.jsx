@@ -4,6 +4,7 @@ import apiClient from '../../../services/apiClient';
 import { showToast } from '../../shared/AnimatedCenteredToast';
 import TerminalFormModal from './TerminalFormModal';
 import TerminalTypeSwitcher from './TerminalTypeSwitcher';
+import { useTerminal } from '../../../context/TerminalContext';
 
 const StoreSettings = () => {
   const [storeData, setStoreData] = useState({
@@ -14,6 +15,8 @@ const StoreSettings = () => {
     phone: '',
     email: '',
     taxNumber: '',
+    // ✅ NEW: Store logo ONLY (branding per location)
+    logoUrl: '',
     salesControls: {
       enableInvoiceNumbering: true,
       invoiceNumberFormat: 'INV-YYMMDD-XXXX',
@@ -70,15 +73,22 @@ const StoreSettings = () => {
   const [loadingTerminals, setLoadingTerminals] = useState(false);
   // ✅ Terminal Type Switcher state
   const [currentConfig, setCurrentConfig] = useState(null);
+  
+  // ✅ Get refetch function from TerminalContext for instant UI updates
+  const { refetch: refetchTerminalConfig } = useTerminal();
 
   useEffect(() => {
     fetchStoreSettings();
   }, []);
 
-  // Fetch terminals whenever storeId changes
+  // Fetch terminals whenever storeId changes - with debounce to prevent rate limiting
   useEffect(() => {
     if (storeId) {
-      fetchTerminals(storeId);
+      const timer = setTimeout(() => {
+        fetchTerminals(storeId);
+      }, 300);
+      
+      return () => clearTimeout(timer);
     }
   }, [storeId]);
 
@@ -150,6 +160,35 @@ const StoreSettings = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setStoreData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // ✅ NEW: Handle logo upload
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+      showToast('error', 'Only PNG, JPG, JPEG files are allowed');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('error', 'File size must be less than 2MB');
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setStoreData(prev => ({
+        ...prev,
+        logoUrl: event.target.result
+      }));
+      showToast('success', 'Logo uploaded successfully');
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSalesControlChange = (field, value) => {
@@ -232,6 +271,13 @@ const StoreSettings = () => {
       if (storeId) {
         await fetchTerminals(storeId);
       }
+      
+      // ✅ INSTANT UPDATE: Refetch terminal config from context for all components
+      console.log('🔄 Refetching terminal config for instant UI update...');
+      setTimeout(() => {
+        refetchTerminalConfig();
+      }, 300);
+      
       setShowTerminalModal(false);
     } catch (err) {
       console.error("❌ Terminal save error:");
@@ -410,6 +456,34 @@ const StoreSettings = () => {
               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        </div>
+      </div>
+
+      {/* ✅ NEW: Store Branding - Logo Only */}
+      <div className="bg-white p-3 rounded-lg shadow mt-3">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+          <Printer className="w-4 h-4" />
+          Store Logo (for invoices)
+        </h3>
+        <div className="max-w-sm">
+          <label className="block text-xs font-semibold text-gray-700 mb-2">Upload Store Logo</label>
+          <div className="flex items-center gap-3">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => handleLogoUpload(e)}
+              className="text-xs"
+            />
+            {storeData.logoUrl && (
+              <div className="flex items-center gap-2">
+                <img src={storeData.logoUrl} alt="Store Logo" className="h-12 w-12 rounded border p-1" />
+                <span className="text-xs text-gray-600">Logo preview</span>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Upload PNG/JPG/JPEG (max 2MB). Each store can have its own logo on invoices.
+          </p>
         </div>
       </div>
       </>

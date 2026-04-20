@@ -16,16 +16,16 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
     <div class="invoice-container">
       {{#withLogo}}
       <div class="header">
-        <img src="{{company.logoUrl}}" alt="Logo" class="logo">
+        <img src="{{store.logoUrl}}" alt="Logo" class="logo">
       </div>
       {{/withLogo}}
 
       <div class="company-info">
-        <h1 class="company-name">{{company.companyName}}</h1>
+        <h1 class="company-name">{{store.storeName}}</h1>
         <p class="company-details">
-          {{company.address1}}<br>
-          {{company.address2}}<br>
-          Email: {{company.email}} | Phone: {{company.phone}}<br>
+          {{store.address1}}<br>
+          {{store.address2}}<br>
+          Email: {{store.email}} | Phone: {{store.phone}}<br>
           Tax ID: {{company.taxId}}
         </p>
       </div>
@@ -337,16 +337,16 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
     <div class="invoice-container" style="direction: rtl; text-align: right;">
       {{#withLogo}}
       <div class="header">
-        <img src="{{company.logoUrl}}" alt="الشعار" class="logo">
+        <img src="{{store.logoUrl}}" alt="Logo" class="logo">
       </div>
       {{/withLogo}}
 
       <div class="company-info">
-        <h1 class="company-name">{{company.companyName}}</h1>
+        <h1 class="company-name">{{store.storeName}}</h1>
         <p class="company-details">
-          {{company.address1}}<br>
-          {{company.address2}}<br>
-          البريد الإلكتروني: {{company.email}} | الهاتف: {{company.phone}}<br>
+          {{store.address1}}<br>
+          {{store.address2}}<br>
+          البريد الإلكتروني: {{store.email}} | الهاتف: {{store.phone}}<br>
           معرف الضريبة: {{company.taxId}}
         </p>
       </div>

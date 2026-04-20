@@ -5,6 +5,7 @@ import App from './App.jsx'
 import AuthContext from './context/AuthContext.jsx'
 import { CompanyProvider } from './context/CompanyContext.jsx'
 import { CostingProvider } from './context/CostingContext.jsx'
+import { ServerReadyProvider } from './context/ServerReadyContext.jsx'
 
 // ✅ Global error handlers to catch unhandled Promise rejections & errors
 // Helps diagnose issues with async operations, especially from browser extensions
@@ -40,13 +41,15 @@ window.addEventListener('error', (event) => {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthContext>
-      <CompanyProvider>
-        <CostingProvider>
-          <App />
-        </CostingProvider>
-      </CompanyProvider>
-    </AuthContext>
+    <ServerReadyProvider>
+      <AuthContext>
+        <CompanyProvider>
+          <CostingProvider>
+            <App />
+          </CostingProvider>
+        </CompanyProvider>
+      </AuthContext>
+    </ServerReadyProvider>
   </StrictMode>
 )
 

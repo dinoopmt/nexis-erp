@@ -92,14 +92,13 @@ financialYearSchema.index({ startDate: 1, endDate: 1 });
 financialYearSchema.index({ isDeleted: 1 });
 
 // Ensure only one financial year is marked as current
-financialYearSchema.pre('save', async function(next) {
+financialYearSchema.pre('save', async function() {
   if (this.isCurrent && this.isModified('isCurrent')) {
     await this.constructor.updateMany(
       { _id: { $ne: this._id }, isCurrent: true },
       { isCurrent: false }
     );
   }
-  next();
 });
 
 // Virtual to check if year is active (open and within date range)

@@ -16,7 +16,7 @@ export const QUOTATION_TEMPLATE_EN_WITH_LOGO = {
     <div class="quotation-container">
       {{#withLogo}}
       <div class="header">
-        <img src="{{company.logoUrl}}" alt="Logo" class="logo">
+        <img src="{{store.logoUrl}}" alt="Logo" class="logo">
       </div>
       {{/withLogo}}
 

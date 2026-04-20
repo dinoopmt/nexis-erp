@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Save, Upload, X, Building } from 'lucide-react'
+import { Save, Upload, X, Building, Plus, Trash2, Check } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import axios from 'axios'
 import useTaxMaster from '../../../hooks/useTaxMaster'
 import { useCostingMaster } from '../../../hooks/useCostingMaster'
 import { API_URL } from '../../../config/config'
+import FinancialYearManager from './financialYear/FinancialYearManager';
 
 const CompanyMaster = () => {
   const { company, taxMaster, loading: contextLoading, updateCompany } = useTaxMaster()
@@ -37,6 +39,8 @@ const CompanyMaster = () => {
   const [logoPreview, setLogoPreview] = useState(null)
   const [countriesLoading, setCountriesLoading] = useState(true)
   const [isDataLoaded, setIsDataLoaded] = useState(false)
+
+
 
   // Load countries on mount
   useEffect(() => {
@@ -97,6 +101,8 @@ const CompanyMaster = () => {
     }
   }, [costingMethod])
 
+
+
   const fetchCountries = async () => {
     try {
       setCountriesLoading(true)
@@ -123,6 +129,11 @@ const CompanyMaster = () => {
       setCountriesLoading(false)
     }
   }
+
+  // Fetch countries on component mount
+  useEffect(() => {
+    fetchCountries()
+  }, [])
 
   // Create a mapping for easier access to country configs
   const getCountryConfig = (countryName) => {
@@ -697,10 +708,14 @@ const CompanyMaster = () => {
         </div>
       </form>
       )}
+
+      {/* Section 6: Financial Year Management - Outside form to avoid nested forms */}
+      <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+        <FinancialYearManager />
+      </div>
+
     </div>
   )
 }
 
 export default CompanyMaster
-
-

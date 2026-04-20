@@ -1,9 +1,12 @@
-import React, { createContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useState, useCallback, useEffect, useRef, useContext } from 'react';
 import axios from 'axios';
+import { ServerReadyContext } from './ServerReadyContext';
 
 export const CostingContext = createContext();
 
 export const CostingProvider = ({ children }) => {
+  const { serverReady } = useContext(ServerReadyContext);
+  
   const [costingMethod, setCostingMethod] = useState('FIFO');
   const [costingConfig, setCostingConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -32,12 +35,12 @@ export const CostingProvider = ({ children }) => {
     }
   }, [companyId]);
 
-  // Initialize on mount (only once)
+  // Initialize on mount (only once) - but only after server is ready
   useEffect(() => {
-    if (hasFetched.current) return;
+    if (hasFetched.current || !serverReady) return;
     hasFetched.current = true;
     fetchCostingConfig();
-  }, [fetchCostingConfig]);
+  }, [fetchCostingConfig, serverReady]);
 
   // Update costing method configuration
   const updateCostingConfig = useCallback(

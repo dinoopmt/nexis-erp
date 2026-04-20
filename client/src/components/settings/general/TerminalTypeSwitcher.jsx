@@ -14,8 +14,12 @@ const TerminalTypeSwitcher = ({ currentConfig, onConfigUpdate }) => {
   })
 
   useEffect(() => {
-    // Load terminal statistics
-    loadTerminalStats()
+    // Load terminal statistics - add delay to prevent rate limiting
+    const timer = setTimeout(() => {
+      loadTerminalStats()
+    }, 500)
+    
+    return () => clearTimeout(timer)
   }, [])
 
   const loadTerminalStats = async () => {

@@ -28,6 +28,7 @@
     "dotenv": "^17.2.4",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
     "handlebars": "^4.7.9",
     "jsonwebtoken": "^9.0.3",
     "meilisearch": "^0.55.0",
@@ -37,6 +38,8 @@
     "nodemon": "^3.1.11",
     "path": "^0.12.7",
     "pdfkit": "^0.17.2",
-    "puppeteer": "^24.40.0"
+    "puppeteer": "^24.40.0",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
   }
 }

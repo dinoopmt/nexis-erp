@@ -36,6 +36,8 @@ import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
 import { seedDocumentTemplates } from './seedDocumentTemplates.js';
 import { seedBarcodeTemplates, seedAdditionalBarcodeTemplates } from './Seeders/barcodeSeed.js';
 import { seedDefaultTerminals } from './seeders/seedDefaultTerminals.js';
+import { globalLimiter, authLimiter, apiLimiter } from './middleware/rateLimiter.js';
+import { requestLogger } from './middleware/structuredLogger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,11 +147,29 @@ try {
 
 // Middleware
 app.use(cors({
-  origin: environment.CORS_ORIGIN,
+  origin: Array.isArray(environment.CORS_ORIGIN) ? environment.CORS_ORIGIN : [environment.CORS_ORIGIN],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'terminal-id', 'store-id'],
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Request ID generator
+app.use((req, res, next) => {
+  req.id = req.get('x-request-id') || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  res.set('X-Request-ID', req.id);
+  next();
+});
+
+// Structured request logging
+app.use(requestLogger);
+
+// Rate limiting middleware
+app.use(globalLimiter);
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/v1/auth/register', authLimiter);
+app.use('/api/v1/auth/forgot-password', authLimiter);
 
 // Request logging
 app.use((req, res, next) => {

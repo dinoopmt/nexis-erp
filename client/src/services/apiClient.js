@@ -28,7 +28,7 @@ class APIClient {
     this.retryConfig = {
       maxRetries: 3,
       retryDelay: 1000,
-      retryableStatus: [408, 429, 500, 502, 503, 504],
+      retryableStatus: [408, 500, 502, 503, 504], // Removed 429 - don't retry rate limit
     };
 
     // Load auth token from storage
