@@ -342,6 +342,37 @@ const configAPI = {
   updateConfig: (newValues) => ipcRenderer.invoke("config:update-config", newValues),
 };
 
+// ================== PDF API ==================
+// PDF printing and handling
+const pdfAPI = {
+  /**
+   * ✅ BEST: Print A4 invoice using HTML silent print (BrowserWindow approach)
+   * This is the production-grade approach for ERP systems
+   * 
+   * @param {string} invoiceId - Invoice ID to print
+   * @param {string} templateId - Template ID for rendering
+   * @param {string} terminalId - Terminal ID for store-specific header
+   * @param {string} printerName - Printer name from terminal settings
+   * @param {string} apiUrl - API base URL
+   * Returns: Promise<{ success, message }>
+   */
+  printInvoiceA4Silent: (invoiceId, templateId, terminalId, printerName, apiUrl) =>
+    ipcRenderer.invoke("pdf:print-invoice-a4", invoiceId, templateId, terminalId, printerName, apiUrl),
+
+  /**
+   * Print PDF blob directly to printer
+   * @param {ArrayBuffer} blob - PDF blob to print
+   * @param {object} options - Print options
+   *   - silent: boolean (default: true)
+   *   - printBackground: boolean (default: true)
+   *   - pageSize: string (default: 'A4')
+   *   - printerName: string (optional - uses configured/default printer if not specified)
+   * Returns: Promise<{ success, message }>
+   */
+  printBlob: (blob, options = {}) =>
+    ipcRenderer.invoke("pdf:print-blob", blob, options),
+};
+
 // ================== EXPOSE API TO RENDERER ==================
 // All communication is sandboxed and secure
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -355,6 +386,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   app: appAPI,
   device: deviceAPI,
   config: configAPI,
+  pdf: pdfAPI,
   
   // Utility to check if running in Electron
   isElectron: true,

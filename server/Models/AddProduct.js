@@ -296,8 +296,6 @@ productSchema.index({ isDeleted: 1, barcode: 1 });  // Composite index for exist
 productSchema.index({ categoryId: 1 });  // Index for category queries
 productSchema.index({ groupingId: 1 });  // Index for grouping queries
 productSchema.index({ hsnReference: 1 });  // Index for HSN lookup
-productSchema.index({ branchId: 1 });  // Index for multi-store branch queries
-productSchema.index({ branchId: 1, isDeleted: 1 });  // Composite index for branch-specific product queries
 
 // Middleware to attach GST rate from HSN when hsnReference is set
 productSchema.post('findOne', async function(doc) {

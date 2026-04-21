@@ -5,6 +5,7 @@ import { showToast } from '../../shared/AnimatedCenteredToast';
 import TerminalFormModal from './TerminalFormModal';
 import TerminalTypeSwitcher from './TerminalTypeSwitcher';
 import { useTerminal } from '../../../context/TerminalContext';
+import { clearTerminalConfigCache } from '../../../hooks/useTerminalConfig';
 
 const StoreSettings = () => {
   const [storeData, setStoreData] = useState({
@@ -252,8 +253,14 @@ const StoreSettings = () => {
       if (editingTerminal !== null) {
         // Update existing terminal via Terminal Management API
         // Use terminalId (not MongoDB _id) as the route parameter
-        await apiClient.put(`/terminals/${terminals[editingTerminal].terminalId}`, terminalData);
+        const terminalId = terminals[editingTerminal].terminalId;
+        await apiClient.put(`/terminals/${terminalId}`, terminalData);
         showToast('success', 'Terminal updated successfully');
+        
+        // ✅ CRITICAL: Clear cache for this terminal BEFORE refetching
+        // Ensures next fetch gets fresh data from API, not stale cache
+        clearTerminalConfigCache(terminalId);
+        console.log('🔄 Cleared cache for terminal:', terminalId);
       } else {
         // Create new terminal via Terminal Management API
         // Add storeId to terminal data before creating
@@ -273,6 +280,7 @@ const StoreSettings = () => {
       }
       
       // ✅ INSTANT UPDATE: Refetch terminal config from context for all components
+      // Cache is already cleared above, so this will fetch fresh data from API
       console.log('🔄 Refetching terminal config for instant UI update...');
       setTimeout(() => {
         refetchTerminalConfig();
@@ -314,9 +322,15 @@ const StoreSettings = () => {
 
     try {
       setIsLoading(true);
+      const terminalId = terminals[index].terminalId;
+      
       // Delete from Terminal Management API using terminalId (not MongoDB _id)
-      await apiClient.delete(`/terminals/${terminals[index].terminalId}`);
+      await apiClient.delete(`/terminals/${terminalId}`);
       showToast('success', 'Terminal deleted successfully');
+      
+      // ✅ Clear cache for deleted terminal
+      clearTerminalConfigCache(terminalId);
+      console.log('🔄 Cleared cache for deleted terminal:', terminalId);
       
       // Refresh terminals list
       if (storeId) {

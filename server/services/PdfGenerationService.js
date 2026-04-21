@@ -65,20 +65,23 @@ class PdfGenerationService {
   }
 
   // Render template with data
-  renderTemplate(templateHtml, cssContent, data) {
+  renderTemplate(templateHtml, cssContent, data, baseUrl = '') {
     try {
       this.registerHelpers();
 
       const template = Handlebars.compile(templateHtml);
       const invoiceHtml = template(data);
 
-      // Combine CSS + HTML
+      // Combine CSS + HTML with base URL for image loading
+      const baseTag = baseUrl ? `<base href="${baseUrl}">` : '';
+      
       const fullHtml = `
         <!DOCTYPE html>
         <html lang="${data.language || 'en'}">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          ${baseTag}
           <style>
             ${cssContent}
           </style>

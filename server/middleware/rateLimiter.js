@@ -8,15 +8,7 @@ export const globalLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
   legacyHeaders: false, // Disable `X-RateLimit-*` headers
-  keyGenerator: (req, res) => {
-    // Use user ID if authenticated, otherwise use IP address
-    // For IPv6: first gets req.ip (which handles IPv6 properly)
-    if (req.user?.id) {
-      return req.user.id;
-    }
-    // Use the first element if IP is an array (proxy scenarios)
-    return Array.isArray(req.ip) ? req.ip[0] : req.ip;
-  },
+  // ✅ Use default keyGenerator which properly handles IPv6
   skip: (req, res) => {
     // Skip rate limiting for:
     // 1. GET requests (read-only operations are safe)

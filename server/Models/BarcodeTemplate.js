@@ -110,7 +110,6 @@ PRINT 1,{LABEL_QUANTITY}`
 );
 
 // Index for quick lookups
-BarcodeTemplateSchema.index({ templateName: 1 });
 BarcodeTemplateSchema.index({ companyId: 1, deleted: 1 });
 BarcodeTemplateSchema.index({ isDefault: 1, companyId: 1 });
 

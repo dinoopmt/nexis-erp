@@ -11,29 +11,34 @@ export function useTerminalConfig() {
   const [terminalConfig, setTerminalConfig] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const CACHE_KEY = 'terminalConfig';
 
-  // Check if cached config exists (no expiration time)
-  const getCachedConfig = useCallback(() => {
+  // Get cache key for specific terminal ID
+  const getCacheKey = useCallback((terminalId) => {
+    return `terminalConfig_${terminalId}`;
+  }, []);
+
+  // Check if cached config exists for a terminal (no expiration time)
+  const getCachedConfig = useCallback((terminalId) => {
     try {
-      const cached = localStorage.getItem(CACHE_KEY);
+      const cacheKey = getCacheKey(terminalId);
+      const cached = localStorage.getItem(cacheKey);
       if (!cached) return null;
 
       const { config } = JSON.parse(cached);
-      console.log('✅ Terminal config loaded from cache');
+      console.log('📂 Terminal config loaded from localStorage cache');
       return config;
     } catch (err) {
       console.warn('⚠️ Failed to parse cached config:', err);
-      localStorage.removeItem(CACHE_KEY);
       return null;
     }
-  }, []);
+  }, [getCacheKey]);
 
-  // Save config to cache (no expiration)
-  const saveConfigToCache = useCallback((config) => {
+  // Save config to cache (per terminal)
+  const saveConfigToCache = useCallback((config, terminalId) => {
     try {
+      const cacheKey = getCacheKey(terminalId);
       localStorage.setItem(
-        CACHE_KEY,
+        cacheKey,
         JSON.stringify({
           config,
           savedAt: new Date().toISOString(),
@@ -42,13 +47,24 @@ export function useTerminalConfig() {
     } catch (err) {
       console.warn('⚠️ Failed to cache config:', err);
     }
-  }, []);
+  }, [getCacheKey]);
 
-  // Clear cache (call when terminal is updated)
-  const clearConfigCache = useCallback(() => {
-    localStorage.removeItem(CACHE_KEY);
-    console.log('🔄 Terminal config cache cleared');
-  }, []);
+  // Clear cache for specific terminal (call when terminal is updated)
+  const clearConfigCache = useCallback((terminalId = null) => {
+    if (terminalId) {
+      const cacheKey = getCacheKey(terminalId);
+      localStorage.removeItem(cacheKey);
+      console.log('🔄 Terminal config cache cleared for:', terminalId);
+    } else {
+      // Clear all terminal configs
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('terminalConfig_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      console.log('🔄 All terminal config caches cleared');
+    }
+  }, [getCacheKey]);
 
   // Fetch terminal config from backend
   const fetchConfig = useCallback(async (forceRefresh = false) => {
@@ -56,9 +72,14 @@ export function useTerminalConfig() {
       setIsLoading(true);
       setError(null);
 
+      // Get terminal ID from config file
+      const configRes = await fetch('/config/terminal.json');
+      if (!configRes.ok) throw new Error('Failed to load terminal config');
+      const { terminalId, apiBaseUrl } = await configRes.json();
+
       // Check cache first if not forcing refresh
       if (!forceRefresh) {
-        const cachedConfig = getCachedConfig();
+        const cachedConfig = getCachedConfig(terminalId);
         if (cachedConfig) {
           setTerminalConfig(cachedConfig);
           setIsLoading(false);
@@ -74,13 +95,10 @@ export function useTerminalConfig() {
         return terminalConfig; // Return cached config
       }
 
-      // Get terminal ID from config file
-      const configRes = await fetch('/config/terminal.json');
-      if (!configRes.ok) throw new Error('Failed to load terminal config');
-      const { terminalId, apiBaseUrl } = await configRes.json();
-
       // Fetch terminal details from backend
       const baseUrl = apiBaseUrl || 'http://localhost:5000/api/v1';
+      console.log('📡 API Request: GET', `${baseUrl}/terminals/${terminalId}`);
+      
       const response = await fetch(`${baseUrl}/terminals/${terminalId}`, {
         method: 'GET',
         headers: {
@@ -146,7 +164,7 @@ export function useTerminalConfig() {
       };
 
       setTerminalConfig(terminalInfo);
-      saveConfigToCache(terminalInfo); // Cache the config
+      saveConfigToCache(terminalInfo, terminalId); // Cache the config per terminal
       console.log('✅ Terminal config loaded from API:', terminalInfo);
       return terminalInfo;
     } catch (err) {
@@ -158,7 +176,7 @@ export function useTerminalConfig() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getCachedConfig, saveConfigToCache, terminalConfig]);
 
   // Load config on mount and when user changes
   useEffect(() => {
@@ -183,9 +201,20 @@ export function useTerminalConfig() {
  * Clear terminal config cache (call when terminal settings are updated)
  * Can be called from anywhere without needing the hook
  */
-export function clearTerminalConfigCache() {
-  localStorage.removeItem('terminalConfig');
-  console.log('🔄 Terminal config cache cleared');
+export function clearTerminalConfigCache(terminalId = null) {
+  if (terminalId) {
+    const cacheKey = `terminalConfig_${terminalId}`;
+    localStorage.removeItem(cacheKey);
+    console.log('🔄 Terminal config cache cleared for:', terminalId);
+  } else {
+    // Clear all terminal configs
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('terminalConfig_')) {
+        localStorage.removeItem(key);
+      }
+    });
+    console.log('🔄 All terminal config caches cleared');
+  }
 }
 
 /**

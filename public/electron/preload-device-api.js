@@ -39,4 +39,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
      */
     getConfig: () => ipcRenderer.invoke('device:getConfig'),
   },
+
+  // ✅ PDF Generation APIs
+  pdf: {
+    /**
+     * Generate PDF from HTML content
+     * Used for offline invoice generation in Electron
+     * @param {string} htmlContent - HTML to convert to PDF
+     * @param {object} options - { filename, margin, format, etc }
+     * @returns {Promise<Buffer>} PDF buffer
+     */
+    generateFromHtml: (htmlContent, options) =>
+      ipcRenderer.invoke('pdf:generateFromHtml', htmlContent, options),
+
+    /**
+     * Print to PDF using native Electron dialog
+     * @param {object} options - Print options { silent, margin, etc }
+     * @returns {Promise<object>} { success, filePath, fileName, size }
+     */
+    printToPdf: (options) =>
+      ipcRenderer.invoke('pdf:printToPdf', options),
+
+    /**
+     * Save PDF buffer to file with native save dialog
+     * @param {Buffer} pdfBuffer - PDF data
+     * @param {string} fileName - Default file name
+     * @returns {Promise<object>} { success, filePath }
+     */
+    saveToFile: (pdfBuffer, fileName) =>
+      ipcRenderer.invoke('pdf:saveToFile', pdfBuffer, fileName),
+  },
 })

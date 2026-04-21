@@ -1,44 +1,48 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Download, Printer, Loader } from 'lucide-react';
+import { X, Download, Printer, Loader, CheckCircle } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { API_URL } from '../../../config/config';
 import axios from 'axios';
 import { useTerminal } from '../../../context/TerminalContext';
+import { showToast } from '../../shared/AnimatedCenteredToast';
+import ClientPdfGeneratorService from '../../../services/ClientPdfGeneratorService'; // ✅ Client-side PDF
 
 const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
-  const { terminalConfig, isLoading: terminalLoading, error: terminalError, refetch: refetchTerminal } = useTerminal();
+  const { terminalConfig, isLoading: terminalLoading, error: terminalError } = useTerminal();
   
   const [previewHtml, setPreviewHtml] = useState('');
+  const [invoiceHtml, setInvoiceHtml] = useState(''); // ✅ Store invoice HTML for preview
   const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false); // ✅ Track PDF generation separately
   const [error, setError] = useState(null);
   const [templateId, setTemplateId] = useState(null);
   const [templateLoading, setTemplateLoading] = useState(true);
-  const [lastTerminalId, setLastTerminalId] = useState(null); // ✅ Track terminal ID changes
+  const [lastTerminalId, setLastTerminalId] = useState(null);
+  const [pdfBlob, setPdfBlob] = useState(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine); // ✅ Track online status
+  const [pdfSource, setPdfSource] = useState(''); // ✅ Track if 'server' or 'client'
   const contentRef = useRef();
 
-  // ✅ FORCE REFETCH when terminal changes - detects switching terminals
+  // ✅ OPTIMIZATION: No refetch needed - terminal config is cached in localStorage
+  // When terminal changes, the TerminalContext will auto-update with cached or freshly-fetched config
+  // This effect is NO LONGER NEEDED - removed to prevent unnecessary API calls
   useEffect(() => {
     const currentTerminalId = terminalConfig?.terminalId;
     
-    // If terminal ID has changed, force refetch to get new template config
+    // Just track terminal changes - don't force refetch
     if (currentTerminalId && currentTerminalId !== lastTerminalId) {
       console.log('🔄 Terminal switched from', lastTerminalId, 'to', currentTerminalId);
       setLastTerminalId(currentTerminalId);
-      
-      // Force refetch to get the new terminal's template configuration
-      if (refetchTerminal) {
-        console.log('🔄 Refetching terminal config for new terminal...');
-        refetchTerminal(true); // forceRefresh = true
-      }
+      console.log('📂 Using cached terminal config for:', currentTerminalId);
     }
-  }, [terminalConfig?.terminalId, lastTerminalId, refetchTerminal]);
+  }, [terminalConfig?.terminalId, lastTerminalId]);
 
-  // ✅ OPTIMIZATION: No refetch needed - terminal config is cached for 30 minutes
-  // Config is loaded on app startup and cached in localStorage
-  // Modal will use cached config unless it's older than 30 minutes
+  // ✅ OPTIMIZATION: No refetch needed - terminal config is cached in localStorage
+  // Config is loaded on app startup and cached per terminal ID in localStorage
+  // Modal will use cached config - no fresh API calls needed
   useEffect(() => {
     console.log('📂 Invoice modal opened - using cached terminal config');
-    // Config already available from app startup
+    // Config already available from app startup or app context
   }, [invoiceId]); // Run when modal opens
 
   // Extract template ID from terminal config
@@ -96,99 +100,244 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
         console.warn('⚠️ No invoiceId provided to InvoicePrintingComponent');
         setError('No invoice ID provided');
       }
+      if (!templateId) {
+        console.warn('⚠️ No templateId available yet', { templateLoading, templateId });
+      }
       return;
     }
+    console.log('🔄 [Effect] Calling handlePreview - invoiceId or templateId changed');
     handlePreview();
   }, [invoiceId, templateId]);
 
-  // Fetch HTML preview using terminal's template
+  // ✅ Online/Offline listener
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // ✅ Fetch PDF with hybrid approach (server-side Puppeteer, fallback to client-side)
   const handlePreview = async () => {
     try {
+      console.log(`\n========== HANDLE PREVIEW CALLED ==========`);
       setLoading(true);
       setError(null);
+      setPdfBlob(null); // Clear old PDF
 
-      console.log('📥 Fetching preview with templateId:', templateId);
+      console.log('📥 Fetching invoice with templateId:', templateId);
 
       const terminalId = terminalConfig?.terminalId;
-      const response = await axios.get(
-        `${API_URL}/invoices/${invoiceId}/preview`,
-        { 
-          params: { templateId, _t: Date.now() }, // ✅ Cache buster - timestamp prevents browser caching
-          headers: {
-            'terminal-id': terminalId, // ✅ Pass terminal ID so store details are fetched
+      console.log('📥 Terminal ID:', terminalId);
+      
+      try {
+        // ✅ STEP 1: Fetch invoice HTML for preview - SHOW IMMEDIATELY
+        console.log('📄 [Server] Fetching invoice HTML...');
+        console.log(`   Terminal ID: ${terminalId}`);
+        console.log(`   Template ID: ${templateId}`);
+        console.log(`   Invoice ID: ${invoiceId}`);
+        const htmlResponse = await axios.get(
+          `${API_URL}/invoices/${invoiceId}/html`,
+          {
+            params: { templateId, terminalId }
           }
-        }
-      );
+        );
+        
+        const invoiceHtmlContent = htmlResponse.data;
+        setInvoiceHtml(invoiceHtmlContent);
+        setPreviewHtml('loaded'); // Signal preview is ready
+        console.log('✅ Invoice HTML fetched - Preview shown');
+        
+        setLoading(false);
 
-      console.log('✅ Preview loaded successfully');
-      setPreviewHtml(response.data);
+        // ✅ STEP 2: Fetch PDF in BACKGROUND (non-blocking) - user won't feel delay
+        console.log('📄 [Background] Fetching PDF from Puppeteer...');
+        setPdfLoading(true);
+        
+        try {
+          const pdfResponse = await axios.post(
+            `${API_URL}/invoices/${invoiceId}/generate-pdf`,
+            {},
+            {
+              params: { templateId, terminalId, _t: Date.now() },
+              responseType: 'blob'
+            }
+          );
+
+          setPdfBlob(pdfResponse.data);
+          setPdfSource('server');
+          console.log('✅ PDF ready (background)');
+        } catch (pdfErr) {
+          console.warn('⚠️ PDF generation failed:', pdfErr.message);
+          // PDF generation failed, but preview is still visible
+        } finally {
+          setPdfLoading(false);
+        }
+        return;
+
+      } catch (serverErr) {
+        console.warn('⚠️ Server fetch failed:', serverErr.message);
+        
+        // Fallback: Show error or use simple HTML
+        setInvoiceHtml(`
+          <div style="padding: 40px; text-align: center; font-family: Arial, sans-serif;">
+            <h1>Invoice #${invoiceId.substring(0, 8)}</h1>
+            <p style="color: #666;">Generated: ${new Date().toLocaleDateString()}</p>
+            <p style="margin-top: 20px; color: #999;">
+              ⚠️ Could not load full invoice details.<br/>
+              Server is temporarily unavailable.
+            </p>
+          </div>
+        `);
+        setPreviewHtml('loaded');
+        
+        setError('Could not load full invoice HTML');
+        showToast('warning', '⚠️ Showing basic invoice');
+        setLoading(false);
+      }
+      
     } catch (err) {
-      const errorMsg = err.response?.data?.message || 'Failed to load preview';
+      const errorMsg = err.response?.data?.message || err.message || 'Failed to load invoice';
       setError(errorMsg);
-      console.error('❌ Preview error:', err);
-    } finally {
+      console.error('❌ Invoice error:', err);
+      showToast('error', errorMsg);
       setLoading(false);
     }
   };
 
-  // Download PDF using terminal's template
+  // ✅ Download PDF (already generated and stored in pdfBlob)
   const handleDownloadPdf = async () => {
     try {
-      setLoading(true);
-      setError(null);
-
-      if (!templateId) {
-        setError('Template ID not available');
+      if (!pdfBlob) {
+        showToast('error', 'No PDF available');
         return;
       }
 
-      console.log('📄 Generating PDF with templateId:', templateId);
+      const fileName = `Invoice_${new Date().toISOString().split('T')[0]}.pdf`;
+      const isElectron = window.electronAPI && typeof window.electronAPI.isElectron === 'boolean';
 
-      const terminalId = terminalConfig?.terminalId;
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoiceId}/generate-pdf`,
-        {},
-        {
-          params: { templateId, _t: Date.now() }, // ✅ Cache buster - timestamp prevents browser caching
-          responseType: 'blob',
-          headers: {
-            'terminal-id': terminalId, // ✅ Pass terminal ID so store details are fetched
+      if (isElectron) {
+        // ✅ Electron available - use native file save dialog
+        try {
+          console.log('💾 Using Electron file API to save PDF...');
+          const arrayBuffer = await pdfBlob.arrayBuffer();
+          const result = await window.electronAPI.file.saveFile(fileName, Buffer.from(arrayBuffer));
+          
+          if (result.success) {
+            console.log('✅ PDF saved successfully:', result.filePath);
+            showToast('success', `PDF saved to: ${result.filePath}`);
+          } else {
+            throw new Error(result.message || 'Save cancelled');
           }
+        } catch (electronErr) {
+          console.warn('⚠️ Electron file save failed, falling back to browser download:', electronErr);
+          downloadViaBlob(pdfBlob, fileName);
         }
-      );
-
-      // Create blob URL and trigger download
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Invoice_${new Date().toISOString().split('T')[0]}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      console.log('✅ PDF downloaded successfully');
+      } else {
+        // ✅ Browser environment - use standard blob download
+        downloadViaBlob(pdfBlob, fileName);
+      }
     } catch (err) {
-      const errorMsg = err.response?.data?.message || 'Failed to generate PDF';
+      const errorMsg = err.message || 'Failed to download PDF';
       setError(errorMsg);
-      console.error('❌ PDF error:', err);
-    } finally {
-      setLoading(false);
+      console.error('❌ Download error:', err);
+      showToast('error', errorMsg);
     }
   };
 
-  // Print functionality
+  // Helper function for browser-based blob download
+  const downloadViaBlob = (blob, fileName) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    console.log('✅ PDF downloaded successfully');
+    showToast('success', 'PDF downloaded successfully');
+  };
+
+  // Print functionality with simple ref
   const handlePrint = useReactToPrint({
     content: () => contentRef.current,
     documentTitle: `Invoice_${new Date().toISOString().split('T')[0]}`,
+    onBeforePrint: () => {
+      console.log('🖨️ Print dialog opening...');
+    },
+    onAfterPrint: () => {
+      console.log('✅ Print completed');
+    },
+    onPrintError: (error) => {
+      console.error('❌ Print error:', error);
+      showToast('error', 'Failed to print invoice');
+    },
   });
 
+  // ✅ BEST APPROACH: A4 Silent Print using HTML rendering (ERP Production Standard)
+  const handlePrintSafe = async () => {
+    try {
+      if (!invoiceId) {
+        showToast('error', '❌ Invoice ID not available');
+        return;
+      }
+
+      // Get configuration from terminal settings
+      const printerName = terminalConfig?.hardwareMapping?.invoicePrinter?.printerName;
+      const terminalId = terminalConfig?.terminalId;  // ✅ Extract terminalId from config
+      console.log('🖨️ Starting A4 silent print...');
+      console.log(`   Invoice: ${invoiceId}`);
+      console.log(`   Template: ${templateId}`);
+      console.log(`   Terminal: ${terminalId}`);
+      console.log(`   Printer: ${printerName || 'DEFAULT'}`);
+      
+      // Check if Electron API is available
+      if (!window.electronAPI?.pdf?.printInvoiceA4Silent) {
+        console.error('❌ Electron API not available');
+        showToast('error', '❌ Print only available in Electron app. Please download PDF and print manually.');
+        return;
+      }
+
+      // Call new A4 silent print handler (uses BrowserWindow + HTML rendering)
+      const result = await window.electronAPI.pdf.printInvoiceA4Silent(
+        invoiceId,
+        templateId,
+        terminalId,  // ✅ ADD: Pass terminalId for store-specific header
+        printerName || 'default', // Pass printer name (system will use default if exact match not found)
+        API_URL
+      );
+      
+      if (result.success) {
+        console.log('✅ Print job sent successfully');
+        showToast('success', `🖨️ Invoice printing on ${printerName || 'default printer'}...`);
+        
+        // Close modal after brief delay
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      } else {
+        throw new Error(result.message || 'Print failed');
+      }
+    } catch (error) {
+      console.error('❌ Print error:', error);
+      showToast('error', '❌ Failed to print. Please download PDF and print manually.');
+    }
+  };
+
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-2 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 print:bg-white print:inset-auto print:p-0 print:flex-none">
+      <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden print:rounded-none print:shadow-none" style={{ width: '850px', height: '95vh', maxHeight: '1200px', aspectRatio: '210 / 297' }}>
+        {/* Header - Hidden in print */}
+        <div className="flex items-center justify-between px-3 py-1 border-b bg-gradient-to-r from-blue-50 to-indigo-50 print:hidden">
           <h1 className="text-xl font-bold text-gray-800">Invoice Preview</h1>
           <button
             onClick={onClose}
@@ -198,23 +347,23 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
           </button>
         </div>
 
-        {/* Loading Terminal Config */}
+        {/* Loading Terminal Config - Hidden in print */}
         {(terminalLoading || templateLoading) && (
-          <div className="p-4 bg-blue-50 border-b border-blue-200 flex items-center gap-3">
+          <div className="p-4 bg-blue-50 border-b border-blue-200 flex items-center gap-3 print:hidden">
             <Loader size={18} className="animate-spin text-blue-500" />
             <p className="text-blue-700 text-sm">Loading terminal configuration...</p>
           </div>
         )}
 
-        {/* Template Error */}
+        {/* Template Error - Hidden in print */}
         {!templateLoading && error && !previewHtml && (
-          <div className="p-4 bg-red-50 border-b border-red-200">
+          <div className="p-4 bg-red-50 border-b border-red-200 print:hidden">
             <p className="text-red-700 text-sm font-medium">⚠️ {error}</p>
           </div>
         )}
 
-        {/* Preview Area */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+        {/* Preview Area - A4 Fit */}
+        <div className="flex-1 overflow-y-auto bg-gray-50 print:p-0 print:bg-white print:overflow-visible" style={{ padding: '8px' }}>
           {terminalLoading || templateLoading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
@@ -239,10 +388,13 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
               </div>
             </div>
           ) : previewHtml ? (
-            <div
+            // ✅ Display invoice HTML in an iframe
+            <iframe
               ref={contentRef}
-              className="bg-white p-8 rounded-lg shadow-sm"
-              dangerouslySetInnerHTML={{ __html: previewHtml }}
+              srcDoc={invoiceHtml}
+              className="w-full h-full border-0 print:border-0"
+              title="Invoice Preview"
+              style={{ display: 'block', background: '#fff', margin: 0, padding: 0 }}
             />
           ) : (
             <div className="flex items-center justify-center h-full">
@@ -251,9 +403,9 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
           )}
         </div>
 
-        {/* Action Buttons Panel - Fixed at Bottom */}
+        {/* Action Buttons Panel - Fixed at Bottom, Hidden in print */}
         {!templateLoading && templateId && (
-          <div className="border-t bg-white p-4 flex items-center justify-end gap-3 flex-wrap">
+          <div className="border-t bg-white px-3 py-2 flex items-center justify-end gap-3 flex-wrap">
             {/* Error Message */}
             {error && previewHtml && (
               <div className="flex-1 p-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -261,24 +413,32 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
               </div>
             )}
 
+            {/* PDF Loading Status */}
+            {previewHtml && pdfLoading && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+                <Loader size={14} className="animate-spin" />
+                <span>Preparing PDF...</span>
+              </div>
+            )}
+
             {/* Download Button */}
             <button
               onClick={handleDownloadPdf}
-              disabled={loading}
+              disabled={loading || pdfLoading || !pdfBlob}
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {loading ? <Loader size={16} className="animate-spin" /> : <Download size={16} />}
-              {loading ? 'Downloading...' : 'Download PDF'}
+              {pdfLoading ? <Loader size={16} className="animate-spin" /> : <Download size={16} />}
+              {pdfLoading ? 'PDF Preparing...' : 'Download PDF'}
             </button>
 
-            {/* Print Button */}
+            {/* Print Button - No need to wait for PDF, HTML is ready */}
             <button
-              onClick={handlePrint}
+              onClick={handlePrintSafe}
               disabled={loading || !previewHtml}
               className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Printer size={16} />
-              Print
+              {loading ? 'Loading...' : 'Print Invoice'}
             </button>
           </div>
         )}

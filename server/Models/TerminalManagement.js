@@ -234,7 +234,6 @@ const terminalManagementSchema = new mongoose.Schema(
 // ========================================
 // INDEXES
 // ========================================
-terminalManagementSchema.index({ terminalId: 1 });
 terminalManagementSchema.index({ storeId: 1 });
 terminalManagementSchema.index({ organizationId: 1 });
 terminalManagementSchema.index({ terminalStatus: 1 });

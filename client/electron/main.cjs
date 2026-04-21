@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { loadConfig, validateConfig, updateConfig, verifyTerminalExists } = require("./config-loader.cjs");
+const PdfGeneratorService = require("./services/PdfGeneratorService.cjs"); // ✅ PDF Generator Service
 
 // ================== GLOBAL VARIABLES ==================
 let mainWindow;
@@ -130,15 +131,15 @@ function createWindow() {
       v8CacheOptions: "code",
       contentSecurityPolicy: {
         directives: {
-          defaultSrc: ["'self'"],
+          defaultSrc: ["'self'", "blob:"],
           scriptSrc: ["'self'", "'unsafe-inline'", "http://localhost:5173"],
           styleSrc: ["'self'", "'unsafe-inline'", "http://localhost:5173"],
           connectSrc: ["'self'", "http://localhost:5000", "http://localhost:5173", "ws://localhost:5173"],
-          imgSrc: ["'self'", "data:", "http:", "https:"],
+          imgSrc: ["'self'", "data:", "blob:", "http:", "https:"],
           fontSrc: ["'self'", "data:"],
-          mediaSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          frameSrc: ["'none'"],
+          mediaSrc: ["'self'", "blob:"],
+          objectSrc: ["'self'", "blob:"],
+          frameSrc: ["'self'", "blob:", "data:"], // ✅ Allow blob: and data: for PDF iframes
           formAction: ["'self'"],
           upgradeInsecureRequests: isDev ? [] : ["'self'"],
         },
@@ -481,6 +482,13 @@ function setupTerminalIPC() {
   });
 }
 
+// ================== IPC HANDLERS - PDF GENERATOR ==================
+function setupPdfIPC() {
+  // Register PDF generation handlers
+  PdfGeneratorService.registerHandlers();
+  console.log("✅ PDF Generator IPC handlers setup complete");
+}
+
 // ================== IPC HANDLERS - PRINTER API ==================
 function setupPrinterIPC() {
   // Get list of available printers
@@ -565,6 +573,75 @@ function setupPrinterIPC() {
       console.error("❌ Test print error:", error);
       return { success: false, message: error.message };
     }
+  });
+}
+
+// ================== IPC HANDLERS - PDF API (Printing) ==================
+function setupPdfIPC() {
+  // A4 Silent Print - HTML invoice directly to printer (NO PDF generation)
+  ipcMain.handle("pdf:print-invoice-a4", async (event, invoiceId, templateId, terminalId, printerName, apiUrl) => {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('\n📥 [IPC] pdf:print-invoice-a4 handler called');
+        console.log(`   invoiceId: ${invoiceId}`);
+        console.log(`   templateId: ${templateId}`);
+        console.log(`   terminalId: ${terminalId}`);
+        console.log(`   printerName: ${printerName}`);
+        console.log(`   apiUrl: ${apiUrl}`);
+
+        const { BrowserWindow } = require('electron');
+
+        // Create hidden window for printing
+        const printWindow = new BrowserWindow({
+          show: false,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            enableRemoteModule: false
+          }
+        });
+
+        console.log('📄 Created hidden print window');
+
+        // Build print URL with store data
+        const printUrl = `${apiUrl}/invoices/${invoiceId}/html?templateId=${templateId}&terminalId=${terminalId}&print=true`;
+        console.log(`   Print URL: ${printUrl}`);
+
+        // Load the invoice HTML
+        printWindow.loadURL(printUrl);
+
+        // When HTML loads, send to printer
+        printWindow.webContents.on('did-finish-load', () => {
+          console.log('✅ Invoice HTML loaded');
+          console.log('🖨️ Sending to printer with A4 settings...');
+
+          // Print with A4 settings
+          printWindow.webContents.print({
+            silent: true,              // No print dialog
+            printBackground: true,     // Print background colors/images
+            deviceName: printerName,   // Exact printer name
+            pageSize: 'A4',            // A4 paper
+            margins: { marginType: 'none' }  // Use CSS margins
+          }, (success) => {
+            if (success) {
+              console.log('✅ Print job queued successfully');
+            } else {
+              console.error('❌ Print command failed');
+            }
+            printWindow.close();
+            resolve({ success: true, message: 'Print job sent' });
+          });
+        });
+
+        printWindow.webContents.on('crashed', () => {
+          reject(new Error('Print window crashed'));
+        });
+
+      } catch (error) {
+        console.error('❌ Print error:', error);
+        reject(error);
+      }
+    });
   });
 }
 
@@ -1059,6 +1136,7 @@ async function setupDeviceFingerprintIPC() {
 async function setupIPC() {
   console.log("📡 Setting up IPC handlers...");
   setupTerminalIPC();
+  setupPdfIPC(); // ✅ PDF Generator handlers
   setupPrinterIPC();
   setupHardwareIPC();
   setupScannerIPC();

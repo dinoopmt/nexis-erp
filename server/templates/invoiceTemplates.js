@@ -158,7 +158,7 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
 
     .company-info {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 30px;
       border-bottom: 2px solid #1e40af;
       padding-bottom: 15px;
     }
@@ -167,52 +167,86 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
       font-size: 18px;
       font-weight: bold;
       color: #1e40af;
-      margin-bottom: 5px;
+      margin-bottom: 8px;
     }
 
     .company-details {
       font-size: 10px;
       color: #666;
+      line-height: 1.6;
+      word-spacing: 1px;
     }
 
     .invoice-header {
       display: flex;
       justify-content: space-between;
       margin-bottom: 30px;
-      gap: 40px;
+      gap: 20px;
+    }
+
+    .invoice-header .left {
+      flex: 1;
+      min-width: 48%;
+    }
+
+    .invoice-header .right {
+      flex: 1;
+      min-width: 48%;
     }
 
     .invoice-title {
       font-size: 24px;
       font-weight: bold;
       color: #1e40af;
-      margin-bottom: 10px;
+      margin: 0 0 15px 0;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #1e40af;
     }
 
     .invoice-details-table {
       width: 100%;
       border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+
+    .invoice-details-table tr {
+      height: 20px;
+    }
+
+    .invoice-details-table td {
+      padding: 4px 8px;
+      border-bottom: 1px solid #e0e0e0;
     }
 
     .invoice-details-table td.label {
       font-weight: bold;
-      width: 40%;
+      width: 35%;
+      text-align: left;
+    }
+
+    .invoice-details-table td.value {
+      text-align: left;
     }
 
     .bill-to-title {
       font-weight: bold;
-      margin-bottom: 5px;
+      margin-bottom: 10px;
       font-size: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e0e0e0;
     }
 
     .customer-name {
       font-weight: bold;
       margin-bottom: 5px;
+      font-size: 11px;
     }
 
     .customer-details {
       font-size: 10px;
       color: #666;
+      line-height: 1.6;
     }
 
     .items-table {
@@ -227,20 +261,22 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
     }
 
     .items-table th {
-      padding: 8px;
+      padding: 10px 8px;
       text-align: left;
       font-weight: bold;
-      border-bottom: 1px solid #1e40af;
+      border-bottom: 2px solid #1e40af;
+      font-size: 11px;
     }
 
     .items-table td {
-      padding: 8px;
-      border-bottom: 1px solid #ddd;
+      padding: 10px 8px;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 11px;
     }
 
-    .col-slno { width: 5%; }
-    .col-item { width: 25%; }
-    .col-serial { width: 15%; }
+    .col-slno { width: 5%; text-align: center; }
+    .col-item { width: 30%; }
+    .col-serial { width: 12%; text-align: center; }
     .col-qty { width: 8%; text-align: center; }
     .col-rate { width: 12%; text-align: right; }
     .col-discount { width: 10%; text-align: center; }
@@ -260,31 +296,37 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
     }
 
     .totals-table {
-      width: 300px;
+      width: 320px;
       border-collapse: collapse;
     }
 
     .totals-table tr {
+      height: 22px;
       border-bottom: 1px solid #ddd;
     }
 
+    .totals-table td {
+      padding: 6px 10px;
+      font-size: 11px;
+    }
+
     .totals-table td.label {
-      padding: 8px;
       text-align: left;
       font-weight: bold;
       width: 60%;
     }
 
     .totals-table td.value {
-      padding: 8px;
       text-align: right;
       font-weight: bold;
+      width: 40%;
     }
 
     .total-row {
       background-color: #f0f0f0;
-      font-size: 13px;
+      font-size: 12px;
       border-top: 2px solid #1e40af;
+      font-weight: bold;
     }
 
     .notes-section {
@@ -297,6 +339,7 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
     .notes-section h4 {
       font-weight: bold;
       margin-bottom: 5px;
+      font-size: 11px;
     }
 
     .footer {
@@ -479,7 +522,7 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
 
     .company-info {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 30px;
       border-bottom: 2px solid #1e40af;
       padding-bottom: 15px;
     }
@@ -488,52 +531,86 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
       font-size: 18px;
       font-weight: bold;
       color: #1e40af;
-      margin-bottom: 5px;
+      margin-bottom: 8px;
     }
 
     .company-details {
       font-size: 10px;
       color: #666;
+      line-height: 1.6;
+      word-spacing: 1px;
     }
 
     .invoice-header {
       display: flex;
       justify-content: space-between;
       margin-bottom: 30px;
-      gap: 40px;
+      gap: 20px;
+    }
+
+    .invoice-header .left {
+      flex: 1;
+      min-width: 48%;
+    }
+
+    .invoice-header .right {
+      flex: 1;
+      min-width: 48%;
     }
 
     .invoice-title {
       font-size: 24px;
       font-weight: bold;
       color: #1e40af;
-      margin-bottom: 10px;
+      margin: 0 0 15px 0;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #1e40af;
     }
 
     .invoice-details-table {
       width: 100%;
       border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+
+    .invoice-details-table tr {
+      height: 20px;
+    }
+
+    .invoice-details-table td {
+      padding: 4px 8px;
+      border-bottom: 1px solid #e0e0e0;
     }
 
     .invoice-details-table td.label {
       font-weight: bold;
-      width: 40%;
+      width: 35%;
+      text-align: right;
+    }
+
+    .invoice-details-table td.value {
+      text-align: left;
     }
 
     .bill-to-title {
       font-weight: bold;
-      margin-bottom: 5px;
+      margin-bottom: 10px;
       font-size: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e0e0e0;
     }
 
     .customer-name {
       font-weight: bold;
       margin-bottom: 5px;
+      font-size: 11px;
     }
 
     .customer-details {
       font-size: 10px;
       color: #666;
+      line-height: 1.6;
     }
 
     .items-table {
@@ -548,25 +625,27 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
     }
 
     .items-table th {
-      padding: 8px;
+      padding: 10px 8px;
       text-align: right;
       font-weight: bold;
-      border-bottom: 1px solid #1e40af;
+      border-bottom: 2px solid #1e40af;
+      font-size: 11px;
     }
 
     .items-table td {
-      padding: 8px;
-      border-bottom: 1px solid #ddd;
+      padding: 10px 8px;
+      border-bottom: 1px solid #e0e0e0;
       text-align: right;
+      font-size: 11px;
     }
 
-    .col-slno { width: 5%; }
-    .col-item { width: 25%; }
-    .col-serial { width: 15%; }
-    .col-qty { width: 8%; }
-    .col-rate { width: 12%; }
-    .col-discount { width: 10%; }
-    .col-amount { width: 12%; font-weight: bold; }
+    .col-slno { width: 5%; text-align: center; }
+    .col-item { width: 30%; text-align: right; }
+    .col-serial { width: 12%; text-align: center; }
+    .col-qty { width: 8%; text-align: center; }
+    .col-rate { width: 12%; text-align: center; }
+    .col-discount { width: 10%; text-align: center; }
+    .col-amount { width: 12%; text-align: center; font-weight: bold; }
 
     .item-note {
       font-size: 9px;
@@ -582,31 +661,37 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
     }
 
     .totals-table {
-      width: 300px;
+      width: 320px;
       border-collapse: collapse;
     }
 
     .totals-table tr {
+      height: 22px;
       border-bottom: 1px solid #ddd;
     }
 
+    .totals-table td {
+      padding: 6px 10px;
+      font-size: 11px;
+    }
+
     .totals-table td.label {
-      padding: 8px;
       text-align: right;
       font-weight: bold;
       width: 60%;
     }
 
     .totals-table td.value {
-      padding: 8px;
       text-align: left;
       font-weight: bold;
+      width: 40%;
     }
 
     .total-row {
       background-color: #f0f0f0;
-      font-size: 13px;
+      font-size: 12px;
       border-top: 2px solid #1e40af;
+      font-weight: bold;
     }
 
     .notes-section {
@@ -619,6 +704,7 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
     .notes-section h4 {
       font-weight: bold;
       margin-bottom: 5px;
+      font-size: 11px;
     }
 
     .footer {
