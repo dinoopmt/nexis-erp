@@ -193,6 +193,7 @@ app.use(`${apiV1}/roles`, authRoutes.roleRoutes);
 app.use(`${apiV1}/sales-invoices`, salesRoutes.salesInvoiceRoutes);
 app.use(`${apiV1}/sales-orders`, salesRoutes.salesOrderRoutes);
 app.use(`${apiV1}/sales-returns`, salesRoutes.salesReturnRoutes);
+app.use(`${apiV1}/quotations`, salesRoutes.quotationRoutes);
 app.use(`${apiV1}/delivery-notes`, salesRoutes.deliveryNoteRoutes);
 app.use(`${apiV1}/credit-sale-receipts`, salesRoutes.creditSaleReceiptRoutes);
 
