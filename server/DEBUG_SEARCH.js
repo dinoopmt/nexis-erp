@@ -11,9 +11,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const API_URL = 'http://localhost:5000';
-const MEILISEARCH_URL = 'http://localhost:7700';
-const MONGODB_URL = process.env.MONGODB_URL || 'mongodb://localhost:27017/nexis_erp';
+const API_URL = process.env.API_URL || 'http://localhost:5000';
+const MEILISEARCH_URL = process.env.MEILISEARCH_HOST || 'http://localhost:7700';
+const MONGODB_URL = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp';
 
 async function debugSearch() {
   console.log('\n' + '='.repeat(60));

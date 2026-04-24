@@ -307,7 +307,7 @@ Add user-branch assignments and role-based access:
 ```bash
 # Check MongoDB connection
 mongo  # (or mongosh)
-use nexiserp  # (or your db name)
+use nexis_erp  # (or your db name)
 db.organizations.find().count()  # Should be 0 before seed, 9 after
 ```
 

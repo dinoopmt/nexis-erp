@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 import PrinterConfiguration from "./Models/PrinterConfiguration.js";
 
 // Direct MongoDB connection
-const MONGO_URL = process.env.MONGO_URL || "mongodb://localhost:27017/nexiserp";
+const MONGO_URL = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/nexis_erp";
 
 const SAMPLE_CONFIGS = [
   {

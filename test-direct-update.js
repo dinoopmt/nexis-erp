@@ -10,7 +10,7 @@ console.log('\n🧪 TESTING GRN STOCK UPDATE - DIRECT METHOD CALL\n');
   try {
     // Connect
     console.log('1️⃣ Connecting to MongoDB...');
-    await mongoose.connect('mongodb://127.0.0.1:27017/nexis_erp');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp');
     console.log('✅ Connected\n');
     
     // Get product

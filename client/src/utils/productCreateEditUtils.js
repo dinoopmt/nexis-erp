@@ -396,6 +396,7 @@ export const prepareProductForEdit = (completeProduct, activeCountryCode = "AE")
     openingPrice: completeProduct.openingPrice || 0,
     allowOpenPrice: completeProduct.allowOpenPrice !== undefined ? completeProduct.allowOpenPrice : false,
     image: completeProduct.image || null,
+    imagePath: completeProduct.imagePath || null,  // ✅ Include saved image path from DB
     createdBy: completeProduct.createdBy || "",
     updatedBy: completeProduct.updatedBy || "",
     createdate: completeProduct.createdate || null,

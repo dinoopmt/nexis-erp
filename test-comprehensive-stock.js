@@ -11,7 +11,7 @@ import CurrentStock from './server/Models/CurrentStock.js';
     
     // STEP 1: Connect
     console.log('\n1️⃣ CONNECTING TO MONGODB...');
-    await mongoose.connect('mongodb://127.0.0.1:27017/nexis_erp');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp');
     console.log('✅ Connected');
     
     // STEP 2: Verify models

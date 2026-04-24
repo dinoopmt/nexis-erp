@@ -11,7 +11,7 @@ let isConnected = false;
 
 const initializeMeilisearch = async () => {
   try {
-    const MEILISEARCH_HOST = process.env.MEILISEARCH_HOST || 'http://localhost:7700';
+    const MEILISEARCH_HOST = process.env.MEILISEARCH_HOST || 'http://127.0.0.1:7700';
     const MEILISEARCH_API_KEY = process.env.MEILISEARCH_API_KEY || '';
 
     meilisearchClient = new MeiliSearch({
@@ -78,6 +78,8 @@ const searchProducts = async (query, options = {}) => {
         'unitSymbol',
         'unitDecimal',
         'packingUnits',  // ✅ ADDED - For unit variant selection
+        'image',        // ✅ ADDED - Product image (base64) for display in Quotation
+        'imagePath',    // ✅ ADDED - Product image file path for display in Quotation
         'createdate',
       ],
     };
@@ -90,6 +92,12 @@ const searchProducts = async (query, options = {}) => {
     searchParams.filter = [filterArray];
 
     const results = await meilisearchClient.index('products').search(query, searchParams);
+
+    // 🔍 DEBUG: Log what MeiliSearch returned
+    if (results.hits.length > 0) {
+      console.log('🔍 MeiliSearch result sample (first product):', JSON.stringify(results.hits[0], null, 2));
+      console.log('🔍 imagePath in first result:', results.hits[0].imagePath);
+    }
 
     return {
       products: results.hits,
@@ -152,6 +160,8 @@ const indexProduct = async (product) => {
       unitDecimal: product.unitDecimal || 0,
       packingUnits: product.packingUnits ? JSON.stringify(product.packingUnits) : '[]',  // ✅ Stringify for Meilisearch
       isDeleted: product.isDeleted || false,  // ✅ ADDED - Track deleted status
+      image: product.image || null,  // ✅ ADDED - Product image (base64) for display in Quotation
+      imagePath: product.imagePath || null,  // ✅ ADDED - Product image file path for display in Quotation
       createdate: product.createdate ? new Date(product.createdate).getTime() : Date.now(),
     }];
 
@@ -268,6 +278,8 @@ const bulkIndexProducts = async (products) => {
         unitDecimal: product.unitDecimal || 0,
         packingUnits: product.packingUnits ? JSON.stringify(product.packingUnits) : '[]',  // ✅ Stringify for Meilisearch
         isDeleted: product.isDeleted || false,  // ✅ ADDED - Track deleted status
+        image: product.image || null,  // ✅ ADDED - Product image (base64) for display in Quotation
+        imagePath: product.imagePath || null,  // ✅ ADDED - Product image file path for display in Quotation
         createdate: product.createdate ? new Date(product.createdate).getTime() : Date.now(),
       };
       
@@ -280,6 +292,13 @@ const bulkIndexProducts = async (products) => {
     });
 
     console.log(`📝 About to index ${documents.length} documents...`);
+    
+    // Debug: Log imagePath from first few documents
+    console.log(`🔍 DEBUG imagePath in documents being indexed:`);
+    for (let i = 0; i < Math.min(3, documents.length); i++) {
+      console.log(`   Doc ${i+1} (${documents[i].name}): imagePath = ${documents[i].imagePath}`);
+    }
+    
     const task = await meilisearchClient.index('products').addDocuments(documents);
     
     // ✅ DEBUG: Log the actual response structure
@@ -510,6 +529,33 @@ const setupIndex = async () => {
       'price',
       'cost',
       'isDeleted',  // ✅ ADDED - Filter deleted products
+    ]);
+
+    // ✅ Configure displayed attributes - include image field so it's returned in search results
+    await index.updateDisplayedAttributes([
+      '_id',
+      'name',
+      'itemcode',
+      'barcode',
+      'price',
+      'finalPrice',
+      'cost',
+      'stock',
+      'currentStock',
+      'tax',
+      'taxPercent',
+      'taxType',
+      'trackExpiry',
+      'vendor',
+      'categoryId',
+      'unitType',
+      'unitSymbol',
+      'unitDecimal',
+      'packingUnits',
+      'isDeleted',
+      'image',  // ✅ Product image (base64) now returned in search results
+      'imagePath',  // ✅ ADDED - Product image file path for display in Quotation
+      'createdate',
     ]);
 
     // Set typo tolerance

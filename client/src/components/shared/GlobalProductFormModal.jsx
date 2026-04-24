@@ -1366,6 +1366,7 @@ const GlobalProductFormModal = () => {
                 openingPrice: completeProduct.openingPrice || 0,
                 allowOpenPrice: completeProduct.allowOpenPrice !== undefined ? completeProduct.allowOpenPrice : false,
                 image: completeProduct.image || null,
+                imagePath: completeProduct.imagePath || null,  // ✅ Include saved image path from DB
                 createdBy: completeProduct.createdBy || "",
                 updatedBy: completeProduct.updatedBy || "",
                 packingUnits: Array.isArray(completeProduct.packingUnits) ? completeProduct.packingUnits : [],
@@ -1410,8 +1411,13 @@ const GlobalProductFormModal = () => {
           // ✅ EDIT MODE: Keep modal OPEN after save (user will close manually)
             showToast('success', "Product updated successfully!");
             
-            // Update form with latest data but keep modal open
-            setNewProduct(savedProduct);
+            // ✅ Update form with latest data AND ensure imagePath is included
+            const updatedProduct = {
+              ...newProduct,
+              ...savedProduct,
+              imagePath: savedProduct.imagePath || newProduct.imagePath  // ✅ Preserve imagePath
+            };
+            setNewProduct(updatedProduct);
             
             // Call callback directly WITHOUT closing modal
             // (notifyProductSaved closes modal, but we want to keep it open in EDIT mode)

@@ -5,7 +5,7 @@ const axios = require('axios');
   try {
     console.log('🔍 Connecting to MongoDB and finding GRNs...\n');
     
-    await mongoose.connect('mongodb://127.0.0.1:27017/nexis_erp');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp');
     
     // Find a draft GRN
     const grn = await mongoose.connection.db.collection('grns').findOne({
@@ -28,7 +28,7 @@ const axios = require('axios');
       console.log(`Items: ${grn.items?.length || 0}`);
       
       // Post the GRN
-      const url = `http://localhost:5000/api/v1/grn/${grn._id.toString()}/post`;
+      const url = `${process.env.API_URL || 'http://localhost:5000'}/api/v1/grn/${grn._id.toString()}/post`;
       console.log(`\n📤 Posting GRN to: ${url}`);
       
       try {

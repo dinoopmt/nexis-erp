@@ -9,6 +9,21 @@ import CurrentStock from "../../../Models/CurrentStock.js";
 import StoreSettingsService from "../../settings/services/StoreSettingsService.js";
 import { searchProducts as searchMeilisearch, indexProduct, deleteProductIndex } from "../../../config/meilisearch.js";
 import { syncProductToMeilisearch, deleteProductFromMeilisearch } from "../services/ProductMeilisearchSync.js";
+// ✅ Image file handling
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ✅ Image directory path (relative to server root)
+const IMAGES_DIR = path.join(__dirname, "../../../images/products");
+
+// ✅ Ensure images directory exists
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
 
 console.log("✅ productController module loaded successfully");
 
@@ -67,6 +82,37 @@ const applyNamingConvention = (text) => {
   } catch (error) {
     console.error('⚠️ Error applying naming convention:', error.message);
     return text; // Return unchanged if error
+  }
+};
+
+// ================= HELPER FUNCTION: Save Base64 Image to File =================
+// ✅ Converts base64 image from client to file on disk, returns file path
+const saveImageToFile = async (base64Image, productId) => {
+  try {
+    if (!base64Image) {
+      return null;
+    }
+
+    // ✅ Extract base64 data (remove data URI prefix if present)
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    
+    // ✅ Generate unique filename with product ID
+    const timestamp = Date.now();
+    const fileName = `prod_${productId || timestamp}.jpg`;
+    const filePath = path.join(IMAGES_DIR, fileName);
+    
+    // ✅ Convert base64 to buffer and save to file
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    
+    // ✅ Return relative path for database storage
+    const relativePath = `images/products/${fileName}`;
+    console.log(`✅ Image saved: ${relativePath} (${(buffer.length / 1024).toFixed(2)}KB)`);
+    
+    return relativePath;
+  } catch (error) {
+    console.error('❌ Error saving image to file:', error.message);
+    return null;
   }
 };
 
@@ -500,8 +546,9 @@ export const addProduct = async (req, res) => {
       isScaleItem: isScaleItem || false,
       scaleUnitType: scaleUnitType || '', // ✅ Unit of measure for scale item
       itemHold: itemHold || false,
-      // ✅ Product image
-      image: image || null,
+      // ✅ Product image - UPGRADED TO FILE SYSTEM
+      imagePath: null,  // Will be set after save if image provided
+      image: null,      // ✅ DEPRECATED: No longer storing base64
     });
 
     // ✅ Assign finalPrice, createdBy, updatedBy fields
@@ -513,6 +560,14 @@ export const addProduct = async (req, res) => {
     }
     if (updatedBy !== undefined) {
       product.updatedBy = updatedBy || "System";
+    }
+
+    // ✅ Save image to file system if provided (file-based only)
+    if (image) {
+      const imagePath = await saveImageToFile(image, product._id);
+      if (imagePath) {
+        product.imagePath = imagePath;
+      }
     }
 
     await product.save();
@@ -639,6 +694,7 @@ export const addProduct = async (req, res) => {
       scaleUnitType: product.scaleUnitType, // ✅ Log scale unit type
       itemHold: product.itemHold,
       brandId: product.brandId,
+      imagePath: product.imagePath || null,  // ✅ Log imagePath
       image: product.image ? `Base64 image (${Math.round(product.image.length / 1024)}KB)` : null // ✅ Log image presence
     });
 
@@ -695,7 +751,7 @@ export const getProducts = async (req, res) => {
 
     // ✅ SIMPLE: Use regular find() and populate()
     const products = await Product.find({ ...query, ...groupingFilter })
-      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry taxPercent taxType finalPrice branchId branchName')
+      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry taxPercent taxType finalPrice branchId branchName imagePath')
       .populate('categoryId', 'name')
       .populate('groupingId', 'name')
       .populate('vendor', 'name')
@@ -779,7 +835,7 @@ export const getProductsByBranch = async (req, res) => {
     const total = await Product.countDocuments(query);
 
     const products = await Product.find(query)
-      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry taxPercent taxType finalPrice branchId branchName')
+      .select('name itemcode barcode price stock tax cost unitType unitSymbol unitDecimal vendor categoryId packingUnits trackExpiry taxPercent taxType finalPrice branchId branchName imagePath')
       .populate('categoryId', 'name')
       .populate('groupingId', 'name')
       .populate('vendor', 'name')
@@ -896,6 +952,7 @@ export const getProductById = async (req, res) => {
       isScaleItem: product.isScaleItem,
       scaleUnitType: product.scaleUnitType, // ✅ Log scale unit type
       itemHold: product.itemHold,
+      imagePath: product.imagePath || null,  // ✅ Log imagePath
       image: product.image ? `Base64 image (${Math.round(product.image.length / 1024)}KB)` : null, // ✅ Log image presence
       packingUnits: product.packingUnits?.map(p => ({
         barcode: p.barcode,
@@ -1145,7 +1202,15 @@ export const updateProduct = async (req, res) => {
       product.brandId = brandId || null;
     }
     if (image !== undefined) {
-      product.image = image || null;
+      // ✅ Save image to file system (file-based only)
+      if (image) {
+        const imagePath = await saveImageToFile(image, product._id);
+        if (imagePath) {
+          product.imagePath = imagePath;
+        }
+      } else {
+        product.imagePath = null;
+      }
     }
     
     // ✅ Add finalPrice, createdBy, updatedBy if provided
@@ -1270,22 +1335,20 @@ export const updateProduct = async (req, res) => {
     // ✅ Stock is now ONLY managed through CurrentStock table
     // Product endpoint does NOT accept stock updates anymore
     
-    // ✅ Fire-and-forget Meilisearch sync (non-blocking)
-    // Product is already saved - sync happens async in background
-    // Small delay to ensure database write is complete, then sync
-    setTimeout(() => {
-      syncProductToMeilisearch(product)
-        .then(syncResult => {
-          if (syncResult.success) {
-            console.log(`✅ Background sync completed: product ${product.name} (ID: ${product._id})`);
-          } else {
-            console.warn(`⚠️  Background sync failed: ${syncResult.error}`);
-          }
-        })
-        .catch(err => {
-          console.error(`Background sync error for product ${product._id}:`, err.message);
-        });
-    }, 100);
+    // ✅ SYNC TO MEILISEARCH: Wait for sync to complete before responding
+    // This ensures updated products (especially with new images) appear immediately in search
+    try {
+      const syncResult = await syncProductToMeilisearch(product);
+      if (syncResult.success) {
+        console.log(`✅ MeiliSearch sync completed: product ${product.name} (ID: ${product._id}) - Task UID: ${syncResult.taskUid}`);
+      } else {
+        console.warn(`⚠️  MeiliSearch sync failed: ${syncResult.error}`);
+        // Continue anyway - don't block user response
+      }
+    } catch (err) {
+      console.error(`⚠️  MeiliSearch sync error for product ${product._id}:`, err.message);
+      // Continue anyway - don't block user response
+    }
     
     await product.populate([
       { path: 'categoryId', select: 'name' },
@@ -1320,6 +1383,7 @@ export const updateProduct = async (req, res) => {
       isScaleItem: product.isScaleItem,
       itemHold: product.itemHold,
       brandId: product.brandId,
+      imagePath: product.imagePath || null,  // ✅ Log imagePath
       image: product.image ? `Base64 image (${Math.round(product.image.length / 1024)}KB)` : null // ✅ Log image presence
     });
 
@@ -2815,6 +2879,36 @@ export const bulkSyncToMeilisearch = async (req, res) => {
   }
 };
 
+// ✅ NEW: Cleanup missing imagePath fields in existing products
+// Purpose: Set imagePath to null for all products that don't have it
+export const fixMissingImagePaths = async (req, res) => {
+  try {
+    console.log('🔧 Fixing missing imagePath fields...');
+
+    // Update all products missing imagePath to set it to null
+    const result = await Product.updateMany(
+      { imagePath: { $exists: false } },  // Find products without imagePath field
+      { $set: { imagePath: null } }        // Set imagePath to null
+    );
+
+    console.log(`✅ Fixed ${result.modifiedCount} products with missing imagePath`);
+
+    res.json({
+      message: `Fixed ${result.modifiedCount} products`,
+      modifiedCount: result.modifiedCount,
+      matchedCount: result.matchedCount,
+      success: true
+    });
+  } catch (err) {
+    console.error("Error fixing imagePaths:", err);
+    res.status(500).json({
+      message: "Error fixing imagePaths",
+      error: err.message,
+      success: false
+    });
+  }
+};
+
 // ✅ NEW: Complete reset and fresh sync of Meilisearch
 // Purpose: Clear all old/deleted data and rebuild index from scratch
 // Use when search shows stale/deleted products
@@ -2944,6 +3038,7 @@ export const searchProducts = async (req, res) => {
     let results = null;
     let usedFallback = false;
     let meilisearchError = null;
+    let searchPath = 'unknown';
 
     try {
       // Create a promise that rejects after 5 seconds
@@ -2957,8 +3052,11 @@ export const searchProducts = async (req, res) => {
       );
 
       results = await Promise.race([meilisearchPromise, timeoutPromise]);
+      searchPath = 'meilisearch-success';
+      console.log(`✅ SEARCH PATH: ${searchPath} - Returned ${results?.products?.length || 0} results`);
 
       if (!results?.products?.length) {
+        searchPath = 'meilisearch-empty-barcode-fallback';
         const exactBarcodeProducts = await Product.find({
           isDeleted: false,
           $or: [
@@ -2968,13 +3066,15 @@ export const searchProducts = async (req, res) => {
             { 'packingUnits.additionalBarcodes': exactBarcodeQuery },
           ],
         })
-          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice')
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice imagePath')
           .populate('vendor', 'name')
           .populate('categoryId', 'name')
           .populate('unitType', 'unitName unitSymbol unitDecimal category')
           .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
           .limit(limitNum)
           .lean();
+
+        console.log(`✅ SEARCH PATH: ${searchPath} - Returned ${exactBarcodeProducts.length} results`);
 
         if (exactBarcodeProducts.length > 0) {
           results = {
@@ -2993,6 +3093,7 @@ export const searchProducts = async (req, res) => {
       }
     } catch (meilisearchErr) {
       meilisearchError = meilisearchErr.message;
+      searchPath = 'meilisearch-error-mongodb-fallback';
       console.warn(`⚠️  Meilisearch search failed/timeout: ${meilisearchErr.message}. Falling back to MongoDB...`);
       
       // ✅ FALLBACK: Use MongoDB regex search
@@ -3013,7 +3114,7 @@ export const searchProducts = async (req, res) => {
         const skip = (pageNum - 1) * limitNum;
 
         const products = await Product.find(mongoQuery)
-          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice')
+          .select('_id name itemcode barcode price cost stock tax taxPercent taxType taxAmount taxInPrice vendor categoryId unitType unitSymbol unitDecimal packingUnits trackExpiry finalPrice imagePath')
           .populate('vendor', 'name')
           .populate('categoryId', 'name')
           .populate('unitType', 'unitName unitSymbol unitDecimal category')
@@ -3022,6 +3123,11 @@ export const searchProducts = async (req, res) => {
           .limit(limitNum)
           .sort({ createdate: -1 })
           .lean();
+
+        console.log(`✅ SEARCH PATH: ${searchPath} - Returned ${products.length} results with imagePath field`);
+        if (products.length > 0) {
+          console.log(`   First product imagePath:`, products[0].imagePath);
+        }
 
         const totalPages = Math.ceil(totalCount / limitNum);
 
@@ -3058,6 +3164,7 @@ export const searchProducts = async (req, res) => {
       hasPrevPage: results.hasPrevPage,
       message: `Found ${results.totalCount} matching products`,
       searchSource: usedFallback ? 'MongoDB (Meilisearch fallback)' : 'Meilisearch',
+      searchPath: searchPath,  // ✅ New field to track exact code path
       meilisearchError: meilisearchError ? `Meilisearch unavailable: ${meilisearchError}` : null,
     });
 

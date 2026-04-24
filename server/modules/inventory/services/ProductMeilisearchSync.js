@@ -16,9 +16,8 @@ export const syncProductToMeilisearch = async (product, maxRetries = 3) => {
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // ✅ Populate vendor, categoryId, and packingUnits references
+      // ✅ Populate categoryId and packingUnits references
       const populatedProduct = await Product.findById(product._id)
-        .populate('vendor', 'name')
         .populate('categoryId', 'name')
         .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')
         .lean();
@@ -71,13 +70,20 @@ export const syncAllProductsToMeilisearch = async () => {
 
     // Fetch all non-deleted products with populated references
     const products = await Product.find({ isDeleted: false })
-      .populate('vendor', 'name')
       .populate('categoryId', 'name')
       .populate('packingUnits.unit', 'unitName unitSymbol unitDecimal category')  // ✅ Populate unit references inside packingUnits
       .lean()
       .exec();
 
     console.log(`📦 Found ${products.length} products to index`);
+    
+    // Debug: Check imagePath field on first few products
+    if (products.length > 0) {
+      console.log(`🔍 DEBUG imagePath check - first 3 products:`);
+      for (let i = 0; i < Math.min(3, products.length); i++) {
+        console.log(`   Product ${i+1} (${products[i].name}): imagePath = ${products[i].imagePath}`);
+      }
+    }
     
     // Debug: Check if test product has packing units
     const testProduct = products.find(p => p.itemcode === '33338');

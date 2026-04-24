@@ -11,6 +11,14 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
   const MAX_HEIGHT = 2048;
 
   /**
+   * Get current image: file-based only (development version)
+   * Add cache-busting timestamp to force fresh load from server
+   */
+  const currentImage = newProduct?.imagePath 
+    ? `/${newProduct.imagePath}?t=${Date.now()}`
+    : newProduct?.image || null;  // ✅ Show newly uploaded image (base64) during edit before save
+
+  /**
    * Resize image using canvas to reduce file size
    * Maintains aspect ratio, max 2048x2048
    */
@@ -74,8 +82,8 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
 
     try {
       const resizedImage = await resizeImage(file);
+      // ✅ Store as base64 during upload (will be converted to file on backend when saved)
       setNewProduct({ ...newProduct, image: resizedImage });
-      showToast('success', `Image uploaded and resized (max ${MAX_WIDTH}x${MAX_HEIGHT})`);
     } catch (error) {
       showToast('error', 'Failed to process image: ' + error.message);
     }
@@ -116,8 +124,12 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
    * Remove image
    */
   const handleRemoveImage = () => {
-    setNewProduct({ ...newProduct, image: null });
-    showToast('success', 'Image removed');
+    // ✅ Clear both imagePath (saved) and image (newly uploaded base64)
+    setNewProduct({ 
+      ...newProduct, 
+      imagePath: null,
+      image: null
+    });
   };
 
   return (
@@ -133,17 +145,22 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
             : 'border-gray-300 hover:border-gray-400 bg-gray-50'
         }`}
       >
-        {newProduct?.image ? (
+        {currentImage ? (
           <div className="space-y-3">
             <div className="relative inline-block">
               <img
-                src={newProduct.image}
+                key={currentImage}
+                src={currentImage}
                 alt="Product"
                 className="max-h-64 max-w-64 rounded-lg shadow-md object-contain"
+                onError={(e) => {
+                  // Show SVG placeholder if image fails to load
+                  e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f0f0f0" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" font-family="Arial" font-size="14" fill="%23999">Image Error</text></svg>';
+                }}
               />
             </div>
             <p className="text-sm text-green-700 font-medium">
-              ✅ Image saved (auto-resized to max {MAX_WIDTH}x{MAX_HEIGHT})
+              ✅ Image ready
             </p>
             <div className="space-y-2">
               <label className="inline-block">
@@ -172,7 +189,7 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
           <div className="space-y-3">
             <div className="text-4xl text-gray-400">📷</div>
             <p className="text-gray-600 font-medium">Drag and drop image here or click to select</p>
-            <p className="text-gray-500 text-sm">Supported: JPG, PNG, GIF (max 10MB, auto-resized to {MAX_WIDTH}x{MAX_HEIGHT})</p>
+            <p className="text-gray-500 text-sm">Supported: JPG, PNG, GIF</p>
             <label className="inline-block">
               <input
                 type="file"
@@ -187,13 +204,6 @@ const ImageTab = ({ loading, newProduct, setNewProduct }) => {
             </label>
           </div>
         )}
-      </div>
-
-      {/* Info Box */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-sm text-blue-800">
-          ℹ️ Images are automatically resized to a maximum of {MAX_WIDTH}x{MAX_HEIGHT} pixels to optimize storage and loading speed.
-        </p>
       </div>
     </div>
   );

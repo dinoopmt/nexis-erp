@@ -5,7 +5,7 @@ import CurrentStock from './server/Models/CurrentStock.js';
   try {
     console.log('📦 Testing MongoDB and Mongoose CurrentStock...\n');
     
-    await mongoose.connect('mongodb://127.0.0.1:27017/nexis_erp');
+    await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp');
     const db = mongoose.connection.db;
     
     // Step 1: Check collection exists

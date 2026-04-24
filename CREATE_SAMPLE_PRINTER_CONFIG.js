@@ -7,7 +7,7 @@
 const mongoose = require("mongoose");
 
 // Direct MongoDB connection
-const MONGO_URL = process.env.MONGO_URL || "mongodb://localhost:27017/nexiserp";
+const MONGO_URL = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/nexis_erp";
 
 // Import the PrinterConfiguration model
 const PrinterConfiguration = require("./server/Models/PrinterConfiguration");

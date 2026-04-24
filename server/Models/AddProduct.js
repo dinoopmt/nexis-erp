@@ -263,10 +263,10 @@ const productSchema = new mongoose.Schema({
     description: "Reference to brand (if using brand hierarchy)"
   },
   
-  image: {
+  imagePath: {
     type: String,
     default: null,
-    description: "Product image stored as base64 (auto-resized to max 2048x2048)"
+    description: "✅ Path to product image file (e.g., 'images/products/prod_101.jpg')"
   },
 
   isDeleted: { type: Boolean, default: false },

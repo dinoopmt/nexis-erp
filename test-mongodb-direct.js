@@ -1,7 +1,7 @@
 import { MongoClient, ObjectId } from 'mongodb';
 
 (async () => {
-  const client = new MongoClient('mongodb://127.0.0.1:27017');
+  const client = new MongoClient(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp');
   try {
     await client.connect();
     const db = client.db('nexis_erp');

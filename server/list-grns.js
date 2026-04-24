@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Grn from './Models/Grn.js';
 
-mongoose.connect('mongodb://localhost:27017/nexis-erp').then(async () => {
+mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/nexis_erp').then(async () => {
   const count = await Grn.countDocuments();
   console.log(`Total GRNs in DB: ${count}`);
   

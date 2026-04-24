@@ -9,7 +9,7 @@ import Grn from "./server/Models/Grn.js";
 import CreateVendor from "./server/Models/CreateVendor.js";
 import AddProduct from "./server/Models/AddProduct.js";
 
-const DB_URL = process.env.MONGO_URL || "mongodb://localhost:27017/nexis-erp";
+const DB_URL = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/nexis_erp";
 
 async function createTestGrn() {
   try {

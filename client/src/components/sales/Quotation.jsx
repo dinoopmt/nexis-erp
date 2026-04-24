@@ -4,6 +4,7 @@ import React, {
   useRef,
   useCallback,
   useContext,
+  useMemo,
 } from "react";
 import {
   Plus,
@@ -31,11 +32,14 @@ import {
 import axios from "axios";
 import { API_URL } from "../../config/config";
 import { useProductSearch } from "../../hooks/useProductSearch";
+import { useDecimalFormat } from "../../hooks/useDecimalFormat";
 import { CompanyContext } from "../../context/CompanyContext";
 import { showToast } from "../shared/AnimatedCenteredToast";
+import { clearAllCache } from "../../utils/searchCache";
 
 const Quotation = () => {
   const { company } = useContext(CompanyContext);
+  const { formatNumber } = useDecimalFormat(); // Country-based decimal formatting
 
   const statusColors = {
     Draft: "bg-gray-200 text-gray-800",
@@ -56,14 +60,14 @@ const Quotation = () => {
   const searchInputRef = useRef(null);
   const searchDropdownRef = useRef(null);
 
-  // ✅ Product Search Hook - MeiliSearch with fallback
+  // ✅ Product Search Hook - MeiliSearch with fallback (same as SalesInvoice)
   const {
     results: searchResults,
     loading: searchLoading,
     metadata: searchMetadata,
   } = useProductSearch(
     itemSearch,
-    300, // 300ms debounce
+    300, // 300ms debounce (match SalesInvoice)
     productPage,
     20, // 20 items per page
     true, // use fallback
@@ -72,6 +76,18 @@ const Quotation = () => {
   // ✅ Update products list when search results change
   useEffect(() => {
     if (!searchResults || searchResults.length === 0) return;
+
+    console.log("✅ Search results received:", {
+      count: searchResults.length,
+      searchPath: searchMetadata?.searchPath,
+      searchSource: searchMetadata?.searchSource,
+      sample: searchResults[0] ? { 
+        name: searchResults[0].name, 
+        imagePath: searchResults[0].imagePath, 
+        image: searchResults[0].image ? 'present' : 'null',
+        _id: searchResults[0]._id 
+      } : 'N/A'
+    });
 
     // Merge stock data
     const productsWithStock = searchResults.map((product) => ({
@@ -104,13 +120,11 @@ const Quotation = () => {
   const [focusedCell, setFocusedCell] = useState(null);
 
   const [quotationData, setQuotationData] = useState({
-    quotationNo: "001",
+    quotationNo: "", // ✅ EMPTY - Generated on save (like GRN)
     quotationDate: new Date().toISOString().split("T")[0],
     expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0],
-    paymentType: "",
-    paymentTerms: "",
     customerType: "EXISTING", // "EXISTING" | "QUICK"
     customerId: null, // Only for EXISTING customers
     partyName: "",
@@ -124,6 +138,7 @@ const Quotation = () => {
     notes: "",
     terms: "",
     status: "Draft",
+    vatAmount: 0, // ✅ Add VAT amount to state
   });
 
   const [loading, setLoading] = useState(false);
@@ -162,32 +177,35 @@ const Quotation = () => {
   const [showItemNoteModal, setShowItemNoteModal] = useState(false);
   const [selectedItemNote, setSelectedItemNote] = useState(null);
 
-  const [serialNumbers, setSerialNumbers] = useState({});
-  const [showSerialModal, setShowSerialModal] = useState(false);
-  const [selectedItemSerial, setSelectedItemSerial] = useState(null);
-  const [newSerialInput, setNewSerialInput] = useState("");
-
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [convertToType, setConvertToType] = useState("SalesOrder");
 
-  // Fetch next quotation number
+  // ✅ CLEAR SEARCH CACHE ON MOUNT to force fresh data from backend
   useEffect(() => {
-    const fetchNextQuotationNumber = async () => {
-      try {
-        const response = await axios.get(
-          `${API_URL}/quotations/nextQuotationNumber`,
-          { params: { financialYear } },
-        );
-        setQuotationData((prev) => ({
-          ...prev,
-          quotationNo: response.data.quotationNumber,
-        }));
-      } catch (err) {
-        console.error("Error fetching quotation number:", err);
-      }
-    };
-    fetchNextQuotationNumber();
-  }, [financialYear]);
+    console.log('🧹 Quotation component mounted - clearing search cache');
+    clearAllCache();
+  }, []);
+
+  // ✅ PERFORMANCE: Memoize product lookup Map for O(1) search in dropdown
+  const existingProductsMap = useMemo(() => {
+    const map = new Map();
+    quotationData.items.forEach((item) => {
+      map.set(item.productId, item);
+    });
+    return map;
+  }, [quotationData.items]);
+
+  // ✅ PERFORMANCE: Memoize products collection as Map for O(1) lookups during edit
+  const productsMap = useMemo(() => {
+    const map = new Map();
+    products.forEach((product) => {
+      map.set(product._id, product);
+    });
+    return map;
+  }, [products]);
+
+  // ✅ REMOVED: No pre-generation on page load (like GRN)
+  // Number is generated ONLY when saving, preventing gaps from cancellations
 
   // Calculate customer dropdown position
   useEffect(() => {
@@ -302,67 +320,176 @@ const Quotation = () => {
   const handleBarcodeScanned = () => {
     const product = products.find((p) => p.itemcode === scannerInput);
     if (product) {
-      addItemByBarcode(product);
+      addItemFromSearch(product);
       setScannerInput("");
     } else {
       showToast("error", "Product not found: " + scannerInput);
     }
   };
 
-  const addItemByBarcode = (product) => {
+  // Filter products for search (like SalesInvoice) - client-side filtering
+  const filteredProducts = products
+    .filter((p) => {
+      if (!itemSearch.trim()) return false;
+      const search = itemSearch.toLowerCase();
+      return (
+        p.name?.toLowerCase().includes(search) ||
+        p.itemcode?.toLowerCase().includes(search) ||
+        p.barcode?.toLowerCase().includes(search)
+      );
+    })
+    .slice(0, 10); // Limit to 10 results like SalesInvoice
+
+  // Keyboard navigation for search dropdown (like SalesInvoice)
+  const handleSearchKeyDown = (e) => {
+    if (!showSearchDropdown || filteredProducts.length === 0) {
+      // If Enter pressed with no dropdown, try to find exact match
+      if (e.key === "Enter" && itemSearch.trim()) {
+        e.preventDefault();
+        const exactMatch = products.find(
+          (p) =>
+            p.barcode?.toLowerCase() === itemSearch.toLowerCase() ||
+            p.itemcode?.toLowerCase() === itemSearch.toLowerCase(),
+        );
+        if (exactMatch) {
+          addItemFromSearch(exactMatch);
+        } else if (filteredProducts.length === 1) {
+          addItemFromSearch(filteredProducts[0]);
+        }
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelectedSearchIndex((prev) =>
+          prev < filteredProducts.length - 1 ? prev + 1 : 0,
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelectedSearchIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredProducts.length - 1,
+        );
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (filteredProducts[selectedSearchIndex]) {
+          addItemFromSearch(filteredProducts[selectedSearchIndex]);
+        }
+        break;
+      case "Escape":
+        setShowSearchDropdown(false);
+        setItemSearch("");
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Reset selected index when search changes
+  useEffect(() => {
+    setSelectedSearchIndex(0);
+  }, [itemSearch]);
+
+  // Add item from search selection (takes product parameter like SalesInvoice)
+  const addItemFromSearch = (product) => {
+    console.log("📦 Adding product:", { name: product.name, imagePath: product.imagePath, image: product.image, images: product.images });
+    
     const existingItem = quotationData.items.find(
       (item) => item.productId === product._id,
     );
 
     let newItems;
-    let isNew = false;
     if (existingItem) {
-      newItems = quotationData.items.map((item) =>
-        item.productId === product._id
-          ? {
-              ...item,
-              quantity: item.quantity + 1,
-              lineAmount: (item.quantity + 1) * item.unitPrice,
-            }
-          : item,
-      );
+      newItems = quotationData.items.map((item) => {
+        if (item.productId === product._id) {
+          const newQty = item.quantity + 1;
+          const newLineAmount = newQty * item.unitPrice;
+          const newVatAmount = (newLineAmount * item.taxPercent) / 100;
+          return {
+            ...item,
+            quantity: newQty,
+            lineAmount: newLineAmount,
+            amountAfterDiscount: newLineAmount - item.discountAmount,
+            vatAmount: newVatAmount, // ✅ Recalculate VAT when incrementing quantity
+          };
+        }
+        return item;
+      });
     } else {
+      const imageToUse = product.imagePath || null;
+      const salesprice = product.salesprice || product.price || 0;
+      const taxPercent = product.taxPercent || 0; // ✅ Extract tax percentage
+      const vatAmount = (salesprice * taxPercent) / 100; // ✅ Calculate VAT
+      
+      console.log("✅ New item created:", { itemname: product.name, imageToUse, hasImagePath: !!product.imagePath });
+      
       newItems = [
         ...quotationData.items,
         {
           productId: product._id,
           itemName: product.itemname || product.name,
           itemcode: product.itemcode,
-          barcode: product.barcode,
           quantity: 1,
-          unitPrice: product.salesprice || product.price || 0,
-          lineAmount: product.salesprice || product.price || 0,
+          unitPrice: salesprice,
+          lineAmount: salesprice,
           unitCost: product.cost || 0,
           lineCost: product.cost || 0,
           discountPercentage: 0,
           discountAmount: 0,
-          amountAfterDiscount: product.salesprice || product.price || 0,
-          vatPercentage: 0,
-          vatAmount: 0,
-          total: product.salesprice || product.price || 0,
-          serialNumbers: [],
+          amountAfterDiscount: salesprice,
+          taxPercent: taxPercent, // ✅ Store product tax percentage
+          taxType: product.taxType || "", // ✅ Store product tax type
+          vatPercentage: taxPercent,
+          vatAmount: vatAmount, // ✅ Store calculated VAT
+          total: salesprice + vatAmount, // ✅ Total includes VAT
           note: "",
+          image: imageToUse, // ✅ Store image for display
         },
       ];
-      isNew = true;
     }
     setQuotationData((prev) => ({ ...prev, items: newItems }));
     calculateTotals(newItems);
+    // Clear search after adding
+    setItemSearch("");
+    setShowSearchDropdown(false);
+    setSelectedSearchIndex(0);
+    setProductPage(1);
+    searchInputRef.current?.focus();
   };
 
-  const addItemFromSearch = () => {
-    if (selectedSearchIndex >= 0 && selectedSearchIndex < products.length) {
-      addItemByBarcode(products[selectedSearchIndex]);
-      setItemSearch("");
-      setShowSearchDropdown(false);
-      setSelectedSearchIndex(0);
-      setProductPage(1); // Reset page for next search
-      searchInputRef.current?.focus();
+  // ✅ Reset form (like GRN - clears everything including quotationNo)
+  const resetForm = () => {
+    try {
+      setEditId(null);
+      setQuotationData({
+        quotationNo: "", // ✅ Reset to empty - will be generated on next save
+        quotationDate: new Date().toISOString().split("T")[0],
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0],
+        partyName: "",
+        partyPhone: "",
+        partyTRN: "",
+        partyAddress: "",
+        partyContact: "",
+        discount: 0,
+        discountAmount: 0,
+        items: [],
+        notes: "",
+        terms: "",
+        status: "Draft",
+        vatAmount: 0,
+      });
+      setSelectedCustomerId(null);
+      setCustomerSearch("");
+      setShowCustomerDropdown(false);
+      showToast("success", "Form reset");
+    } catch (err) {
+      console.error("Error resetting form:", err);
+      showToast("error", "Error resetting form");
     }
   };
 
@@ -408,10 +535,11 @@ const Quotation = () => {
       discountPercentage: 0,
       discountAmount: 0,
       amountAfterDiscount: 0,
+      taxPercent: 0,
+      taxType: "",
       vatPercentage: 0,
       vatAmount: 0,
       total: 0,
-      serialNumbers: [],
       note: "",
     };
     const newItems = [...quotationData.items, newItem];
@@ -422,6 +550,24 @@ const Quotation = () => {
     const newItems = quotationData.items.filter((_, i) => i !== index);
     setQuotationData((prev) => ({ ...prev, items: newItems }));
     calculateTotals(newItems);
+    
+    // Clear note for deleted item and reindex remaining notes
+    setItemNotes((prev) => {
+      const newNotes = {};
+      let newIndex = 0;
+      Object.entries(prev).forEach(([key, value]) => {
+        const keyNum = parseInt(key);
+        if (keyNum < index) {
+          newNotes[newIndex] = value;
+          newIndex++;
+        } else if (keyNum > index) {
+          newNotes[newIndex] = value;
+          newIndex++;
+        }
+        // Skip the deleted item's note (keyNum === index)
+      });
+      return newNotes;
+    });
   };
 
   const handleItemChange = (index, field, value) => {
@@ -435,6 +581,9 @@ const Quotation = () => {
         newItems[index].quantity * newItems[index].unitCost;
       newItems[index].amountAfterDiscount =
         newItems[index].lineAmount - newItems[index].discountAmount;
+      // ✅ Recalculate VAT based on product tax percentage
+      newItems[index].vatAmount =
+        (newItems[index].amountAfterDiscount * newItems[index].taxPercent) / 100;
     }
 
     if (field === "discountPercentage") {
@@ -442,12 +591,18 @@ const Quotation = () => {
         (newItems[index].lineAmount * value) / 100;
       newItems[index].amountAfterDiscount =
         newItems[index].lineAmount - newItems[index].discountAmount;
+      // ✅ Recalculate VAT based on product tax percentage
+      newItems[index].vatAmount =
+        (newItems[index].amountAfterDiscount * newItems[index].taxPercent) / 100;
     }
 
     if (field === "discountAmount") {
       newItems[index].discountPercentage =
         (value / newItems[index].lineAmount) * 100;
       newItems[index].amountAfterDiscount = newItems[index].lineAmount - value;
+      // ✅ Recalculate VAT based on product tax percentage
+      newItems[index].vatAmount =
+        (newItems[index].amountAfterDiscount * newItems[index].taxPercent) / 100;
     }
 
     if (field === "productId") {
@@ -461,6 +616,12 @@ const Quotation = () => {
           newItems[index].quantity * (product.salesprice || 0);
         newItems[index].lineCost =
           newItems[index].quantity * (product.cost || 0);
+        // ✅ Extract tax percentage from product
+        newItems[index].taxPercent = product.taxPercent || 0;
+        newItems[index].taxType = product.taxType || "";
+        // ✅ Initial VAT calculation for new product
+        newItems[index].vatAmount =
+          (newItems[index].lineAmount * (product.taxPercent || 0)) / 100;
       }
     }
 
@@ -482,21 +643,18 @@ const Quotation = () => {
     let totalVat = 0;
 
     items.forEach((item) => {
-      subtotal += item.lineAmount;
-      totalCost += item.lineCost;
-      totalItemQty += item.quantity;
+      subtotal += item.lineAmount || 0;
+      totalCost += item.lineCost || 0;
+      totalItemQty += item.quantity || 0;
       totalVat += item.vatAmount || 0;
     });
 
     const discountAmount = quotationData.discountAmount;
     const totalAfterDiscount = subtotal - discountAmount;
+    // ✅ Total includes VAT calculated from each product's tax percentage
     const totalIncludeVat = totalAfterDiscount + totalVat;
 
-    const grossProfit = subtotal - totalCost;
-    const grossProfitMargin = subtotal > 0 ? (grossProfit / subtotal) * 100 : 0;
-    const netProfit = totalIncludeVat - totalCost;
-    const netProfitMargin =
-      totalIncludeVat > 0 ? (netProfit / totalIncludeVat) * 100 : 0;
+    // ✅ REMOVED: Profit calculations (grossProfit, netProfit, etc.) - not required for quotation
 
     setQuotationData((prev) => ({
       ...prev,
@@ -505,15 +663,11 @@ const Quotation = () => {
       totalIncludeVat,
       totalItemQty,
       totalItems: items.length,
-      totalCost,
-      grossProfit,
-      grossProfitMargin,
-      netProfit,
-      netProfitMargin,
+      vatAmount: totalVat, // ✅ Set the header-level VAT amount
     }));
   };
 
-  const handleSaveQuotation = async () => {
+  const handleSaveQuotation = async (mode = "save") => {
     if (!quotationData.partyName || quotationData.items.length === 0) {
       showToast("error", "Please enter customer and add items");
       return;
@@ -521,13 +675,41 @@ const Quotation = () => {
 
     try {
       setLoading(true);
+      
+      // ✅ GENERATE NUMBER ON SAVE (like GRN) - only for new quotations
+      let quotationNumber = quotationData.quotationNo;
+      if (!quotationNumber && !editId) {
+        try {
+          const nextNumberResponse = await axios.get(
+            `${API_URL}/quotations/nextQuotationNumber?financialYear=${financialYear}`,
+          );
+          quotationNumber = nextNumberResponse.data.sequence || nextNumberResponse.data.quotationNumber;
+          console.log("✅ Generated quotation number:", quotationNumber);
+        } catch (err) {
+          console.error("Error generating quotation number:", err);
+          showToast("error", "Failed to generate quotation number");
+          return;
+        }
+      }
+      
+      // ✅ Calculate average tax percentage from items
+      let avgTaxPercent = 0;
+      if (quotationData.items.length > 0) {
+        const totalTax = quotationData.items.reduce((sum, item) => sum + (item.taxPercent || 0), 0);
+        avgTaxPercent = totalTax / quotationData.items.length;
+      }
+      
+      // ✅ Set status based on mode
+      let status = quotationData.status;
+      if (mode === "draft") {
+        status = "Draft";
+      }
+      
       const payload = {
-        quotationNumber: quotationData.quotationNo,
+        quotationNumber: quotationNumber, // ✅ Use generated number
         financialYear,
         date: new Date(quotationData.quotationDate),
         expiryDate: new Date(quotationData.expiryDate),
-        paymentType: quotationData.paymentType,
-        paymentTerms: quotationData.paymentTerms,
         customerId: selectedCustomerId,
         customerName: quotationData.partyName,
         customerPhone: quotationData.partyPhone,
@@ -538,20 +720,18 @@ const Quotation = () => {
         discountPercentage: quotationData.discount,
         discountAmount: quotationData.discountAmount,
         totalAfterDiscount: quotationData.totalAfterDiscount,
-        vatPercentage: 0,
-        vatAmount: 0,
+        vatPercentage: avgTaxPercent,
+        vatAmount: quotationData.vatAmount || 0,
         totalIncludeVat: quotationData.totalIncludeVat,
-        totalCost: quotationData.totalCost,
-        grossProfit: quotationData.grossProfit,
-        grossProfitMargin: quotationData.grossProfitMargin,
-        netProfit: quotationData.netProfit,
-        netProfitMargin: quotationData.netProfitMargin,
+        // ✅ REMOVED: totalCost, grossProfit, grossProfitMargin, netProfit, netProfitMargin (not required)
         totalItems: quotationData.totalItems,
         totalItemQty: quotationData.totalItemQty,
         notes: quotationData.notes,
         terms: quotationData.terms,
-        status: quotationData.status,
-        items: quotationData.items.map((item) => ({
+        status: status,
+        // ✅ Note: Profit calculations (totalCost, grossProfit, netProfit) are for UI display only
+        // Backend doesn't store item-level costs for quotations
+        items: quotationData.items.map((item, idx) => ({
           productId: item.productId,
           itemName: item.itemName,
           itemcode: item.itemcode,
@@ -563,11 +743,11 @@ const Quotation = () => {
           discountPercentage: item.discountPercentage,
           discountAmount: item.discountAmount,
           amountAfterDiscount: item.amountAfterDiscount,
-          vatPercentage: 0,
-          vatAmount: 0,
-          total: item.amountAfterDiscount,
-          serialNumbers: item.serialNumbers,
-          note: item.note,
+          // ✅ Removed: taxPercent, taxType (UI only fields)
+          vatPercentage: item.taxPercent || 0, // ✅ Map product tax to VAT percentage
+          vatAmount: item.vatAmount || 0,
+          total: (item.amountAfterDiscount || 0) + (item.vatAmount || 0),
+          note: itemNotes[idx] || item.note || "", // ✅ Include itemwise notes
         })),
       };
 
@@ -578,21 +758,58 @@ const Quotation = () => {
       const response = await axios[editId ? "put" : "post"](url, payload);
 
       showToast(
+        "success",
         editId
           ? "Quotation updated successfully"
           : "Quotation created successfully",
-        "success",
       );
 
+      // ✅ Handle print mode - with image preload
+      if (mode === "print" && response.data._id) {
+        // ✅ PERFORMANCE: Preload all images before printing to prevent blank images
+        const imagesToPreload = quotationData.items
+          .map((item) => {
+            let image = item.image;
+            if (!image) {
+              const product = productsMap.get(item.productId);
+              image = product?.imagePath;
+            }
+            // ✅ Fix image URL: prepend "/" if it's a file path (for Vite proxy)
+            if (image && image.startsWith('images/')) {
+              image = '/' + image;
+            }
+            return image;
+          })
+          .filter((img) => img); // Remove nulls
+        
+        if (imagesToPreload.length > 0) {
+          Promise.all(
+            imagesToPreload.map(
+              (src) =>
+                new Promise((resolve) => {
+                  const img = new Image();
+                  img.onload = img.onerror = resolve;
+                  img.src = src;
+                }),
+            ),
+          ).then(() => {
+            setTimeout(() => window.print(), 300);
+          });
+        } else {
+          setTimeout(() => {
+            window.print();
+          }, 300);
+        }
+      }
+
       if (!editId) {
+        // ✅ Reset form for next quotation (number will be generated on next save - like GRN)
         setQuotationData({
-          quotationNo: response.data.quotationNumber,
+          quotationNo: "", // ✅ Empty - will be generated on next save
           quotationDate: new Date().toISOString().split("T")[0],
           expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
             .toISOString()
             .split("T")[0],
-          paymentType: "",
-          paymentTerms: "",
           partyName: "",
           partyPhone: "",
           partyTRN: "",
@@ -604,6 +821,7 @@ const Quotation = () => {
           notes: "",
           terms: "",
           status: "Draft",
+          vatAmount: 0,
         });
         setSelectedCustomerId(null);
       }
@@ -617,14 +835,63 @@ const Quotation = () => {
     }
   };
 
+  // ✅ Fetch all quotations from database for history modal
+  const fetchQuotations = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(
+        `${API_URL}/quotations/getQuotations`,
+      );
+      setQuotations(res.data);
+      setError(null);
+    } catch (err) {
+      setError("Failed to fetch quotations");
+      console.error("Error fetching quotations:", err);
+    }
+    setLoading(false);
+  };
+
+  // ✅ Filter quotations by date, search, and status
+  const filteredHistoryQuotations = quotations.filter((quotation) => {
+    const quotationDate = new Date(quotation.date).toISOString().split("T")[0];
+    const dateMatch = quotationDate === historyDateFilter;
+
+    // If no search, only filter by date and status
+    if (!historySearch.trim()) {
+      if (filteredHistoryStatus === "All") return dateMatch;
+      return dateMatch && quotation.status === filteredHistoryStatus;
+    }
+
+    // Filter by customer name or quotation number
+    const searchLower = historySearch.toLowerCase();
+    const customerNameMatch = quotation.customerName
+      ?.toLowerCase()
+      .includes(searchLower);
+    const quotationNumberMatch = quotation.quotationNumber
+      ?.toString()
+      .includes(historySearch);
+
+    const statusMatch = filteredHistoryStatus === "All" || quotation.status === filteredHistoryStatus;
+    return dateMatch && statusMatch && (customerNameMatch || quotationNumberMatch);
+  });
+
   const handleEditQuotation = (quotation) => {
     setEditId(quotation._id);
+    
+    // ✅ PERFORMANCE: Use O(1) map lookup instead of O(n) find()
+    const enrichedItems = quotation.items.map((item) => {
+      const product = productsMap.get(item.productId);
+      const imageToUse = product?.imagePath || product?.image || (product?.images && product.images[0]) || null;
+      return {
+        ...item,
+        image: imageToUse, // ✅ Add image for display/print
+      };
+    });
+    
     setQuotationData({
       quotationNo: quotation.quotationNumber,
       quotationDate: quotation.date.split("T")[0],
       expiryDate: quotation.expiryDate?.split("T")[0] || "",
-      paymentType: quotation.paymentType || "",
-      paymentTerms: quotation.paymentTerms || "",
       partyName: quotation.customerName,
       partyPhone: quotation.customerPhone || "",
       partyTRN: quotation.customerTRN || "",
@@ -632,7 +899,7 @@ const Quotation = () => {
       partyContact: quotation.customerContact || "",
       discount: quotation.discountPercentage,
       discountAmount: quotation.discountAmount,
-      items: quotation.items,
+      items: enrichedItems, // ✅ Use enriched items with images
       notes: quotation.notes || "",
       terms: quotation.terms || "",
       status: quotation.status,
@@ -641,6 +908,7 @@ const Quotation = () => {
       totalIncludeVat: quotation.totalIncludeVat,
       totalItemQty: quotation.totalItemQty,
       totalItems: quotation.totalItems,
+      vatAmount: quotation.vatAmount || 0, // ✅ Include VAT amount
     });
     setSelectedCustomerId(quotation.customerId);
     window.scrollTo(0, 0);
@@ -729,8 +997,17 @@ const Quotation = () => {
           <div className="flex items-center gap-4">
             <div>
               <h1 className="text-lg font-bold">Quotation</h1>
-              <div className="bg-white/20 px-3 py-1.5 rounded-lg mt-2 inline-block">
-                <p className="font-bold text-xs">{quotationData.quotationNo}</p>
+              <div className={`px-3 py-1.5 rounded-lg mt-2 inline-block ${ quotationData.quotationNo
+                  ? "bg-white/20"
+                  : "bg-blue-300/40"
+              }`}>
+                <p className={`font-bold text-xs ${
+                  quotationData.quotationNo
+                    ? "text-white"
+                    : "text-blue-100 italic"
+                }`}>
+                  {quotationData.quotationNo || "Generated on Save"}
+                </p>
               </div>
             </div>
 
@@ -822,7 +1099,12 @@ const Quotation = () => {
                   const res = await axios.get(
                     `${API_URL}/products/getproducts?limit=50000`,
                   ); // ✅ Fetch up to 50k products
-                  setProducts(res.data.products || res.data);
+                  const productsData = res.data.products || res.data;
+                  console.log("✅ Products fetched for lookup:", { 
+                    count: productsData.length,
+                    sample: productsData[0] ? { name: productsData[0].name, imagePath: productsData[0].imagePath, image: productsData[0].image ? 'present' : 'null' } : 'N/A'
+                  });
+                  setProducts(productsData);
                   setItemSearch("");
                 } catch (err) {
                   console.error("Error fetching products:", err);
@@ -930,42 +1212,12 @@ const Quotation = () => {
                             e.target.value.trim().length > 0,
                           );
                           setSelectedSearchIndex(0);
-                          setProductPage(1); // Reset to first page on new search
+                          setProductPage(1);
                         }}
                         onFocus={() =>
                           itemSearch.trim() && setShowSearchDropdown(true)
                         }
-                        onKeyDown={(e) => {
-                          if (!showSearchDropdown || products.length === 0) {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              if (products.length > 0) {
-                                addItemFromSearch();
-                              }
-                            }
-                            return;
-                          }
-
-                          if (e.key === "ArrowDown") {
-                            e.preventDefault();
-                            setSelectedSearchIndex((prev) =>
-                              prev < products.length - 1 ? prev + 1 : 0,
-                            );
-                          } else if (e.key === "ArrowUp") {
-                            e.preventDefault();
-                            setSelectedSearchIndex((prev) =>
-                              prev > 0 ? prev - 1 : products.length - 1,
-                            );
-                          } else if (e.key === "Enter") {
-                            e.preventDefault();
-                            if (products.length > 0) {
-                              addItemFromSearch();
-                            }
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            setShowSearchDropdown(false);
-                          }
-                        }}
+                        onKeyDown={handleSearchKeyDown}
                         placeholder="Search product by name, code, or barcode..."
                         className="w-full px-2 h-10 py-1 text-xs border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
@@ -1075,31 +1327,52 @@ const Quotation = () => {
                             {/* Code / Barcode */}
                             <td className="px-2 py-2 text-center w-32">
                               <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                                {item.itemcode || item.barcode || "-"}
+                                {item.itemcode || "-"}
                               </span>
                             </td>
 
                             {/* Image */}
                             <td className="px-2 py-2 text-center w-20">
-                              {item.image || item.images ? (
-                                <img
-                                  src={
-                                    item.image ||
-                                    (item.images && item.images[0])
+                              {(() => {
+                                // ✅ Use image if already on item (from loaded quotation), otherwise fetch from products
+                                let image = item.image;
+                                if (!image) {
+                                  // ✅ PERFORMANCE: O(1) map lookup instead of O(n) find()
+                                  const product = productsMap.get(item.productId);
+                                  image = product?.imagePath || product?.image || (product?.images && product.images[0]);
+                                }
+                                
+                                // ✅ Fix image URL: ensure it starts with "/" and add cache-busting
+                                if (image) {
+                                  if (image.startsWith('images/')) {
+                                    image = '/' + image;
                                   }
-                                  alt={item.itemName}
-                                  className="w-16 h-16 object-cover rounded border border-gray-200"
-                                  onError={(e) =>
-                                    (e.target.style.display = "none")
+                                  // Add cache-busting to force fresh load
+                                  if (image.startsWith('/images/') && !image.includes('?')) {
+                                    image = image + '?t=' + Date.now();
                                   }
-                                />
-                              ) : (
-                                <div className="w-16 h-16 bg-gray-100 rounded border border-gray-200 flex items-center justify-center">
-                                  <span className="text-xs text-gray-400">
-                                    No Image
-                                  </span>
-                                </div>
-                              )}
+                                }
+                                
+                                console.log('📷 Quotation table image:', { itemcode: item.itemcode, image });
+                                
+                                return image ? (
+                                  <img
+                                    src={image}
+                                    alt={item.itemName}
+                                    className="w-16 h-16 object-cover rounded border border-gray-200"
+                                    onError={(e) => {
+                                      console.error("❌ Image failed to load:", { src: image, error: e });
+                                      e.target.style.display = "none";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-16 h-16 bg-gray-100 rounded border border-gray-200 flex items-center justify-center">
+                                    <span className="text-xs text-gray-400">
+                                      No Image
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             {/* Item Name */}
@@ -1172,7 +1445,7 @@ const Quotation = () => {
 
                             {/* Total */}
                             <td className="px-2 py-2 text-right font-bold text-gray-900 w-28">
-                              {netAmount.toFixed(2)}
+                              {formatNumber(netAmount)}
                             </td>
 
                             {/* Actions */}
@@ -1189,14 +1462,7 @@ const Quotation = () => {
                                   <FileText size={16} />
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    setQuotationData((prev) => ({
-                                      ...prev,
-                                      items: prev.items.filter(
-                                        (_, i) => i !== idx,
-                                      ),
-                                    }));
-                                  }}
+                                  onClick={() => removeItem(idx)}
                                   className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-md transition"
                                   title="Remove item"
                                 >
@@ -1235,7 +1501,7 @@ const Quotation = () => {
                     <div className="flex items-center justify-between w-32 gap-0.5 bg-white px-1 py-0.5 rounded border border-gray-200 text-xs">
                       <span className="font-semibold">Subtotal:</span>
                       <span className="font-bold text-blue-600">
-                        {(quotationData.subtotal || 0).toFixed(2)}
+                        {formatNumber(quotationData.subtotal || 0)}
                       </span>
                     </div>
 
@@ -1294,7 +1560,7 @@ const Quotation = () => {
                     <div className="flex items-center justify-between w-48 gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
                       <span className="font-semibold">Total Ex.Tax:</span>
                       <span className="font-bold text-blue-600">
-                        {(quotationData.totalAfterDiscount || 0).toFixed(2)}
+                        {formatNumber(quotationData.totalAfterDiscount || 0)}
                       </span>
                     </div>
 
@@ -1302,7 +1568,7 @@ const Quotation = () => {
                     <div className="flex items-center justify-between w-32 gap-0.5 bg-white px-1.5 py-0.5 rounded border border-gray-200">
                       <span className="font-semibold">VAT :</span>
                       <span className="font-bold text-blue-600">
-                        {(quotationData.vatAmount || 0).toFixed(2)}
+                        {formatNumber(quotationData.vatAmount || 0)}
                       </span>
                     </div>
 
@@ -1310,7 +1576,7 @@ const Quotation = () => {
                     <div className="flex items-center justify-between w-40 gap-0.5 bg-yellow-100 px-1.5 py-0.5 rounded border border-yellow-300">
                       <span className="font-semibold">Net Total :</span>
                       <span className="font-bold text-yellow-700">
-                        {(quotationData.totalIncludeVat || 0).toFixed(2)}
+                        {formatNumber(quotationData.totalIncludeVat || 0)}
                       </span>
                     </div>
                   </div>
@@ -1335,51 +1601,59 @@ const Quotation = () => {
 
                     {/* Action Buttons */}
                     <div className="flex gap-2 flex-shrink-0">
+                      {/* ✅ History Button - Fetch and display history modal */}
                       <button
                         type="button"
                         onClick={() => {
-                          setEditId(null);
-                          setQuotationData({
-                            quotationNo: "001",
-                            quotationDate: new Date()
-                              .toISOString()
-                              .split("T")[0],
-                            expiryDate: new Date(
-                              Date.now() + 30 * 24 * 60 * 60 * 1000,
-                            )
-                              .toISOString()
-                              .split("T")[0],
-                            paymentType: "",
-                            paymentTerms: "",
-                            partyName: "",
-                            partyPhone: "",
-                            partyTRN: "",
-                            partyAddress: "",
-                            partyContact: "",
-                            discount: 0,
-                            discountAmount: 0,
-                            items: [],
-                            notes: "",
-                            terms: "",
-                            status: "Draft",
-                          });
-                          setSelectedCustomerId(null);
-                          setCustomerSearch("");
-                          setShowCustomerDropdown(false);
+                          setShowHistoryModal(true);
+                          fetchQuotations();
                         }}
+                        className="px-5 py-2 text-xm border border-purple-600 text-purple-600 rounded hover:bg-purple-50 transition-colors font-medium whitespace-nowrap flex items-center gap-1"
+                      >
+                        <Clock size={14} />
+                        History
+                      </button>
+
+                      {/* ✅ Reset Button - Calls resetForm function */}
+                      <button
+                        type="button"
+                        onClick={resetForm}
                         className="px-5 py-2 text-xm border border-blue-600 text-blue-600 rounded hover:bg-blue-50 transition-colors font-medium whitespace-nowrap"
                       >
                         Reset
                       </button>
 
+                      {/* ✅ Save Draft Button */}
                       <button
                         type="button"
-                        onClick={handleSaveQuotation}
+                        onClick={() => handleSaveQuotation("draft")}
+                        disabled={loading}
+                        className="px-5 py-2 text-xm bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        <Save className="w-3 h-3" />
+                        {loading ? "Saving..." : "Save Draft"}
+                      </button>
+
+                      {/* ✅ Regular Save/Update Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleSaveQuotation("save")}
                         disabled={loading}
                         className="px-5 py-2 text-xm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                       >
                         <Save className="w-3 h-3" />
                         {loading ? "Saving..." : editId ? "Update" : "Save"}
+                      </button>
+
+                      {/* ✅ Save & Print Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleSaveQuotation("print")}
+                        disabled={loading}
+                        className="px-5 py-2 text-xm bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        <Printer className="w-3 h-3" />
+                        {loading ? "Saving..." : "Save & Print"}
                       </button>
                     </div>
                   </div>
@@ -1392,7 +1666,7 @@ const Quotation = () => {
         {/* PRODUCT SEARCH DROPDOWN - Rendered at root level to escape parent overflow */}
         {showSearchDropdown &&
           searchDropdownRef.current &&
-          itemSearch.trim().length > 0 && (
+          itemSearch.trim() && (
             <div
               className="fixed bg-white border border-gray-200 rounded-xl shadow-2xl z-50 max-h-72 overflow-y-auto"
               style={{
@@ -1401,7 +1675,7 @@ const Quotation = () => {
                 width: `${searchDropdownRef.current.offsetWidth}px`,
               }}
             >
-              <div className="text-[10px] text-gray-400 px-4 py-2 border-b bg-gray-50 sticky top-0 flex justify-between items-center">
+              <div className="text-[10px] text-gray-400 px-4 py-2 border-b bg-gray-50 sticky top-0 z-20 flex justify-between items-center">
                 <span>↑↓ Navigate • Enter to add • Esc to close</span>
                 <span className="text-[9px]">
                   {searchMetadata?.totalCount || 0} of{" "}
@@ -1418,7 +1692,7 @@ const Quotation = () => {
 
               {!searchLoading &&
                 products.length === 0 &&
-                itemSearch.trim().length > 0 && (
+                itemSearch.trim() && (
                   <div className="px-4 py-8 text-center text-xs text-gray-400">
                     <Search className="w-5 h-5 mx-auto mb-2 opacity-50" />
                     <p>No products found</p>
@@ -1427,17 +1701,15 @@ const Quotation = () => {
 
               {!searchLoading && products.length > 0 && (
                 <>
-                  <div className="text-[10px] text-gray-400 px-4 py-1 bg-blue-50 sticky top-10 border-b">
-                    Showing {Math.min(50, products.length)} of {products.length} results
+                  <div className="text-[10px] text-gray-400 px-4 py-1 bg-blue-50 sticky top-10 z-10 border-b">
+                    Showing {filteredProducts.length} of {searchMetadata?.totalCount || 0} results
                   </div>
-                  {products.slice(0, 50).map((product, idx) => {
-                    const existingItem = quotationData.items.find(
-                      (item) => item.productId === product._id,
-                    );
+                  {filteredProducts.map((product, idx) => {
+                    const existingItem = existingProductsMap.get(product._id);
                     return (
                       <div
                         key={product._id}
-                        onClick={() => addItemFromSearch()}
+                        onClick={() => addItemFromSearch(product)}
                         onMouseEnter={() => setSelectedSearchIndex(idx)}
                         className={`px-4 py-3 cursor-pointer border-b border-gray-50 last:border-b-0 transition ${
                           idx === selectedSearchIndex
@@ -1448,11 +1720,11 @@ const Quotation = () => {
                         <div className="flex justify-between items-center">
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="font-semibold text-gray-800 text-sm">
+                              <p className="font-semibold text-gray-800">
                                 {product.itemname || product.name}
                               </p>
                               {existingItem && (
-                                <span className="bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded font-medium">
+                                <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full">
                                   ×{existingItem.quantity}
                                 </span>
                               )}
@@ -1473,8 +1745,7 @@ const Quotation = () => {
                           </div>
                           <div className="text-right mr-3">
                             <p className="font-bold text-green-600 text-sm">
-                              {product.salesprice?.toFixed(2) ||
-                                product.price?.toFixed(2)}
+                              {formatNumber(product.salesprice || product.price)}
                             </p>
                             <p
                               className={`text-xs font-semibold ${product.stock > 0 ? "text-green-600" : "text-red-600"}`}
@@ -1487,15 +1758,15 @@ const Quotation = () => {
                     );
                   })}
 
-                  {/* Show message if more products available */}
-                  {products.length > 50 && (
-                    <div className="px-4 py-3 border-t bg-yellow-50 text-center">
-                      <p className="text-xs text-yellow-700 font-medium">
-                        Showing first 50 of {products.length} results
-                      </p>
-                      <p className="text-[10px] text-yellow-600 mt-1">
-                        Type more to refine your search
-                      </p>
+                  {/* Load More Button - shown when more products available */}
+                  {searchMetadata?.hasNextPage && (
+                    <div className="sticky bottom-0 px-4 py-3 border-t bg-gray-50 flex justify-center">
+                      <button
+                        onClick={loadMoreProducts}
+                        className="text-xs px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                      >
+                        Load More Products ({products.length}/{searchMetadata?.totalCount || 0})
+                      </button>
                     </div>
                   )}
                 </>
@@ -1681,10 +1952,10 @@ const Quotation = () => {
                           {item.quantity}
                         </td>
                         <td className="px-1 py-1 text-right">
-                          {item.unitPrice?.toFixed(2)}
+                          {formatNumber(item.unitPrice || 0)}
                         </td>
                         <td className="px-1 py-1 text-right font-semibold">
-                          {item.total?.toFixed(2)}
+                          {formatNumber(item.total || 0)}
                         </td>
                       </tr>
                     ))}
@@ -1782,6 +2053,149 @@ const Quotation = () => {
                 >
                   Save Note
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ QUOTATION HISTORY MODAL */}
+        {showHistoryModal && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[85vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex justify-between items-center px-4 py-2 border-b bg-gray-50 flex-shrink-0">
+                <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <Clock size={16} className="text-purple-600" />
+                  Quotation History
+                </h2>
+                <button
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="px-4 py-2 border-b bg-white flex-shrink-0">
+                <div className="grid grid-cols-4 gap-2">
+                  {/* Date Filter */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={historyDateFilter}
+                      onChange={(e) => setHistoryDateFilter(e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Status Filter */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                      Status
+                    </label>
+                    <select
+                      value={filteredHistoryStatus}
+                      onChange={(e) => setFilteredHistoryStatus(e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="All">All</option>
+                      <option value="Draft">Draft</option>
+                      <option value="Final">Final</option>
+                    </select>
+                  </div>
+
+                  {/* Search Filter */}
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                      Search
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Customer or Quotation #"
+                      value={historySearch}
+                      onChange={(e) => setHistorySearch(e.target.value)}
+                      className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Quotations Table */}
+              <div className="flex-1 overflow-y-auto">
+                {filteredHistoryQuotations.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">
+                    {quotations.length === 0
+                      ? "No quotations found"
+                      : historySearch.trim()
+                      ? `No quotations found for "${historySearch}" on ${historyDateFilter}`
+                      : `No quotations found for ${historyDateFilter}`}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-100 border-b border-gray-300 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-800">SL</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-800">Quotation #</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-800">Date</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-800">Customer</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-800">Items</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-800">Qty</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-800">Total</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-800">Status</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-800 w-32">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredHistoryQuotations.map((quotation, idx) => (
+                          <tr key={quotation._id} className="border-b border-gray-200 hover:bg-blue-50 transition">
+                            <td className="px-3 py-2 text-center text-gray-700 font-semibold">{idx + 1}</td>
+                            <td className="px-3 py-2 font-semibold text-blue-600">#{quotation.quotationNumber}</td>
+                            <td className="px-3 py-2 text-center text-gray-600">
+                              {new Date(quotation.date).toLocaleDateString()}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">{quotation.customerName}</td>
+                            <td className="px-3 py-2 text-center text-gray-700">{quotation.items?.length || 0}</td>
+                            <td className="px-3 py-2 text-center font-semibold text-gray-800">
+                              {quotation.items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">
+                              {formatNumber(quotation.totalIncludeVat || quotation.subtotal || 0)}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                quotation.status === 'Final' 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {quotation.status}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex gap-1 justify-center">
+                                <button
+                                  onClick={() => {
+                                    handleEditQuotation(quotation);
+                                    setShowHistoryModal(false);
+                                  }}
+                                  title="Edit"
+                                  className="flex items-center justify-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded text-xs font-medium transition"
+                                >
+                                  <Edit2 size={11} />
+                                  Edit
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           </div>

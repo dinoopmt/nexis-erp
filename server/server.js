@@ -171,6 +171,31 @@ app.use('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/auth/forgot-password', authLimiter);
 
+// ✅ SERVE STATIC FILES: Product images stored on file system
+// Maps /images/* to server/images/* directory
+// Add explicit CORS headers for static files
+app.use('/images', (req, res, next) => {
+  // ✅ CORS headers for cross-origin image requests from React
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Max-Age', '86400');
+  res.header('Cache-Control', 'public, max-age=86400');
+  
+  // ✅ Handle OPTIONS preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.send();
+  }
+  
+  next();
+});
+
+app.use('/images', express.static(path.join(__dirname, 'images'), {
+  maxAge: '1d',  // Cache for 1 day
+  etag: false,   // Disable etag for performance
+}));
+console.log(`✅ Static image directory mapped to: ${path.join(__dirname, 'images')}`);
+
 // Request logging
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);

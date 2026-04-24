@@ -19,15 +19,6 @@ const QuotationSchema = new mongoose.Schema(
     expiryDate: {
       type: Date
     },
-    paymentType: {
-      type: String,
-      enum: ['Cash', 'Credit', 'Bank'],
-      default: null
-    },
-    paymentTerms: {
-      type: String,
-      default: null
-    },
     createdDate: { 
       type: Date, 
       default: Date.now 
@@ -101,27 +92,8 @@ const QuotationSchema = new mongoose.Schema(
       default: 0 
     },
 
-    // Profitability Analysis (Quotation Level)
-    totalCost: { 
-      type: Number, 
-      default: 0 
-    },
-    grossProfit: { 
-      type: Number, 
-      default: 0 
-    },
-    grossProfitMargin: { 
-      type: Number, 
-      default: 0 
-    },
-    netProfit: { 
-      type: Number, 
-      default: 0 
-    },
-    netProfitMargin: { 
-      type: Number, 
-      default: 0 
-    },
+    // ✅ REMOVED: Profitability Analysis (not required for quotation)
+    // totalCost, grossProfit, grossProfitMargin, netProfit, netProfitMargin removed
 
     // Notes
     notes: { 
@@ -178,22 +150,7 @@ const QuotationSchema = new mongoose.Schema(
           type: Number, 
           default: 0 
         },
-        grossProfit: { 
-          type: Number, 
-          default: 0 
-        },
-        grossProfitMargin: { 
-          type: Number, 
-          default: 0 
-        },
-        netProfit: { 
-          type: Number, 
-          default: 0 
-        },
-        netProfitMargin: { 
-          type: Number, 
-          default: 0 
-        },
+        // ✅ REMOVED: grossProfit, grossProfitMargin, netProfit, netProfitMargin (not required for quotation items)
         vatPercentage: { 
           type: Number, 
           default: 0 

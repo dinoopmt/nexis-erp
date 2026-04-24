@@ -24,6 +24,7 @@ import {
   bulkSyncToMeilisearch,
   resetAndSyncMeilisearch,
   cleanupMeilisearchOrphans,
+  fixMissingImagePaths,
   searchProducts,
   getProductByBarcode,
 } from "../controllers/productController.js";
@@ -119,6 +120,10 @@ router.post("/bulk-sync-meilisearch", bulkSyncToMeilisearch);
 // ================= RESET AND SYNC MEILISEARCH INDEX =================
 // ✅ Complete fresh rebuild - clears old/deleted data and re-indexes from DB
 router.post("/reset-sync-meilisearch", resetAndSyncMeilisearch);
+
+// ================= FIX MISSING IMAGEPATH FIELDS =================
+// ✅ Set imagePath to null for all products that don't have it
+router.post("/fix-missing-imagepaths", fixMissingImagePaths);
 
 // ================= CLEANUP ORPHANED MEILISEARCH PRODUCTS =================
 // ✅ Remove products from Meilisearch that were hard-deleted from DB
