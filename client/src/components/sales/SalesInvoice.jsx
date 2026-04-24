@@ -32,7 +32,7 @@ import { normalizeBarcode } from "../../utils/barcodeUtils";
 import { CompanyContext } from "../../context/CompanyContext";
 import { useTerminalFeature } from "../../context/TerminalContext";
 import InvoiceViewModal from "./salesInvoice/InvoiceViewModal";
-import ProductLookupModal from "./salesInvoice/ProductLookupModal";
+import ProductLookupModal from "./modals/ProductLookupModal";
 import InvoicePrintingComponent from "./salesInvoice/InvoicePrintingComponent";
 
 const SalesInvoice = () => {
@@ -2537,17 +2537,14 @@ const SalesInvoice = () => {
 
       {/* PRODUCT LOOKUP MODAL */}
       <ProductLookupModal
-        showProductLookup={showProductLookup}
-        setShowProductLookup={setShowProductLookup}
+        show={showProductLookup}
+        onClose={() => setShowProductLookup(false)}
+        itemSearch={itemSearch}
+        onSearchChange={setItemSearch}
         filteredProducts={filteredProducts}
-        addItemFromSearch={addItemFromSearch}
+        onAddProduct={addItemFromSearch}
         config={config}
         formatNumber={formatNumber}
-        itemSearch={itemSearch}
-        setItemSearch={setItemSearch}
-        loadMoreProducts={loadMoreProducts}
-        products={products}
-        searchMetadata={searchMetadata}
       />
 
       {/* ITEM NOTE MODAL */}
