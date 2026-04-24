@@ -17,7 +17,6 @@ import {
   Clock,
   Package,
   Copy,
-  Eye,
   Edit2,
   Hash,
 } from "lucide-react";
@@ -31,7 +30,6 @@ import { createBarcodeHandler } from "../../utils/barcodeHandler";
 import { normalizeBarcode } from "../../utils/barcodeUtils";
 import { CompanyContext } from "../../context/CompanyContext";
 import { useTerminalFeature } from "../../context/TerminalContext";
-import InvoiceViewModal from "./salesInvoice/InvoiceViewModal";
 import ProductLookupModal from "./modals/ProductLookupModal";
 import InvoicePrintingComponent from "./salesInvoice/InvoicePrintingComponent";
 
@@ -155,7 +153,6 @@ const SalesInvoice = () => {
   const [editId, setEditId] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showProductLookup, setShowProductLookup] = useState(false);
-  const [viewedInvoice, setViewedInvoice] = useState(null);
   const [showPrintingModal, setShowPrintingModal] = useState(false);
   const [invoiceToView, setInvoiceToView] = useState(null);
   const [savedInvoiceId, setSavedInvoiceId] = useState(null); // For Save & Print flow
@@ -340,7 +337,6 @@ const SalesInvoice = () => {
       setActiveErrorId(null);
       setActiveValidationId(null);
       setLastErrorBarcode(null);
-      setViewedInvoice(null);
       setEditId(null);
     } catch (err) {
       console.error('Error resetting form:', err);
@@ -1438,7 +1434,6 @@ const SalesInvoice = () => {
       setEditId(null);
       setActiveErrorId(null);
       setActiveValidationId(null);
-      setViewedInvoice(null);
       await resetForm();
       showToast("Invoice saved successfully", "success", 3000);
       return { success: true, invoiceId: savedInvoiceId };
@@ -2492,16 +2487,7 @@ const SalesInvoice = () => {
                                 <Printer size={11} />
                                 Print
                               </button>
-                              <button
-                                onClick={() => {
-                                  setViewedInvoice(invoice);
-                                }}
-                                title="View"
-                                className="flex items-center justify-center gap-1 px-1.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded text-xs font-medium transition"
-                              >
-                                <Eye size={11} />
-                                View
-                              </button>
+
                             </div>
                           </td>
                         </tr>
@@ -2515,13 +2501,7 @@ const SalesInvoice = () => {
         </div>
       )}
 
-      {/* INVOICE VIEW MODAL */}
-      <InvoiceViewModal 
-        viewedInvoice={viewedInvoice} 
-        setViewedInvoice={setViewedInvoice} 
-        config={company} 
-        formatNumber={formatNumber} 
-      />
+
 
       {/* INVOICE PRINTING & PDF MODAL - Terminal Template Mapped */}
       {showPrintingModal && invoiceToView && (
