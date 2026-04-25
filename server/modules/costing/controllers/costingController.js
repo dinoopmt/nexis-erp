@@ -135,7 +135,7 @@ export const updateBatch = async (req, res) => {
     const batch = await InventoryBatch.findByIdAndUpdate(
       id,
       updates,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     )
       .populate('productId', 'name sku')
       .populate('vendorId', 'name');

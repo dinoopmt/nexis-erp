@@ -356,17 +356,25 @@ const pdfAPI = {
    * @param {string} apiUrl - API base URL
    * Returns: Promise<{ success, message }>
    */
-  printInvoiceA4Silent: (invoiceId, templateId, terminalId, printerName, apiUrl) =>
-    ipcRenderer.invoke("pdf:print-invoice-a4", invoiceId, templateId, terminalId, printerName, apiUrl),
+  /**
+   * Generic A4 silent print for all document types
+   * Direct HTML printing - no PDF generation needed
+   * Uses terminal-mapped printer if configured
+   * @param {string} documentType - 'INVOICE'|'QUOTATION'|'SALES_ORDER'|'DELIVERY_NOTE'|'SALES_RETURN'
+   * @param {string} documentId - Document ID
+   * @param {string} templateId - Template ID from terminal formatMapping
+   * @param {string} terminalId - Terminal ID
+   * @param {string} printerName - Printer name from terminal settings (undefined = system default)
+   * @param {string} apiUrl - API base URL
+   * Returns: Promise<{ success, message }>
+   */
+  printDocumentA4Silent: (documentType, documentId, templateId, terminalId, printerName, apiUrl) =>
+    ipcRenderer.invoke("pdf:print-document-a4", documentType, documentId, templateId, terminalId, printerName, apiUrl),
 
   /**
-   * Print PDF blob directly to printer
+   * Print PDF blob directly to printer (legacy)
    * @param {ArrayBuffer} blob - PDF blob to print
    * @param {object} options - Print options
-   *   - silent: boolean (default: true)
-   *   - printBackground: boolean (default: true)
-   *   - pageSize: string (default: 'A4')
-   *   - printerName: string (optional - uses configured/default printer if not specified)
    * Returns: Promise<{ success, message }>
    */
   printBlob: (blob, options = {}) =>

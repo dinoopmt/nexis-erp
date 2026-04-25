@@ -133,7 +133,7 @@ class ProductPackingService {
       }
 
       const packing = await ProductPacking.findByIdAndUpdate(packingId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       })
         .populate('unitType')
@@ -332,7 +332,7 @@ class ProductPackingService {
       const packing = await ProductPacking.findByIdAndUpdate(
         packingId,
         { stock: quantity },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
 
       if (!packing) {

@@ -17,7 +17,7 @@ class PurchaseReturnService {
       const sequence = await SequenceModel.findOneAndUpdate(
         { name: 'PURCHASE_RETURN' },
         { $inc: { value: 1 } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       return `PRET-${String(sequence.value).padStart(6, '0')}`;
@@ -279,7 +279,7 @@ class PurchaseReturnService {
       const sequence = await SequenceModel.findOneAndUpdate(
         { name: 'CREDIT_NOTE' },
         { $inc: { value: 1 } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       const creditNoteNumber = `CN-${String(sequence.value).padStart(6, '0')}`;

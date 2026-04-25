@@ -21,6 +21,7 @@ import {
 import axios from "axios";
 import { API_URL } from "../../config/config";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
+import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
 
 const DeliveryNote = () => {
   // Get company data for country-based filtering
@@ -62,6 +63,8 @@ const DeliveryNote = () => {
   const [editId, setEditId] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [viewedNote, setViewedNote] = useState(null);
+  const [showPrintingModal, setShowPrintingModal] = useState(false);
+  const [savedNoteId, setSavedNoteId] = useState(null); // For Save & Print flow
   const [historyDateFilter, setHistoryDateFilter] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -317,10 +320,25 @@ const DeliveryNote = () => {
 
       setEditId(null);
       setDeliveryNotes([...deliveryNotes, response.data]);
+      
+      // ✅ Return success with delivery note ID for Save & Print flow
+      return { success: true, noteId: response.data._id };
     } catch (err) {
       showToast("error", err.response?.data?.error || "Error saving delivery note");
+      return { success: false };
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Save and Print - opens printing modal with terminal template
+  const handleSaveAndPrint = async () => {
+    const result = await handleSaveDeliveryNote();
+    if (result?.success) {
+      setSavedNoteId(result.noteId);
+      setViewedNote({ _id: result.noteId });
+      setShowPrintingModal(true);
+      console.log('✅ Delivery note saved and print modal opened:', result.noteId);
     }
   };
 
@@ -779,13 +797,21 @@ const DeliveryNote = () => {
                   <Save size={16} />
                   {loading ? "Saving..." : editId ? "Update Note" : "Create Note"}
                 </button>
+                <button
+                  onClick={handleSaveAndPrint}
+                  disabled={loading}
+                  className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Printer size={16} />
+                  {loading ? "Saving..." : "Save & Print"}
+                </button>
               </div>
             </div>
           </div>
 
           {/* HISTORY MODAL */}
           {showHistoryModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 40 }}>
               <div className="bg-white rounded-lg shadow-2xl max-w-5xl w-full max-h-96 flex flex-col">
                 <div className="flex justify-between items-center p-4 border-b">
                   <h2 className="text-lg font-bold text-gray-800">Delivery Notes History</h2>
@@ -886,85 +912,17 @@ const DeliveryNote = () => {
             </div>
           )}
 
-          {/* VIEW MODAL */}
-          {viewedNote && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-96 flex flex-col">
-                <div className="flex justify-between items-center p-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
-                  <h2 className="text-lg font-bold">DN # {viewedNote.deliveryNoteNumber}</h2>
-                  <button
-                    onClick={() => setViewedNote(null)}
-                    className="text-white bg-gray-600 hover:bg-gray-700 w-8 h-8 flex items-center justify-center rounded transition-colors text-sm"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="p-4 border-b grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="font-bold text-gray-700">Customer:</span>
-                    <p className="text-gray-600">{viewedNote.customerName}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-gray-700">Vehicle:</span>
-                    <p className="text-gray-600">{viewedNote.vehicleNumber}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-gray-700">Driver:</span>
-                    <p className="text-gray-600">{viewedNote.driverName}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-gray-700">Status:</span>
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${statusColors[viewedNote.status]}`}>
-                      {viewedNote.status}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-auto p-4">
-                  <h3 className="text-sm font-bold text-gray-800 mb-2">Delivery Items</h3>
-                  <table className="w-full text-xs border-collapse border border-gray-300">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="border px-2 py-1 text-left">Product</th>
-                        <th className="border px-2 py-1 text-right">Ordered</th>
-                        <th className="border px-2 py-1 text-right">Delivered</th>
-                        <th className="border px-2 py-1 text-right">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {viewedNote.items?.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="border px-2 py-1">{item.itemName}</td>
-                          <td className="border px-2 py-1 text-right">{item.orderedQuantity}</td>
-                          <td className="border px-2 py-1 text-right font-bold text-green-600">{item.deliveredQuantity}</td>
-                          <td className="border px-2 py-1 text-right">{item.orderedQuantity - item.deliveredQuantity}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="p-4 border-t flex gap-2 justify-end">
-                  <button
-                    onClick={() => setViewedNote(null)}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded font-medium transition"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleEditNote(viewedNote);
-                      setViewedNote(null);
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition flex items-center gap-1.5"
-                  >
-                    <Edit2 size={14} />
-                    Edit
-                  </button>
-                </div>
-              </div>
-            </div>
+          {/* DELIVERY NOTE PRINTING & PDF MODAL - Terminal Template Mapped */}
+          {showPrintingModal && viewedNote && (
+            <GlobalDocumentPrintingComponent
+              documentType="DELIVERY_NOTE"
+              documentId={viewedNote._id}
+              onClose={() => {
+                setShowPrintingModal(false);
+                setViewedNote(null);
+                setSavedNoteId(null);
+              }}
+            />
           )}
         </div>
       </div>

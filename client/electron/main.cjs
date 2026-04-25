@@ -578,16 +578,16 @@ function setupPrinterIPC() {
 
 // ================== IPC HANDLERS - PDF API (Printing) ==================
 function setupPdfIPC() {
-  // A4 Silent Print - HTML invoice directly to printer (NO PDF generation)
-  ipcMain.handle("pdf:print-invoice-a4", async (event, invoiceId, templateId, terminalId, printerName, apiUrl) => {
+  // A4 Silent Print - Generic handler for all document types
+  ipcMain.handle("pdf:print-document-a4", async (event, documentType, documentId, templateId, terminalId, printerName, apiUrl) => {
     return new Promise((resolve, reject) => {
       try {
-        console.log('\n📥 [IPC] pdf:print-invoice-a4 handler called');
-        console.log(`   invoiceId: ${invoiceId}`);
+        console.log('\n📥 [IPC] pdf:print-document-a4 handler called');
+        console.log(`   documentType: ${documentType}`);
+        console.log(`   documentId: ${documentId}`);
         console.log(`   templateId: ${templateId}`);
         console.log(`   terminalId: ${terminalId}`);
         console.log(`   printerName: ${printerName}`);
-        console.log(`   apiUrl: ${apiUrl}`);
 
         const { BrowserWindow } = require('electron');
 
@@ -603,30 +603,59 @@ function setupPdfIPC() {
 
         console.log('📄 Created hidden print window');
 
+        // Map document type to endpoint
+        const endpointMap = {
+          'INVOICE': '/invoices',
+          'QUOTATION': '/quotations',
+          'SALES_ORDER': '/sales-orders',
+          'DELIVERY_NOTE': '/delivery-notes',
+          'SALES_RETURN': '/sales-returns'
+        };
+
+        const endpoint = endpointMap[documentType] || '/documents';
+
         // Build print URL with store data
-        const printUrl = `${apiUrl}/invoices/${invoiceId}/html?templateId=${templateId}&terminalId=${terminalId}&print=true`;
+        const printUrl = `${apiUrl}${endpoint}/${documentId}/html?templateId=${templateId}&terminalId=${terminalId}&print=true`;
         console.log(`   Print URL: ${printUrl}`);
 
-        // Load the invoice HTML
+        // Load the document HTML
         printWindow.loadURL(printUrl);
 
         // When HTML loads, send to printer
         printWindow.webContents.on('did-finish-load', () => {
-          console.log('✅ Invoice HTML loaded');
+          console.log(`✅ ${documentType} HTML loaded`);
           console.log('🖨️ Sending to printer with A4 settings...');
 
-          // Print with A4 settings
-          printWindow.webContents.print({
+          // Build print options
+          const printOptions = {
             silent: true,              // No print dialog
             printBackground: true,     // Print background colors/images
-            deviceName: printerName,   // Exact printer name
             pageSize: 'A4',            // A4 paper
             margins: { marginType: 'none' }  // Use CSS margins
-          }, (success) => {
+          };
+
+          // Only add deviceName if a specific printer is provided
+          if (printerName) {
+            printOptions.deviceName = printerName;
+          }
+
+          printWindow.webContents.print(printOptions, (success) => {
             if (success) {
               console.log('✅ Print job queued successfully');
             } else {
-              console.error('❌ Print command failed');
+              console.error('❌ Print command failed, attempting fallback...');
+              // Fallback without printer name
+              const fallbackOptions = {
+                silent: true,
+                printBackground: true,
+                pageSize: 'A4',
+                margins: { marginType: 'none' }
+              };
+              printWindow.webContents.print(fallbackOptions, () => {
+                printWindow.close();
+              });
+              resolve({ success: true, message: 'Print job sent (fallback)' });
+              return;
             }
             printWindow.close();
             resolve({ success: true, message: 'Print job sent' });

@@ -148,7 +148,7 @@ class InventoryService {
       const product = await Product.findByIdAndUpdate(
         productId,
         { $set: updateData },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
 
       if (!product) {
@@ -177,7 +177,7 @@ class InventoryService {
       const product = await Product.findByIdAndUpdate(
         productId,
         { $set: { isDeleted: true } },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!product) {
@@ -295,7 +295,7 @@ class InventoryService {
       const product = await Product.findByIdAndUpdate(
         productId,
         { $inc: { stock: quantity } },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!product) {

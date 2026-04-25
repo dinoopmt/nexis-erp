@@ -283,7 +283,7 @@ class ProductService {
       }
 
       const updated = await Product.findByIdAndUpdate(productId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       })
         .populate('categoryId', 'groupingName')
@@ -304,7 +304,7 @@ class ProductService {
    */
   async deleteProduct(productId) {
     try {
-      const product = await Product.findByIdAndUpdate(productId, { isDeleted: true }, { new: true });
+      const product = await Product.findByIdAndUpdate(productId, { isDeleted: true }, { returnDocument: 'after' });
 
       if (!product) {
         const error = new Error('Product not found');
@@ -582,7 +582,7 @@ class ProductService {
           productId,
           updatedAt: new Date()
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!queueEntry) {

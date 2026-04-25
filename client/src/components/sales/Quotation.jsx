@@ -36,6 +36,7 @@ import { useDecimalFormat } from "../../hooks/useDecimalFormat";
 import { CompanyContext } from "../../context/CompanyContext";
 import { showToast } from "../shared/AnimatedCenteredToast";
 import { clearAllCache } from "../../utils/searchCache";
+import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
 
 const Quotation = () => {
   const { company } = useContext(CompanyContext);
@@ -148,11 +149,14 @@ const Quotation = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showProductLookup, setShowProductLookup] = useState(false);
   const [viewedQuotation, setViewedQuotation] = useState(null);
+  const [showPrintingModal, setShowPrintingModal] = useState(false);
+  const [savedQuotationId, setSavedQuotationId] = useState(null); // For Save & Print flow
   const [historyDateFilter, setHistoryDateFilter] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [historySearch, setHistorySearch] = useState("");
-  const [filteredHistoryStatus, setFilteredHistoryStatus] = useState("All");
+  const [filteredHistoryStatus, setFilteredHistoryStatus] = useState("Draft");
+  const [historyQuotationIdPreview, setHistoryQuotationIdPreview] = useState(null); // For history preview
   const [financialYear, setFinancialYear] = useState("2025-26");
 
   const [customers, setCustomers] = useState([]);
@@ -675,8 +679,13 @@ const Quotation = () => {
 
     try {
       setLoading(true);
-      
-      // ✅ GENERATE NUMBER ON SAVE (like GRN) - only for new quotations
+
+      console.log("📝 ItemNotes before save:", itemNotes);
+      console.log("📝 Quotation items:", quotationData.items.map((item, idx) => ({
+        itemName: item.itemName,
+        note_from_state: itemNotes[idx],
+        note_from_item: item.note
+      })));
       let quotationNumber = quotationData.quotationNo;
       if (!quotationNumber && !editId) {
         try {
@@ -748,6 +757,7 @@ const Quotation = () => {
           vatAmount: item.vatAmount || 0,
           total: (item.amountAfterDiscount || 0) + (item.vatAmount || 0),
           note: itemNotes[idx] || item.note || "", // ✅ Include itemwise notes
+          image: item.image || item.imagePath || "", // ✅ Include item image for template rendering
         })),
       };
 
@@ -764,70 +774,49 @@ const Quotation = () => {
           : "Quotation created successfully",
       );
 
-      // ✅ Handle print mode - with image preload
+      // ✅ Handle print mode - Open printing modal instead of browser print
       if (mode === "print" && response.data._id) {
-        // ✅ PERFORMANCE: Preload all images before printing to prevent blank images
-        const imagesToPreload = quotationData.items
-          .map((item) => {
-            let image = item.image;
-            if (!image) {
-              const product = productsMap.get(item.productId);
-              image = product?.imagePath;
-            }
-            // ✅ Fix image URL: prepend "/" if it's a file path (for Vite proxy)
-            if (image && image.startsWith('images/')) {
-              image = '/' + image;
-            }
-            return image;
-          })
-          .filter((img) => img); // Remove nulls
-        
-        if (imagesToPreload.length > 0) {
-          Promise.all(
-            imagesToPreload.map(
-              (src) =>
-                new Promise((resolve) => {
-                  const img = new Image();
-                  img.onload = img.onerror = resolve;
-                  img.src = src;
-                }),
-            ),
-          ).then(() => {
-            setTimeout(() => window.print(), 300);
-          });
-        } else {
-          setTimeout(() => {
-            window.print();
-          }, 300);
-        }
+        setSavedQuotationId(response.data._id);
+        setViewedQuotation(response.data);
+        setShowPrintingModal(true);
+        console.log('✅ Quotation saved and print modal opened:', response.data._id);
       }
 
-      if (!editId) {
-        // ✅ Reset form for next quotation (number will be generated on next save - like GRN)
-        setQuotationData({
-          quotationNo: "", // ✅ Empty - will be generated on next save
-          quotationDate: new Date().toISOString().split("T")[0],
-          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-            .toISOString()
-            .split("T")[0],
-          partyName: "",
-          partyPhone: "",
-          partyTRN: "",
-          partyAddress: "",
-          partyContact: "",
-          discount: 0,
-          discountAmount: 0,
-          items: [],
-          notes: "",
-          terms: "",
-          status: "Draft",
-          vatAmount: 0,
-        });
-        setSelectedCustomerId(null);
+      // ✅ Update quotations list correctly for both create and update
+      if (editId) {
+        // UPDATE: Replace the existing quotation in the array
+        setQuotations(
+          quotations.map((q) => (q._id === editId ? response.data : q))
+        );
+      } else {
+        // CREATE: Add new quotation to the array
+        setQuotations([...quotations, response.data]);
       }
+
+      // ✅ ALWAYS reset form after save (edit or create) - ready for new quotation
+      setQuotationData({
+        quotationNo: "", // ✅ Empty - will be generated on next save - like GRN
+        quotationDate: new Date().toISOString().split("T")[0],
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0],
+        partyName: "",
+        partyPhone: "",
+        partyTRN: "",
+        partyAddress: "",
+        partyContact: "",
+        discount: 0,
+        discountAmount: 0,
+        items: [],
+        notes: "",
+        terms: "",
+        status: "Draft",
+        vatAmount: 0,
+      });
+      setSelectedCustomerId(null);
 
       setEditId(null);
-      setQuotations([...quotations, response.data]);
+      setItemNotes({}); // ✅ Clear item notes after save
     } catch (err) {
       showToast("error", err.response?.data?.error || "Error saving quotation");
     } finally {
@@ -881,7 +870,8 @@ const Quotation = () => {
     // ✅ PERFORMANCE: Use O(1) map lookup instead of O(n) find()
     const enrichedItems = quotation.items.map((item) => {
       const product = productsMap.get(item.productId);
-      const imageToUse = product?.imagePath || product?.image || (product?.images && product.images[0]) || null;
+      // ✅ Preserve stored image, fallback to product image if not stored
+      const imageToUse = item.image || product?.imagePath || product?.image || (product?.images && product.images[0]) || null;
       return {
         ...item,
         image: imageToUse, // ✅ Add image for display/print
@@ -910,6 +900,16 @@ const Quotation = () => {
       totalItems: quotation.totalItems,
       vatAmount: quotation.vatAmount || 0, // ✅ Include VAT amount
     });
+    
+    // ✅ Populate itemNotes state from existing item notes
+    const notesMap = {};
+    quotation.items.forEach((item, idx) => {
+      if (item.note) {
+        notesMap[idx] = item.note;
+      }
+    });
+    setItemNotes(notesMap);
+    
     setSelectedCustomerId(quotation.customerId);
     window.scrollTo(0, 0);
   };
@@ -938,6 +938,13 @@ const Quotation = () => {
     } catch (err) {
       showToast("error", "Error updating status");
     }
+  };
+
+  // ✅ Handle history quotation preview - open GlobalDocumentPrintingComponent
+  const handleHistoryPreview = (quotation) => {
+    setViewedQuotation({ _id: quotation._id });
+    setShowPrintingModal(true);
+    // Keep history modal open - printing modal will layer on top
   };
 
   const handleTableCellKeyDown = (e, index, field) => {
@@ -1601,19 +1608,6 @@ const Quotation = () => {
 
                     {/* Action Buttons */}
                     <div className="flex gap-2 flex-shrink-0">
-                      {/* ✅ History Button - Fetch and display history modal */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHistoryModal(true);
-                          fetchQuotations();
-                        }}
-                        className="px-5 py-2 text-xm border border-purple-600 text-purple-600 rounded hover:bg-purple-50 transition-colors font-medium whitespace-nowrap flex items-center gap-1"
-                      >
-                        <Clock size={14} />
-                        History
-                      </button>
-
                       {/* ✅ Reset Button - Calls resetForm function */}
                       <button
                         type="button"
@@ -1879,127 +1873,17 @@ const Quotation = () => {
           </div>
         )}
 
-        {/* View Modal */}
-        {showHistoryModal && viewedQuotation && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
-            <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-96 overflow-y-auto p-4">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-bold text-gray-900">
-                  Quotation: {viewedQuotation.quotationNumber}
-                </h3>
-                <button
-                  onClick={() => {
-                    setShowHistoryModal(false);
-                    setViewedQuotation(null);
-                  }}
-                  className="text-white bg-gray-600 hover:bg-gray-700 w-8 h-8 flex items-center justify-center rounded transition-colors text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3 pb-3 border-b">
-                <div>
-                  <p className="text-xs text-gray-600">Customer</p>
-                  <p className="font-semibold text-xs">
-                    {viewedQuotation.customerName}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600">Date</p>
-                  <p className="font-semibold text-xs">
-                    {new Date(viewedQuotation.date).toLocaleDateString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600">Expiry</p>
-                  <p className="font-semibold text-xs">
-                    {viewedQuotation.expiryDate
-                      ? new Date(
-                          viewedQuotation.expiryDate,
-                        ).toLocaleDateString()
-                      : "-"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600">Status</p>
-                  <p
-                    className={`font-semibold px-1.5 py-0.5 rounded inline-block text-xs ${
-                      statusColors[viewedQuotation.status] || statusColors.Draft
-                    }`}
-                  >
-                    {viewedQuotation.status}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mb-3">
-                <h4 className="font-semibold text-xs mb-2">Items</h4>
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-100 text-xs">
-                    <tr>
-                      <th className="px-1 py-1 text-left">Product</th>
-                      <th className="px-1 py-1 text-right">Qty</th>
-                      <th className="px-1 py-1 text-right">Price</th>
-                      <th className="px-1 py-1 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewedQuotation.items.map((item, idx) => (
-                      <tr key={idx} className="border-b text-xs">
-                        <td className="px-1 py-1">{item.itemName}</td>
-                        <td className="px-1 py-1 text-right">
-                          {item.quantity}
-                        </td>
-                        <td className="px-1 py-1 text-right">
-                          {formatNumber(item.unitPrice || 0)}
-                        </td>
-                        <td className="px-1 py-1 text-right font-semibold">
-                          {formatNumber(item.total || 0)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t">
-                <div>
-                  <p className="text-xs text-gray-600">Total Amount</p>
-                  <p className="text-md font-bold">
-                    PKR {viewedQuotation.totalIncludeVat?.toFixed(2)}
-                  </p>
-                </div>
-                {viewedQuotation.notes && (
-                  <div>
-                    <p className="text-xs text-gray-600">Notes</p>
-                    <p className="text-xs">{viewedQuotation.notes}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 mt-4 justify-end">
-                <button
-                  onClick={() => {
-                    setShowHistoryModal(false);
-                    setViewedQuotation(null);
-                  }}
-                  className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    handleEditQuotation(viewedQuotation);
-                    setShowHistoryModal(false);
-                  }}
-                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Edit
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* QUOTATION PRINTING & PDF MODAL - Terminal Template Mapped */}
+        {showPrintingModal && viewedQuotation && (
+          <GlobalDocumentPrintingComponent
+            documentType="QUOTATION"
+            documentId={viewedQuotation._id}
+            onClose={() => {
+              setShowPrintingModal(false);
+              setViewedQuotation(null);
+              setSavedQuotationId(null);
+            }}
+          />
         )}
 
         {/* ITEM NOTE MODAL */}
@@ -2060,7 +1944,7 @@ const Quotation = () => {
 
         {/* ✅ QUOTATION HISTORY MODAL */}
         {showHistoryModal && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 40 }}>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl max-h-[85vh] flex flex-col">
               {/* Modal Header */}
               <div className="flex justify-between items-center px-4 py-2 border-b bg-gray-50 flex-shrink-0">
@@ -2177,6 +2061,14 @@ const Quotation = () => {
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex gap-1 justify-center">
+                                <button
+                                  onClick={() => handleHistoryPreview(quotation)}
+                                  title="Preview"
+                                  className="flex items-center justify-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-600 rounded text-xs font-medium transition"
+                                >
+                                  <Eye size={11} />
+                                  Preview
+                                </button>
                                 <button
                                   onClick={() => {
                                     handleEditQuotation(quotation);

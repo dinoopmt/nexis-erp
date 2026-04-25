@@ -88,7 +88,7 @@ class StockBatchService {
       const batch = await StockBatch.findByIdAndUpdate(
         batchId,
         updateData,
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
       if (batch) await this.updateProductExpiryStatus(batch.productId);
       return batch;

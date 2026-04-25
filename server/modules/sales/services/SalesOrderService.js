@@ -176,7 +176,7 @@ class SalesOrderService {
       }
 
       const order = await SalesOrder.findByIdAndUpdate(orderId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       });
 
@@ -201,7 +201,7 @@ class SalesOrderService {
    */
   async deleteSalesOrder(orderId) {
     try {
-      const order = await SalesOrder.findByIdAndUpdate(orderId, { isDeleted: true }, { new: true });
+      const order = await SalesOrder.findByIdAndUpdate(orderId, { isDeleted: true }, { returnDocument: 'after' });
 
       if (!order) {
         const error = new Error('Sales order not found');
@@ -231,7 +231,7 @@ class SalesOrderService {
         throw error;
       }
 
-      const order = await SalesOrder.findByIdAndUpdate(orderId, { status, updatedDate: new Date() }, { new: true });
+      const order = await SalesOrder.findByIdAndUpdate(orderId, { status, updatedDate: new Date() }, { returnDocument: 'after' });
 
       if (!order) {
         const error = new Error('Sales order not found');

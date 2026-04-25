@@ -143,7 +143,7 @@ const getNextItemCodeFromCounter = async () => {
         $inc: { lastNumber: 1 }  // ✅ ONLY increment, not setOnInsert (prevents conflicts)
       },
       {
-        new: true,  // ✅ Return updated document
+        returnDocument: 'after',  // ✅ Return updated document
         upsert: true,  // ✅ Create if doesn't exist
         setDefaultsOnInsert: true  // ✅ Set defaults on insert
       }
@@ -1540,7 +1540,7 @@ export const updateProductStock = async (req, res) => {
         stock: quantityNum,
         updateDate: new Date(),
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!product) {

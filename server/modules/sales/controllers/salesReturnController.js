@@ -11,7 +11,7 @@ export const getNextReturnNumber = async (req, res) => {
     const counter = await Counter.findOneAndUpdate(
       { module: 'sales_return', financialYear },
       { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SR' } },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     const paddedNumber = String(counter.lastNumber).padStart(4, '0');
     const returnNumber = `SR/${financialYear}/${paddedNumber}`;

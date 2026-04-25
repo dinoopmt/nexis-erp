@@ -106,9 +106,9 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
             </td>
             <td class="col-serial">{{join serialNumbers ', '}}</td>
             <td class="col-qty">{{returnQuantity}}</td>
-            <td class="col-rate">{{currency originalPrice 'AED' 2}}</td>
+            <td class="col-rate">{{currency originalPrice decimals=company.decimalPlaces}}</td>
             <td class="col-condition">{{condition}}</td>
-            <td class="col-amount">{{currency refundAmount 'AED' 2}}</td>
+            <td class="col-amount">{{currency refundAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/items}}
         </tbody>
@@ -118,17 +118,17 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
         <table class="totals-table">
           <tr>
             <td class="label">Original Total:</td>
-            <td class="value">{{currency return.originalTotal 'AED' 2}}</td>
+            <td class="value">{{currency return.originalTotal decimals=company.decimalPlaces}}</td>
           </tr>
           {{#return.deductions}}
           <tr>
             <td class="label">Deductions/Damage Charges:</td>
-            <td class="value">- {{currency return.deductions 'AED' 2}}</td>
+            <td class="value">- {{currency return.deductions decimals=company.decimalPlaces}}</td>
           </tr>
           {{/return.deductions}}
           <tr class="total-row">
             <td class="label">TOTAL REFUND:</td>
-            <td class="value">{{currency return.totalRefund 'AED' 2}}</td>
+            <td class="value">{{currency return.totalRefund decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>
@@ -305,9 +305,9 @@ export const SALES_RETURN_TEMPLATE_EN_WITHOUT_LOGO = {
             <td class="col-item">{{itemName}}</td>
             <td class="col-serial">{{join serialNumbers ', '}}</td>
             <td class="col-qty">{{returnQuantity}}</td>
-            <td class="col-rate">{{currency originalPrice 'AED' 2}}</td>
+            <td class="col-rate">{{currency originalPrice decimals=company.decimalPlaces}}</td>
             <td class="col-condition">{{condition}}</td>
-            <td class="col-amount">{{currency refundAmount 'AED' 2}}</td>
+            <td class="col-amount">{{currency refundAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/items}}
         </tbody>
@@ -317,7 +317,7 @@ export const SALES_RETURN_TEMPLATE_EN_WITHOUT_LOGO = {
         <table class="totals-table">
           <tr>
             <td class="label">Total Refund:</td>
-            <td class="value">{{currency return.totalRefund 'AED' 2}}</td>
+            <td class="value">{{currency return.totalRefund decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>

@@ -95,7 +95,7 @@ class PrinterConfigurationService {
       const updatedConfig = await PrinterConfiguration.findByIdAndUpdate(
         configId,
         { ...updateData, updatedBy: updateData.updatedBy || 'System' },
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       );
 
       if (!updatedConfig) {
@@ -118,7 +118,7 @@ class PrinterConfigurationService {
       await PrinterConfiguration.findByIdAndUpdate(
         configId,
         { deleted: true, updatedBy: 'System' },
-        { new: true }
+        { returnDocument: 'after' }
       );
       return true;
     } catch (error) {

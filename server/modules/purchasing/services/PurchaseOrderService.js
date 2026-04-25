@@ -17,7 +17,7 @@ class PurchaseOrderService {
       const sequence = await SequenceModel.findOneAndUpdate(
         { name: 'PO' },
         { $inc: { value: 1 } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       return `PO-${String(sequence.value).padStart(6, '0')}`;

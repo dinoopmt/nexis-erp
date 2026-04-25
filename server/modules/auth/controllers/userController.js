@@ -115,7 +115,7 @@ export const updateUser = async (req, res) => {
     }
 
     // Update user
-    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true }).populate(
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { returnDocument: 'after' }).populate(
       "role",
       "name description"
     );
@@ -158,7 +158,7 @@ export const updateLastLogin = async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { lastLogin: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate("role", "name description");
 
     res.status(200).json(updatedUser);

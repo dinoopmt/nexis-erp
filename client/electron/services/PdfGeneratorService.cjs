@@ -225,19 +225,41 @@ class PdfGeneratorService {
    * @param {string} apiUrl - API base URL
    * @returns {Promise<void>}
    */
-  static async printInvoiceA4Silent(invoiceId, templateId, terminalId, printerName, apiUrl) {
+  /**
+   * ✅ UNIFIED: A4 Silent Print for all document types (Invoice, Quotation, Order, Delivery, Return)
+   * Single generic method handles all sales documents
+   * @param {string} documentType - 'INVOICE'|'QUOTATION'|'SALES_ORDER'|'DELIVERY_NOTE'|'SALES_RETURN'
+   * @param {string} documentId - Document ID
+   * @param {string} templateId - Template ID from terminal config
+   * @param {string} terminalId - Terminal ID
+   * @param {string} printerName - Printer name from terminal config (undefined = system default)
+   * @param {string} apiUrl - API base URL (includes /api/v1)
+   * @returns {Promise<void>}
+   */
+  static async printDocumentA4Silent(documentType, documentId, templateId, terminalId, printerName, apiUrl) {
+    // Map document type to endpoint
+    const endpointMap = {
+      'INVOICE': '/invoices',
+      'QUOTATION': '/quotations',
+      'SALES_ORDER': '/sales-orders',
+      'DELIVERY_NOTE': '/delivery-notes',
+      'SALES_RETURN': '/sales-returns'
+    };
+
+    const endpoint = endpointMap[documentType] || '/documents';
+    const typeLabel = documentType.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+
     return new Promise((resolve, reject) => {
       try {
-        console.log('\n========== A4 INVOICE SILENT PRINT STARTED ==========');
+        console.log(`\n========== A4 ${documentType} SILENT PRINT STARTED ==========`);
         console.log(`🖨️ [Main] Starting A4 silent print...`);
-        console.log(`   Invoice ID: ${invoiceId}`);
+        console.log(`   Document Type: ${typeLabel}`);
+        console.log(`   Document ID: ${documentId}`);
         console.log(`   Terminal ID: ${terminalId}`);
-        console.log(`   Printer: ${printerName || 'DEFAULT'}`);
-        console.log(`   API URL: ${apiUrl}`);
+        console.log(`   Printer: ${printerName || 'SYSTEM DEFAULT'}`);
 
-        // Import BrowserWindow here to avoid circular dependencies
-        const { BrowserWindow, app } = require('electron');
-
+        const { BrowserWindow } = require('electron');
+        
         // Create hidden window for printing
         const printWindow = new BrowserWindow({
           show: false,
@@ -251,43 +273,47 @@ class PdfGeneratorService {
 
         console.log('📄 Created hidden print window');
 
-        // Build print URL - apiUrl already includes /api/v1, don't add it again
-        let printUrl = `${apiUrl}/invoices/${invoiceId}/html?templateId=${templateId}&terminalId=${terminalId}&print=true`;
+        // Build print URL with A4 query parameters
+        const printUrl = `${apiUrl}${endpoint}/${documentId}/html?templateId=${templateId}&terminalId=${terminalId}&print=true`;
         console.log(`   Print URL: ${printUrl}`);
 
-        // Load the HTML invoice in hidden window
-        console.log('📥 Loading invoice HTML into print window...');
+        console.log('📥 Loading HTML into print window...');
         printWindow.loadURL(printUrl);
 
         // When page finishes loading, send to printer
         printWindow.webContents.on('did-finish-load', () => {
-          console.log('✅ Invoice HTML loaded');
+          console.log(`✅ ${typeLabel} HTML loaded`);
           console.log('🖨️ Sending to printer with A4 settings...');
 
-          // Print with A4 settings
-          printWindow.webContents.print({
+          // Build print options
+          const printOptions = {
             silent: true,              // No print dialog
             printBackground: true,     // Print background colors/images
-            deviceName: printerName,   // Target specific printer (must match system name exactly)
             pageSize: 'A4',            // A4 paper size
-            margins: {
-              marginType: 'none'       // No margins - use CSS @page margin instead
-            }
-          }, (success, failureReason) => {
+            margins: { marginType: 'none' }  // Use CSS margins
+          };
+
+          // Only add deviceName if specific printer provided
+          if (printerName) {
+            printOptions.deviceName = printerName;
+          }
+
+          printWindow.webContents.print(printOptions, (success, failureReason) => {
             if (!success) {
               console.error(`❌ Print failed: ${failureReason}`);
-              console.log('   Falling back to opening PDF...');
+              console.log('   Attempting fallback without specific printer...');
               
-              // Fallback: open with default app if deviceName doesn't match exactly
-              // This handles printer name variations
-              printWindow.webContents.print({
+              // Fallback: try without printer name
+              const fallbackOptions = {
                 silent: true,
                 printBackground: true,
                 pageSize: 'A4',
                 margins: { marginType: 'none' }
-              }, (success2, reason2) => {
+              };
+              
+              printWindow.webContents.print(fallbackOptions, (success2) => {
                 if (!success2) {
-                  console.error(`⚠️ Fallback also failed: ${reason2}`);
+                  console.error(`⚠️ Fallback also failed`);
                 }
                 printWindow.close();
               });
@@ -296,11 +322,11 @@ class PdfGeneratorService {
               console.log('📤 Print job queued on printer');
             }
 
-            // Close window after short delay to ensure print job is queued
+            // Close window after delay to ensure print job is queued
             setTimeout(() => {
               printWindow.close();
               console.log('🧹 Print window closed');
-              console.log('========== A4 INVOICE SILENT PRINT ENDED ==========\n');
+              console.log(`========== A4 ${documentType} SILENT PRINT ENDED ==========\n`);
               resolve();
             }, 2000);
           });
@@ -308,9 +334,9 @@ class PdfGeneratorService {
 
         // Handle load errors
         printWindow.webContents.on('did-fail-load', (errorCode, errorDescription) => {
-          console.error(`❌ Failed to load invoice HTML: ${errorDescription}`);
+          console.error(`❌ Failed to load ${typeLabel} HTML: ${errorDescription}`);
           printWindow.close();
-          reject(new Error(`Failed to load invoice: ${errorDescription}`));
+          reject(new Error(`Failed to load ${typeLabel}: ${errorDescription}`));
         });
 
         // Handle crashes

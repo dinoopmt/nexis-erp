@@ -32,7 +32,7 @@ class SalesInvoiceService {
       const counter = await Counter.findOneAndUpdate(
         { module: 'sales_invoice', financialYear },
         { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SI' } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       const paddedNumber = String(counter.lastNumber).padStart(4, '0');
@@ -303,7 +303,7 @@ class SalesInvoiceService {
   async updateInvoice(invoiceId, updateData) {
     try {
       const invoice = await SalesInvoice.findByIdAndUpdate(invoiceId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       });
 
@@ -328,7 +328,7 @@ class SalesInvoiceService {
    */
   async deleteInvoice(invoiceId) {
     try {
-      const invoice = await SalesInvoice.findByIdAndUpdate(invoiceId, { isDeleted: true }, { new: true });
+      const invoice = await SalesInvoice.findByIdAndUpdate(invoiceId, { isDeleted: true }, { returnDocument: 'after' });
 
       if (!invoice) {
         const error = new Error('Invoice not found');

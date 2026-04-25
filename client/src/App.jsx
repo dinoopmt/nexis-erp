@@ -7,6 +7,7 @@ import { Home, Login } from "./pages";
 import { ProductFormProvider } from "./context/ProductFormContext";
 import { GlobalKeyboardProvider } from "./context/GlobalKeyboardContext";
 import { TerminalProvider } from "./context/TerminalContext";
+import { StoreProvider } from "./context/StoreContext";
 import GlobalProductFormModal from "./components/shared/GlobalProductFormModal";
 import { AnimatedCenteredToast } from "./components/shared/AnimatedCenteredToast.jsx";
 import KeyboardHelpModal from "./components/keyboard/KeyboardHelpModal";
@@ -61,26 +62,28 @@ function App() {
     <GlobalKeyboardProvider>
       <ProductFormProvider>
         <TerminalProvider>
-          <>
-            {/* ✅ Global Keyboard System */}
-            <DefaultKeyboardShortcuts />
-            <KeyboardHelpListener />
-            <KeyboardHelpModal />
+          <StoreProvider>
+            <>
+              {/* ✅ Global Keyboard System */}
+              <DefaultKeyboardShortcuts />
+              <KeyboardHelpListener />
+              <KeyboardHelpModal />
 
-            <AnimatedCenteredToast />
-            <Router>
-              <Routers>
-                {/* ✅ Login route first - shows login if not authenticated */}
-                <Route path="/login" element={<Login />} />
-                {/* ✅ Protected routes - only show if user is authenticated */}
-                {user && <Route path="/*" element={<Home />} />}
-                {/* ✅ Redirect to login if not authenticated and trying to access protected routes */}
-                {!user && <Route path="/*" element={<Login />} />}
-              </Routers>
-            </Router>
-            {/* ✅ Global Product Form Modal - Available everywhere */}
-            <GlobalProductFormModal />
-          </>
+              <AnimatedCenteredToast />
+              <Router>
+                <Routers>
+                  {/* ✅ Login route first - shows login if not authenticated */}
+                  <Route path="/login" element={<Login />} />
+                  {/* ✅ Protected routes - only show if user is authenticated */}
+                  {user && <Route path="/*" element={<Home />} />}
+                  {/* ✅ Redirect to login if not authenticated and trying to access protected routes */}
+                  {!user && <Route path="/*" element={<Login />} />}
+                </Routers>
+              </Router>
+              {/* ✅ Global Product Form Modal - Available everywhere */}
+              <GlobalProductFormModal />
+            </>
+          </StoreProvider>
         </TerminalProvider>
       </ProductFormProvider>
     </GlobalKeyboardProvider>

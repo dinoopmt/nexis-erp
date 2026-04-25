@@ -10,9 +10,7 @@ import { seedTaxMaster } from "./taxMasterSeeder.js";
 import { seedSequences } from "./sequenceSeeder.js";
 import { seedCountries } from "./countryConfigSeeder.js";
 import { seedUnits } from "./unitSeed.js";
-import { seedProductPackings } from "./productPackingSeed.js";
 import { seedPOS } from "./posSeedData.js";
-import seedOrganizations from "./organizationSeeder.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,15 +90,6 @@ const seedAll = async () => {
       console.warn("⚠️  Users seeding skipped or completed:", error.message, "\n");
     }
 
-    // Run Product Packing seeder
-    console.log("📦 Seeding Product Packings...");
-    try {
-      await seedProductPackings();
-      console.log("✅ Product Packings seeded\n");
-    } catch (error) {
-      console.warn("⚠️  Product Packings seeding skipped or completed:", error.message, "\n");
-    }
-
     // Run POS seeder
     console.log("🏪 Seeding POS Data...");
     try {
@@ -110,14 +99,7 @@ const seedAll = async () => {
       console.warn("⚠️  POS Data seeding skipped or completed:", error.message, "\n");
     }
 
-    // Run Organization seeder
-    console.log("🏢 Seeding Organizations (Branches & Stores)...");
-    try {
-      await seedOrganizations();
-      console.log("✅ Organizations seeded\n");
-    } catch (error) {
-      console.warn("⚠️  Organizations seeding skipped or completed:", error.message, "\n");
-    }
+
 
     let endTime = Date.now();
     let duration = (endTime - startTime) / 1000;

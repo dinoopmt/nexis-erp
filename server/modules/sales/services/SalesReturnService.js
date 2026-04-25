@@ -26,7 +26,7 @@ class SalesReturnService {
       const counter = await Counter.findOneAndUpdate(
         { module: 'sales_return', financialYear },
         { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SR' } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       const paddedNumber = String(counter.lastNumber).padStart(4, '0');
@@ -200,7 +200,7 @@ class SalesReturnService {
   async updateSalesReturn(returnId, updateData) {
     try {
       const salesReturn = await SalesReturn.findByIdAndUpdate(returnId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       });
 
@@ -241,7 +241,7 @@ class SalesReturnService {
         refundAmount: approvalData.refundAmount || salesReturn.totalReturnAmount,
       };
 
-      const updated = await SalesReturn.findByIdAndUpdate(returnId, updateData, { new: true });
+      const updated = await SalesReturn.findByIdAndUpdate(returnId, updateData, { returnDocument: 'after' });
 
       // Process stock update
       await this.processReturnStock(salesReturn);
@@ -275,7 +275,7 @@ class SalesReturnService {
           rejectionReason,
           rejectionDate: new Date(),
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updated) {
@@ -299,7 +299,7 @@ class SalesReturnService {
    */
   async deleteSalesReturn(returnId) {
     try {
-      const salesReturn = await SalesReturn.findByIdAndUpdate(returnId, { isDeleted: true }, { new: true });
+      const salesReturn = await SalesReturn.findByIdAndUpdate(returnId, { isDeleted: true }, { returnDocument: 'after' });
 
       if (!salesReturn) {
         const error = new Error('Sales return not found');

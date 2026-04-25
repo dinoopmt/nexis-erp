@@ -12,7 +12,7 @@ export const getNextQuotationNumber = async (req, res) => {
     const counter = await Counter.findOneAndUpdate(
       { module: 'quotation', financialYear },
       { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'QT' } },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     const paddedNumber = String(counter.lastNumber).padStart(4, '0');
     const quotationNumber = `QT/${financialYear}/${paddedNumber}`;
@@ -26,6 +26,7 @@ export const getNextQuotationNumber = async (req, res) => {
 export const createQuotation = async (req, res) => {
   try {
     console.log("Creating Quotation:", req.body);
+    console.log("Items details:", JSON.stringify(req.body.items, null, 2));
 
     const { quotationNumber, customerName, date, items, financialYear } = req.body;
     
@@ -52,6 +53,7 @@ export const createQuotation = async (req, res) => {
     await quotation.save();
 
     console.log("Quotation created successfully:", quotation._id);
+    console.log("✅ Saved quotation items:", JSON.stringify(quotation.items, null, 2));
     res.status(201).json(quotation);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -103,7 +105,7 @@ export const updateQuotation = async (req, res) => {
     const quotation = await Quotation.findByIdAndUpdate(
       req.params.id, 
       { ...req.body, updatedDate: new Date() },
-      { returnDocument: 'after', new: true }
+      { returnDocument: 'after' }
     );
 
     if (!quotation) return res.status(404).json({ error: 'Quotation not found' });
@@ -119,7 +121,7 @@ export const deleteQuotation = async (req, res) => {
     const quotation = await Quotation.findByIdAndUpdate(
       req.params.id,
       { isDeleted: true, deletedAt: new Date() },
-      { returnDocument: 'after', new: true }
+      { returnDocument: 'after' }
     );
 
     if (!quotation) return res.status(404).json({ error: 'Quotation not found' });
@@ -141,7 +143,7 @@ export const updateQuotationStatus = async (req, res) => {
     const quotation = await Quotation.findByIdAndUpdate(
       req.params.id,
       { status, updatedDate: new Date() },
-      { returnDocument: 'after', new: true }
+      { returnDocument: 'after' }
     );
 
     if (!quotation) return res.status(404).json({ error: 'Quotation not found' });

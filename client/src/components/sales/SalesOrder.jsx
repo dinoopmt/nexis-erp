@@ -26,6 +26,7 @@ import axios from "axios";
 import { API_URL } from "../../config/config";
 import { useProductSearch } from "../../hooks/useProductSearch";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
+import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
 
 const SalesOrder = () => {
   // Get company data for country-based filtering
@@ -82,6 +83,8 @@ const SalesOrder = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showProductLookup, setShowProductLookup] = useState(false);
   const [viewedOrder, setViewedOrder] = useState(null);
+  const [showPrintingModal, setShowPrintingModal] = useState(false);
+  const [savedOrderId, setSavedOrderId] = useState(null); // For Save & Print flow
   const [historyDateFilter, setHistoryDateFilter] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -496,10 +499,25 @@ const SalesOrder = () => {
 
       setEditId(null);
       setOrders([...orders, response.data]);
+      
+      // ✅ Return success with order ID for Save & Print flow
+      return { success: true, orderId: response.data._id };
     } catch (err) {
       showToast(err.response?.data?.error || "Error saving order", "error");
+      return { success: false };
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Save and Print - opens printing modal with terminal template
+  const handleSaveAndPrint = async () => {
+    const result = await handleSaveOrder();
+    if (result?.success) {
+      setSavedOrderId(result.orderId);
+      setViewedOrder({ _id: result.orderId });
+      setShowPrintingModal(true);
+      console.log('✅ Order saved and print modal opened:', result.orderId);
     }
   };
 
@@ -1139,13 +1157,21 @@ const SalesOrder = () => {
                   <Save size={16} />
                   {loading ? "Saving..." : editId ? "Update Order" : "Create Order"}
                 </button>
+                <button
+                  onClick={handleSaveAndPrint}
+                  disabled={loading}
+                  className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Printer size={16} />
+                  {loading ? "Saving..." : "Save & Print"}
+                </button>
               </div>
             </div>
           </div>
 
           {/* ORDER HISTORY MODAL */}
           {showHistoryModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 40 }}>
               <div className="bg-white rounded-lg shadow-2xl max-w-5xl w-full max-h-96 flex flex-col">
                 <div className="flex justify-between items-center p-4 border-b">
                   <h2 className="text-lg font-bold text-gray-800">Order History</h2>
@@ -1247,92 +1273,17 @@ const SalesOrder = () => {
             </div>
           )}
 
-          {/* VIEW ORDER MODAL */}
-          {viewedOrder && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-96 flex flex-col">
-                <div className="flex justify-between items-center p-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-lg">
-                  <h2 className="text-lg font-bold">Order # {viewedOrder.orderNumber}</h2>
-                  <button
-                    onClick={() => setViewedOrder(null)}
-                    className="text-white bg-gray-600 hover:bg-gray-700 w-8 h-8 flex items-center justify-center rounded transition-colors text-sm"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <div className="p-4 border-b grid grid-cols-3 gap-3 text-xs">
-                  <div>
-                    <span className="font-bold text-gray-700">Customer:</span>
-                    <p className="text-gray-600">{viewedOrder.customerName}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-gray-700">Date:</span>
-                    <p className="text-gray-600">{viewedOrder.date?.split("T")[0]}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-gray-700">Status:</span>
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${statusColors[viewedOrder.status]}`}>
-                      {viewedOrder.status}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-auto p-4">
-                  <h3 className="text-sm font-bold text-gray-800 mb-2">Items</h3>
-                  <table className="w-full text-xs border-collapse border border-gray-300">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="border px-2 py-1 text-left">Product</th>
-                        <th className="border px-2 py-1 text-right">Qty</th>
-                        <th className="border px-2 py-1 text-right">Price</th>
-                        <th className="border px-2 py-1 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {viewedOrder.items?.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="border px-2 py-1">{item.itemName}</td>
-                          <td className="border px-2 py-1 text-right">{item.quantity}</td>
-                          <td className="border px-2 py-1 text-right">{item.unitPrice?.toFixed(2)}</td>
-                          <td className="border px-2 py-1 text-right">{item.lineAmount?.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="p-4 border-t grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="font-bold text-gray-700">Subtotal:</span>
-                    <p className="text-gray-600">{viewedOrder.subtotal?.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <span className="font-bold text-gray-700">Total:</span>
-                    <p className="text-lg font-bold text-blue-700">{viewedOrder.totalIncludeVat?.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="p-4 border-t flex gap-2 justify-end">
-                  <button
-                    onClick={() => setViewedOrder(null)}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded font-medium transition"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleEditOrder(viewedOrder);
-                      setViewedOrder(null);
-                    }}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition flex items-center gap-1.5"
-                  >
-                    <Edit2 size={14} />
-                    Edit
-                  </button>
-                </div>
-              </div>
-            </div>
+          {/* SALES ORDER PRINTING & PDF MODAL - Terminal Template Mapped */}
+          {showPrintingModal && viewedOrder && (
+            <GlobalDocumentPrintingComponent
+              documentType="SALES_ORDER"
+              documentId={viewedOrder._id}
+              onClose={() => {
+                setShowPrintingModal(false);
+                setViewedOrder(null);
+                setSavedOrderId(null);
+              }}
+            />
           )}
         </div>
       </div>

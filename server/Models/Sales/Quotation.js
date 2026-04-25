@@ -170,6 +170,11 @@ const QuotationSchema = new mongoose.Schema(
         ],
         note: { 
           type: String 
+        },
+        image: {
+          type: String,
+          default: null,
+          description: "Product image path - cached for template rendering"
         }
       }
     ],

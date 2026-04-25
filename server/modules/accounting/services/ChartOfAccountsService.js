@@ -213,7 +213,7 @@ class ChartOfAccountsService {
       }
 
       const updated = await ChartOfAccounts.findByIdAndUpdate(accountId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       }).populate('accountGroupId', 'name code type nature');
 
@@ -276,7 +276,7 @@ class ChartOfAccountsService {
    */
   async deleteAccount(accountId) {
     try {
-      const account = await ChartOfAccounts.findByIdAndUpdate(accountId, { isDeleted: true }, { new: true });
+      const account = await ChartOfAccounts.findByIdAndUpdate(accountId, { isDeleted: true }, { returnDocument: 'after' });
 
       if (!account) {
         const error = new Error('Account not found');

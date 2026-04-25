@@ -25,6 +25,7 @@ import axios from "axios";
 import { API_URL } from "../../config/config";
 import { useProductSearch } from "../../hooks/useProductSearch";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
+import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
 
 const SalesReturn = () => {
   // Get company data for country-based filtering
@@ -116,6 +117,9 @@ const SalesReturn = () => {
   const [showSerialModal, setShowSerialModal] = useState(false);
   const [selectedItemSerial, setSelectedItemSerial] = useState(null);
   const [newSerialInput, setNewSerialInput] = useState("");
+
+  const [showPrintingModal, setShowPrintingModal] = useState(false);
+  const [savedReturnId, setSavedReturnId] = useState(null); // For Save & Print flow
 
   const [toasts, setToasts] = useState([]);
 
@@ -947,16 +951,14 @@ const SalesReturn = () => {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
+  // ✅ Save and Print - opens printing modal with terminal template
   const handleSaveAndPrint = async () => {
-    const saved = await handleSaveReturn();
-    if (saved) {
-      setTimeout(() => {
-        window.print();
-      }, 500);
+    const result = await handleSaveReturn();
+    if (result?.success) {
+      setSavedReturnId(result.returnId);
+      setViewedReturn({ _id: result.returnId });
+      setShowPrintingModal(true);
+      console.log('✅ Sales return saved and print modal opened:', result.returnId);
     }
   };
 
@@ -1460,6 +1462,19 @@ const SalesReturn = () => {
           </div>
         </div>
       </div>
+
+      {/* SALES RETURN PRINTING & PDF MODAL - Terminal Template Mapped */}
+      {showPrintingModal && viewedReturn && (
+        <GlobalDocumentPrintingComponent
+          documentType="SALES_RETURN"
+          documentId={viewedReturn._id}
+          onClose={() => {
+            setShowPrintingModal(false);
+            setViewedReturn(null);
+            setSavedReturnId(null);
+          }}
+        />
+      )}
 
       {/* TOAST NOTIFICATIONS */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[999] space-y-2">

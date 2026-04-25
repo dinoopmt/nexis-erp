@@ -175,7 +175,7 @@ router.put('/:id', async (req, res) => {
         updatedBy: 'system',
         updateDate: new Date()
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     if (!template) {
@@ -212,7 +212,7 @@ router.put('/:id/set-default', async (req, res) => {
         isDefault: true,
         updateDate: new Date()
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     res.json({
@@ -236,7 +236,7 @@ router.delete('/:id', async (req, res) => {
         isActive: false,
         updateDate: new Date()
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     if (!template) {

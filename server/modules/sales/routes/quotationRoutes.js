@@ -8,8 +8,12 @@ import {
   getNextQuotationNumber,
   updateQuotationStatus 
 } from '../controllers/quotationController.js';
+import { updateQuotationTemplates } from '../../../routes/adminTemplateRoutes.js';
 
 const router = express.Router();
+
+// Admin: Update quotation templates with note & image support
+router.get('/admin/update-templates', updateQuotationTemplates);
 
 // Auto quotation number endpoint
 router.get('/nextQuotationNumber', getNextQuotationNumber);

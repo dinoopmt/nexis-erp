@@ -191,7 +191,7 @@ export const openShift = async (req, res) => {
     await POSTerminal.findByIdAndUpdate(
       terminal._id,
       { currentShift: newShift._id },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     res.status(201).json({
@@ -361,7 +361,7 @@ export const acknowledgeOpening = async (req, res) => {
     const shift = await POSShift.findByIdAndUpdate(
       shiftId,
       { openingVarianceAcknowledged: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!shift) {

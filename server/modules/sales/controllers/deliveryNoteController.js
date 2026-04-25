@@ -8,7 +8,7 @@ export const getNextDeliveryNoteNumber = async (req, res) => {
     const sequence = await Sequence.findOneAndUpdate(
       { documentType: 'DeliveryNote', financialYear },
       { $inc: { sequenceNumber: 1 } },
-      { new: true, upsert: true }
+      { returnDocument: 'after', upsert: true }
     );
     const deliveryNoteNumber = `DN-${financialYear}-${String(sequence.sequenceNumber).padStart(5, '0')}`;
     res.json({ deliveryNoteNumber, sequenceNumber: sequence.sequenceNumber });
@@ -67,7 +67,7 @@ export const updateDeliveryNote = async (req, res) => {
     const note = await DeliveryNote.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('customerId').populate('salesOrderId');
     if (!note) return res.status(404).json({ error: 'Delivery note not found' });
     res.json(note);
@@ -82,7 +82,7 @@ export const updateStatus = async (req, res) => {
     const note = await DeliveryNote.findByIdAndUpdate(
       req.params.id,
       { status, updatedAt: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('customerId').populate('salesOrderId');
     if (!note) return res.status(404).json({ error: 'Delivery note not found' });
     
@@ -91,7 +91,7 @@ export const updateStatus = async (req, res) => {
       await SalesOrder.findByIdAndUpdate(
         note.salesOrderId,
         { status: 'Delivered' },
-        { new: true }
+        { returnDocument: 'after' }
       );
     }
     

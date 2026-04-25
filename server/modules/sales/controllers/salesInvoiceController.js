@@ -27,14 +27,14 @@ export const getNextInvoiceNumber = async (req, res) => {
           lastNumber: 0
         }
       },
-      { new: false, upsert: true }
+      { returnDocument: 'before', upsert: true }
     );
     
     // Now increment and get the new value
     const counter = await Counter.findOneAndUpdate(
       { module: 'sales_invoice', financialYear },
       { $inc: { lastNumber: 1 } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     const paddedNumber = String(counter.lastNumber).padStart(4, '0');
@@ -110,7 +110,7 @@ export const createSalesInvoice = async (req, res) => {
                   isActive: true
                 }
               },
-              { upsert: true, new: true }
+              { upsert: true, returnDocument: 'after' }
             );
 
             salesAccount = new ChartOfAccounts({
@@ -306,7 +306,7 @@ export const createSalesInvoice = async (req, res) => {
                   isActive: true
                 }
               },
-              { upsert: true, new: true }
+              { upsert: true, returnDocument: 'after' }
             );
 
             salesAccount = new ChartOfAccounts({
@@ -349,7 +349,7 @@ export const createSalesInvoice = async (req, res) => {
                   isActive: true
                 }
               },
-              { upsert: true, new: true }
+              { upsert: true, returnDocument: 'after' }
             );
 
             contraAccount = new ChartOfAccounts({
@@ -563,3 +563,4 @@ export const deleteSalesInvoice = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+

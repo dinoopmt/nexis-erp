@@ -17,7 +17,7 @@ class PurchaseInvoiceService {
       const sequence = await SequenceModel.findOneAndUpdate(
         { name: 'PURCHASE_INVOICE' },
         { $inc: { value: 1 } },
-        { new: true, upsert: true }
+        { returnDocument: 'after', upsert: true }
       );
 
       return `PINV-${String(sequence.value).padStart(6, '0')}`;

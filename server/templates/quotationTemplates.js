@@ -14,19 +14,19 @@ export const QUOTATION_TEMPLATE_EN_WITH_LOGO = {
   },
   htmlContent: `
     <div class="quotation-container">
-      {{#withLogo}}
+      {{#if store.logoUrl}}
       <div class="header">
         <img src="{{store.logoUrl}}" alt="Logo" class="logo">
       </div>
-      {{/withLogo}}
+      {{/if}}
 
       <div class="company-info">
-        <h1 class="company-name">{{company.companyName}}</h1>
+        <h1 class="company-name">{{store.storeName}}</h1>
         <p class="company-details">
-          {{company.address}}<br>
-          {{company.city}}, {{company.state}} {{company.country}}<br>
-          Email: {{company.email}} | Phone: {{company.phone}}<br>
-          Tax ID: {{company.taxId}}
+          {{store.address1}}<br>
+          {{store.address2}}<br>
+          Email: {{store.email}} | Phone: {{store.phone}}<br>
+          Tax ID: {{store.taxNumber}}
         </p>
       </div>
 
@@ -74,29 +74,31 @@ export const QUOTATION_TEMPLATE_EN_WITH_LOGO = {
         <thead>
           <tr class="table-header">
             <th class="col-slno">SL</th>
+            <th class="col-image">Image</th>
             <th class="col-item">Item Description</th>
             <th class="col-qty">Qty</th>
             <th class="col-unit">Unit</th>
             <th class="col-rate">Unit Price</th>
-            <th class="col-discount">Discount</th>
             <th class="col-amount">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {{#items}}
+          {{#quotation.items}}
           <tr class="item-row">
             <td class="col-slno">{{slNo}}</td>
+            <td class="col-image">
+              {{#if image}}<img src="{{image}}" alt="{{itemName}}" class="item-thumbnail" />{{/if}}
+            </td>
             <td class="col-item">
               <div class="item-name">{{itemName}}</div>
-              {{#description}}<div class="item-description">{{description}}</div>{{/description}}
+              {{#if note}}<div class="item-note">{{note}}</div>{{/if}}
             </td>
             <td class="col-qty">{{quantity}}</td>
             <td class="col-unit">{{unit}}</td>
-            <td class="col-rate">{{currency unitPrice 'AED' 2}}</td>
-            <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}{{#discountAmount}}{{currency discountAmount 'AED' 2}}{{/discountAmount}}</td>
-            <td class="col-amount">{{currency total 'AED' 2}}</td>
+            <td class="col-rate">{{currency unitPrice decimals=company.decimalPlaces}}</td>
+            <td class="col-amount">{{currency total decimals=company.decimalPlaces}}</td>
           </tr>
-          {{/items}}
+          {{/quotation.items}}
         </tbody>
       </table>
 
@@ -104,23 +106,21 @@ export const QUOTATION_TEMPLATE_EN_WITH_LOGO = {
         <table class="totals-table">
           <tr>
             <td class="label">Subtotal:</td>
-            <td class="value">{{currency quotation.subtotal 'AED' 2}}</td>
+            <td class="value">{{currency quotation.subtotal decimals=company.decimalPlaces}}</td>
           </tr>
           {{#quotation.discountAmount}}
           <tr>
             <td class="label">Discount ({{quotation.discountPercentage}}%):</td>
-            <td class="value">- {{currency quotation.discountAmount 'AED' 2}}</td>
+            <td class="value">{{currency quotation.discountAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/quotation.discountAmount}}
-          {{#quotation.taxAmount}}
           <tr>
-            <td class="label">Tax ({{quotation.taxPercentage}}%):</td>
-            <td class="value">+ {{currency quotation.taxAmount 'AED' 2}}</td>
+            <td class="label">Tax ({{quotation.vatPercentage}}%):</td>
+            <td class="value">{{currency quotation.vatAmount decimals=company.decimalPlaces}}</td>
           </tr>
-          {{/quotation.taxAmount}}
           <tr class="total-row">
             <td class="label">TOTAL:</td>
-            <td class="value">{{currency quotation.totalAmount 'AED' 2}}</td>
+            <td class="value">{{currency quotation.totalIncludeVat decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>
@@ -147,7 +147,7 @@ export const QUOTATION_TEMPLATE_EN_WITH_LOGO = {
     <style>
       .quotation-container { font-family: Arial, sans-serif; padding: 20px; color: #333; }
       .header { text-align: center; margin-bottom: 15px; }
-      .logo { max-width: 200px; height: auto; }
+      .logo { max-width: 80px; height: auto; }
       .company-info { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #7c3aed; padding-bottom: 10px; }
       .company-name { margin: 0; font-size: 18px; font-weight: bold; color: #7c3aed; }
       .company-details { margin: 5px 0; font-size: 11px; color: #666; }
@@ -169,14 +169,15 @@ export const QUOTATION_TEMPLATE_EN_WITH_LOGO = {
       .item-row { border-bottom: 1px solid #eee; }
       .item-row td { padding: 6px; font-size: 10px; border: 1px solid #ddd; }
       .col-slno { width: 4%; text-align: center; }
-      .col-item { width: 30%; }
+      .col-image { width: 12%; text-align: center; }
+      .col-item { width: 28%; }
       .col-qty { width: 8%; text-align: center; }
       .col-unit { width: 8%; text-align: center; }
-      .col-rate { width: 15%; text-align: right; }
-      .col-discount { width: 12%; text-align: right; }
-      .col-amount { width: 15%; text-align: right; font-weight: bold; }
+      .col-rate { width: 12%; text-align: right; }
+      .col-amount { width: 12%; text-align: right; font-weight: bold; }
+      .item-thumbnail { max-width: 60px; max-height: 50px; border: 1px solid #ddd; border-radius: 3px; }
       .item-name { font-weight: bold; }
-      .item-description { font-size: 9px; color: #666; margin-top: 2px; }
+      .item-note { font-size: 9px; color: #666; font-style: italic; margin-top: 3px; padding: 3px; background-color: white; border-left: 2px solid #d97706; padding-left: 5px; }
       .totals-section { margin: 20px 0; }
       .totals-table { width: 100%; border-collapse: collapse; margin-left: auto; width: 50%; }
       .totals-table tr { vertical-align: top; }
@@ -212,11 +213,11 @@ export const QUOTATION_TEMPLATE_EN_WITHOUT_LOGO = {
   htmlContent: `
     <div class="quotation-container">
       <div class="company-info">
-        <h1 class="company-name">{{company.companyName}}</h1>
+        <h1 class="company-name">{{store.storeName}}</h1>
         <p class="company-details">
-          {{company.address}}<br>
-          {{company.city}}, {{company.state}} {{company.country}}<br>
-          Email: {{company.email}} | Phone: {{company.phone}}
+          {{store.address1}}<br>
+          {{store.address2}}<br>
+          Email: {{store.email}} | Phone: {{store.phone}}
         </p>
       </div>
 
@@ -249,24 +250,29 @@ export const QUOTATION_TEMPLATE_EN_WITHOUT_LOGO = {
         <thead>
           <tr class="table-header">
             <th class="col-slno">SL</th>
+            <th class="col-image">Image</th>
             <th class="col-item">Item Description</th>
             <th class="col-qty">Qty</th>
             <th class="col-rate">Unit Price</th>
-            <th class="col-discount">Discount</th>
             <th class="col-amount">Amount</th>
           </tr>
         </thead>
         <tbody>
-          {{#items}}
+          {{#quotation.items}}
           <tr class="item-row">
             <td class="col-slno">{{slNo}}</td>
-            <td class="col-item">{{itemName}}</td>
+            <td class="col-image">
+              {{#image}}<img src="{{image}}" alt="{{itemName}}" class="item-thumbnail" />{{/image}}
+            </td>
+            <td class="col-item">
+              <div class="item-name">{{itemName}}</div>
+              {{#note}}<div class="item-note">{{note}}</div>{{/note}}
+            </td>
             <td class="col-qty">{{quantity}}</td>
-            <td class="col-rate">{{currency unitPrice 'AED' 2}}</td>
-            <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}</td>
-            <td class="col-amount">{{currency total 'AED' 2}}</td>
+            <td class="col-rate">{{currency unitPrice decimals=company.decimalPlaces}}</td>
+            <td class="col-amount">{{currency total decimals=company.decimalPlaces}}</td>
           </tr>
-          {{/items}}
+          {{/quotation.items}}
         </tbody>
       </table>
 
@@ -274,11 +280,23 @@ export const QUOTATION_TEMPLATE_EN_WITHOUT_LOGO = {
         <table class="totals-table">
           <tr>
             <td class="label">Subtotal:</td>
-            <td class="value">{{currency quotation.subtotal 'AED' 2}}</td>
+            <td class="value">{{currency quotation.subtotal decimals=company.decimalPlaces}}</td>
           </tr>
+          {{#quotation.discountAmount}}
+          <tr>
+            <td class="label">Discount ({{quotation.discountPercentage}}%):</td>
+            <td class="value">- {{currency quotation.discountAmount decimals=company.decimalPlaces}}</td>
+          </tr>
+          {{/quotation.discountAmount}}
+          {{#quotation.vatAmount}}
+          <tr>
+            <td class="label">Tax ({{quotation.vatPercentage}}%):</td>
+            <td class="value">+ {{currency quotation.vatAmount decimals=company.decimalPlaces}}</td>
+          </tr>
+          {{/quotation.vatAmount}}
           <tr class="total-row">
             <td class="label">TOTAL:</td>
-            <td class="value">{{currency quotation.totalAmount 'AED' 2}}</td>
+            <td class="value">{{currency quotation.totalIncludeVat decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>
@@ -301,11 +319,14 @@ export const QUOTATION_TEMPLATE_EN_WITHOUT_LOGO = {
       .table-header th { padding: 8px; text-align: left; font-size: 11px; font-weight: bold; }
       .item-row td { padding: 6px; font-size: 10px; border: 1px solid #ddd; }
       .col-slno { width: 5%; text-align: center; }
-      .col-item { width: 35%; }
+      .col-image { width: 12%; text-align: center; }
+      .col-item { width: 33%; }
       .col-qty { width: 10%; text-align: center; }
       .col-rate { width: 15%; text-align: right; }
-      .col-discount { width: 12%; text-align: right; }
       .col-amount { width: 18%; text-align: right; font-weight: bold; }
+      .item-thumbnail { max-width: 60px; max-height: 50px; border: 1px solid #ddd; border-radius: 3px; }
+      .item-name { font-weight: bold; }
+      .item-note { font-size: 9px; color: #d97706; font-style: italic; margin-top: 3px; padding: 3px; background-color: #fef3c7; border-left: 2px solid #d97706; padding-left: 5px; }
       .totals-table { width: 50%; margin-left: auto; }
       .totals-table .label { text-align: right; padding: 4px 10px; font-size: 11px; }
       .totals-table .value { text-align: right; padding: 4px 10px; font-weight: bold; }

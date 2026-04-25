@@ -155,30 +155,6 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
         console.log('✅ Invoice HTML fetched - Preview shown');
         
         setLoading(false);
-
-        // ✅ STEP 2: Fetch PDF in BACKGROUND (non-blocking) - user won't feel delay
-        console.log('📄 [Background] Fetching PDF from Puppeteer...');
-        setPdfLoading(true);
-        
-        try {
-          const pdfResponse = await axios.post(
-            `${API_URL}/invoices/${invoiceId}/generate-pdf`,
-            {},
-            {
-              params: { templateId, terminalId, _t: Date.now() },
-              responseType: 'blob'
-            }
-          );
-
-          setPdfBlob(pdfResponse.data);
-          setPdfSource('server');
-          console.log('✅ PDF ready (background)');
-        } catch (pdfErr) {
-          console.warn('⚠️ PDF generation failed:', pdfErr.message);
-          // PDF generation failed, but preview is still visible
-        } finally {
-          setPdfLoading(false);
-        }
         return;
 
       } catch (serverErr) {
@@ -214,40 +190,36 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
   // ✅ Download PDF (already generated and stored in pdfBlob)
   const handleDownloadPdf = async () => {
     try {
-      if (!pdfBlob) {
-        showToast('error', 'No PDF available');
-        return;
-      }
+      // ✅ Generate PDF on-demand when user clicks Download
+      console.log('📄 User clicked Download PDF - generating on-demand...');
+      setPdfLoading(true);
+
+      const pdfResponse = await axios.post(
+        `${API_URL}/invoices/${invoiceId}/generate-pdf`,
+        {},
+        {
+          params: { templateId, terminalId: terminalConfig.terminalId, _t: Date.now() },
+          responseType: 'blob'
+        }
+      );
+
+      const blob = pdfResponse.data;
+      setPdfBlob(blob);
+      setPdfSource('server');
+      console.log('✅ PDF generated on-demand');
 
       const fileName = `Invoice_${new Date().toISOString().split('T')[0]}.pdf`;
-      const isElectron = window.electronAPI && typeof window.electronAPI.isElectron === 'boolean';
-
-      if (isElectron) {
-        // ✅ Electron available - use native file save dialog
-        try {
-          console.log('💾 Using Electron file API to save PDF...');
-          const arrayBuffer = await pdfBlob.arrayBuffer();
-          const result = await window.electronAPI.file.saveFile(fileName, Buffer.from(arrayBuffer));
-          
-          if (result.success) {
-            console.log('✅ PDF saved successfully:', result.filePath);
-            showToast('success', `PDF saved to: ${result.filePath}`);
-          } else {
-            throw new Error(result.message || 'Save cancelled');
-          }
-        } catch (electronErr) {
-          console.warn('⚠️ Electron file save failed, falling back to browser download:', electronErr);
-          downloadViaBlob(pdfBlob, fileName);
-        }
-      } else {
-        // ✅ Browser environment - use standard blob download
-        downloadViaBlob(pdfBlob, fileName);
-      }
+      
+      // ✅ Use blob download for all cases (works in both Electron and browser)
+      // No file dialogs, auto-downloads to Downloads folder in Electron
+      downloadViaBlob(blob, fileName);
     } catch (err) {
       const errorMsg = err.message || 'Failed to download PDF';
       setError(errorMsg);
       console.error('❌ Download error:', err);
       showToast('error', errorMsg);
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -424,7 +396,7 @@ const InvoicePrintingComponent = ({ invoiceId, onClose }) => {
             {/* Download Button */}
             <button
               onClick={handleDownloadPdf}
-              disabled={loading || pdfLoading || !pdfBlob}
+              disabled={loading || pdfLoading || !previewHtml}
               className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {pdfLoading ? <Loader size={16} className="animate-spin" /> : <Download size={16} />}

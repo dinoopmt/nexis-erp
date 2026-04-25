@@ -31,7 +31,7 @@ import { normalizeBarcode } from "../../utils/barcodeUtils";
 import { CompanyContext } from "../../context/CompanyContext";
 import { useTerminalFeature } from "../../context/TerminalContext";
 import ProductLookupModal from "./modals/ProductLookupModal";
-import InvoicePrintingComponent from "./salesInvoice/InvoicePrintingComponent";
+import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
 
 const SalesInvoice = () => {
   // Get full company data from context
@@ -1267,27 +1267,27 @@ const SalesInvoice = () => {
         invoiceNumber: invoiceData.invoiceNo,
         financialYear: financialYear,
         date: invoiceData.invoiceDate,
-        paymentType: invoiceData.paymentType,
-        paymentTerms: invoiceData.paymentTerms,
-        createdDate: now,
+        paymentType: invoiceData.paymentType || undefined,
+        paymentTerms: invoiceData.paymentTerms || undefined,
         updatedDate: now,
+        ...(editId ? {} : { createdDate: now }), // Only set createdDate on create, not update
 
         // Customer Information
-        customerId: selectedCustomerDetails?._id || "",
+        ...(selectedCustomerDetails?._id && { customerId: selectedCustomerDetails._id }),
         customerName: invoiceData.partyName,
         customerPhone:
           selectedCustomerDetails?.phone ||
           selectedCustomerDetails?.vendorPhone ||
-          "",
+          undefined,
         customerTRN:
           selectedCustomerDetails?.vendorTRN ||
           selectedCustomerDetails?.gstNumber ||
-          "",
+          undefined,
         customerAddress:
           selectedCustomerDetails?.address ||
           selectedCustomerDetails?.vendorAddress ||
-          "",
-        customerContact: selectedCustomerDetails?.vendorContactPerson || "",
+          undefined,
+        customerContact: selectedCustomerDetails?.vendorContactPerson || undefined,
 
         // Item Counts and Quantities
         totalItems: invoiceData.items.length,
@@ -2505,8 +2505,9 @@ const SalesInvoice = () => {
 
       {/* INVOICE PRINTING & PDF MODAL - Terminal Template Mapped */}
       {showPrintingModal && invoiceToView && (
-        <InvoicePrintingComponent
-          invoiceId={invoiceToView._id}
+        <GlobalDocumentPrintingComponent
+          documentType="INVOICE"
+          documentId={invoiceToView._id}
           onClose={() => {
             setShowPrintingModal(false);
             setInvoiceToView(null);

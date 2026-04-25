@@ -184,7 +184,7 @@ class OrganizationService {
       const org = await Organization.findByIdAndUpdate(
         branchId,
         safeData,
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
       )
         .populate('parentId', 'code type');
 
@@ -220,7 +220,7 @@ class OrganizationService {
       const org = await Organization.findByIdAndUpdate(
         branchId,
         { isActive: false },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!org) {

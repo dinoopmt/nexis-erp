@@ -31,6 +31,7 @@ import organizationRoutes from './modules/organization/routes/organizationRoutes
 import invoiceTemplateRoutes from './routes/invoiceTemplateRoutes.js';
 import barcodeTemplateRoutes from './routes/barcodeTemplateRoutes.js';
 import invoicePdfRoutes from './routes/invoicePdfRoutes.js';
+import documentPdfRoutes from './routes/documentPdfRoutes.js';
 import { validateTerminalIdRoute } from './routes/terminalValidationRoute.js';
 import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
 import { seedDocumentTemplates } from './seedDocumentTemplates.js';
@@ -299,6 +300,7 @@ app.use(`${apiV1}/invoice-templates`, invoiceTemplateRoutes);
 // Barcode Template Management
 app.use(`${apiV1}/barcode-templates`, barcodeTemplateRoutes);
 app.use(`${apiV1}`, invoicePdfRoutes);
+app.use(`${apiV1}`, documentPdfRoutes);
 
 // Health check endpoints
 app.get('/health', (req, res) => {

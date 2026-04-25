@@ -271,7 +271,7 @@ class JournalEntryService {
         updateData.totalCredit = validatedItems.totalCredit;
       }
 
-      const updated = await JournalEntry.findByIdAndUpdate(entryId, updateData, { new: true })
+      const updated = await JournalEntry.findByIdAndUpdate(entryId, updateData, { returnDocument: 'after' })
         .populate('lineItems.accountId', 'accountNumber accountName');
 
       logger.info('Journal entry updated', { entryId, updatedFields: Object.keys(updateData) });
@@ -350,7 +350,7 @@ class JournalEntryService {
           approvalNotes: notes,
           approvalDate: new Date(),
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       logger.info('Journal entry approved', { entryId, approvedBy });
@@ -382,7 +382,7 @@ class JournalEntryService {
           rejectionReason,
           rejectionDate: new Date(),
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updated) {

@@ -323,7 +323,7 @@ export const updateVendor = async (req, res) => {
             accountName: name.trim(),
             description: `Vendor Account - ${name.trim()}`
           },
-          { new: true }
+          { returnDocument: 'after' }
         );
       } catch (ledgerErr) {
         console.warn("Warning: Failed to sync ledger account name:", ledgerErr.message);
@@ -382,7 +382,7 @@ export const updateVendor = async (req, res) => {
     }
 
     const vendor = await Vendor.findByIdAndUpdate(id, updateData, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     });
 
@@ -415,7 +415,7 @@ export const deleteVendor = async (req, res) => {
         deletedAt: new Date(),
         isActive: false,
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!vendor) {

@@ -122,7 +122,7 @@ router.put('/:id', async (req, res) => {
         isDefault,
         updatedAt: new Date()
       },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     if (!template) {
@@ -155,7 +155,7 @@ router.put('/:id/set-default', async (req, res) => {
     const template = await InvoiceTemplate.findByIdAndUpdate(
       req.params.id,
       { isDefault: true },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     res.json({
@@ -175,7 +175,7 @@ router.delete('/:id', async (req, res) => {
     const template = await InvoiceTemplate.findByIdAndUpdate(
       req.params.id,
       { isActive: false },
-      { new: true }
+      { returnDocument: 'after' }
     );
     
     if (!template) {

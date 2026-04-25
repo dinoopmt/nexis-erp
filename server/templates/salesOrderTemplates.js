@@ -104,9 +104,9 @@ export const SALES_ORDER_TEMPLATE_EN_WITH_LOGO = {
             </td>
             <td class="col-qty">{{quantity}}</td>
             <td class="col-unit">{{unit}}</td>
-            <td class="col-rate">{{currency unitPrice 'AED' 2}}</td>
-            <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}{{#discountAmount}}{{currency discountAmount 'AED' 2}}{{/discountAmount}}</td>
-            <td class="col-amount">{{currency total 'AED' 2}}</td>
+            <td class="col-rate">{{currency unitPrice decimals=company.decimalPlaces}}</td>
+            <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}{{#discountAmount}}{{currency discountAmount decimals=company.decimalPlaces}}{{/discountAmount}}</td>
+            <td class="col-amount">{{currency total decimals=company.decimalPlaces}}</td>
           </tr>
           {{/items}}
         </tbody>
@@ -116,29 +116,29 @@ export const SALES_ORDER_TEMPLATE_EN_WITH_LOGO = {
         <table class="totals-table">
           <tr>
             <td class="label">Subtotal:</td>
-            <td class="value">{{currency order.subtotal 'AED' 2}}</td>
+            <td class="value">{{currency order.subtotal decimals=company.decimalPlaces}}</td>
           </tr>
           {{#order.discountAmount}}
           <tr>
             <td class="label">Discount ({{order.discountPercentage}}%):</td>
-            <td class="value">- {{currency order.discountAmount 'AED' 2}}</td>
+            <td class="value">- {{currency order.discountAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/order.discountAmount}}
           {{#order.taxAmount}}
           <tr>
             <td class="label">Tax ({{order.taxPercentage}}%):</td>
-            <td class="value">+ {{currency order.taxAmount 'AED' 2}}</td>
+            <td class="value">+ {{currency order.taxAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/order.taxAmount}}
           {{#order.shippingCharges}}
           <tr>
             <td class="label">Shipping Charges:</td>
-            <td class="value">+ {{currency order.shippingCharges 'AED' 2}}</td>
+            <td class="value">+ {{currency order.shippingCharges decimals=company.decimalPlaces}}</td>
           </tr>
           {{/order.shippingCharges}}
           <tr class="total-row">
             <td class="label">ORDER TOTAL:</td>
-            <td class="value">{{currency order.totalAmount 'AED' 2}}</td>
+            <td class="value">{{currency order.totalAmount decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>
@@ -344,9 +344,9 @@ export const SALES_ORDER_TEMPLATE_EN_WITHOUT_LOGO = {
             <td class="col-item">{{itemName}}</td>
             <td class="col-qty">{{quantity}}</td>
             <td class="col-unit">{{unit}}</td>
-            <td class="col-rate">{{currency unitPrice 'AED' 2}}</td>
+            <td class="col-rate">{{currency unitPrice decimals=company.decimalPlaces}}</td>
             <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}</td>
-            <td class="col-amount">{{currency total 'AED' 2}}</td>
+            <td class="col-amount">{{currency total decimals=company.decimalPlaces}}</td>
           </tr>
           {{/items}}
         </tbody>
@@ -356,23 +356,23 @@ export const SALES_ORDER_TEMPLATE_EN_WITHOUT_LOGO = {
         <table class="totals-table">
           <tr>
             <td class="label">Subtotal:</td>
-            <td class="value">{{currency order.subtotal 'AED' 2}}</td>
+            <td class="value">{{currency order.subtotal decimals=company.decimalPlaces}}</td>
           </tr>
           {{#order.discountAmount}}
           <tr>
             <td class="label">Discount ({{order.discountPercentage}}%):</td>
-            <td class="value">- {{currency order.discountAmount 'AED' 2}}</td>
+            <td class="value">- {{currency order.discountAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/order.discountAmount}}
           {{#order.taxAmount}}
           <tr>
             <td class="label">Tax ({{order.taxPercentage}}%):</td>
-            <td class="value">+ {{currency order.taxAmount 'AED' 2}}</td>
+            <td class="value">+ {{currency order.taxAmount decimals=company.decimalPlaces}}</td>
           </tr>
           {{/order.taxAmount}}
           <tr class="total-row">
             <td class="label">ORDER TOTAL:</td>
-            <td class="value">{{currency order.totalAmount 'AED' 2}}</td>
+            <td class="value">{{currency order.totalAmount decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>
@@ -425,3 +425,8 @@ export const SALES_ORDER_TEMPLATE_EN_WITHOUT_LOGO = {
   `,
   cssContent: ''
 }
+
+
+
+
+

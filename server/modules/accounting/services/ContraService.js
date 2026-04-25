@@ -246,7 +246,7 @@ class ContraService {
         updateData.amount = parseFloat(updateData.amount);
       }
 
-      const updated = await Contra.findByIdAndUpdate(contraId, updateData, { new: true })
+      const updated = await Contra.findByIdAndUpdate(contraId, updateData, { returnDocument: 'after' })
         .populate('fromAccountId', 'accountNumber accountName')
         .populate('toAccountId', 'accountNumber accountName');
 
@@ -366,7 +366,7 @@ class ContraService {
           rejectionReason,
           rejectionDate: new Date(),
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       logger.info('Contra entry rejected', { contraId, reason: rejectionReason });

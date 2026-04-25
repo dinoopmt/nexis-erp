@@ -29,14 +29,72 @@ class PdfGenerationService {
 
   // Register Handlebars helpers
   registerHelpers() {
-    // Format currency
-    Handlebars.registerHelper('currency', (value, currency = 'AED', decimals = 2) => {
-      const formatted = parseFloat(value).toFixed(decimals);
-      return `${currency} ${formatted}`;
+    // Format currency with company's decimal places
+    Handlebars.registerHelper('currency', (value, options = {}) => {
+      // Handle both positional and hash arguments
+      let decimals = 2;
+      let showSymbol = true;
+      
+      // If options is a number, it's the decimals parameter (old style)
+      if (typeof options === 'number') {
+        decimals = options;
+      }
+      // If options is an object (Handlebars hash arguments)
+      else if (typeof options === 'object' && options.hash) {
+        decimals = options.hash.decimals || 2;
+        showSymbol = options.hash.symbol !== false;
+      }
+      
+      let numValue = 0;
+      
+      try {
+        // Handle undefined/null
+        if (value === undefined || value === null) {
+          numValue = 0;
+        }
+        // Already a number
+        else if (typeof value === 'number') {
+          numValue = value;
+        }
+        // String
+        else if (typeof value === 'string') {
+          numValue = parseFloat(value) || 0;
+        }
+        // Object - could be Decimal128
+        else if (typeof value === 'object') {
+          // Decimal128 with $numberDecimal property
+          if (value.$numberDecimal) {
+            numValue = parseFloat(value.$numberDecimal) || 0;
+          }
+          // Decimal128 with toNumber method
+          else if (typeof value.toNumber === 'function') {
+            numValue = value.toNumber();
+          }
+          // BigInt
+          else if (typeof value === 'bigint') {
+            numValue = Number(value);
+          }
+          // Object.toString() as last resort
+          else {
+            numValue = parseFloat(value.toString()) || 0;
+          }
+        }
+        // Fallback
+        else {
+          numValue = parseFloat(value) || 0;
+        }
+      } catch (e) {
+        console.warn(`Currency helper error for value: ${value}`, e);
+        numValue = 0;
+      }
+      
+      const validDecimals = Math.min(Math.max(decimals, 0), 4);
+      const formatted = numValue.toFixed(validDecimals);
+      return showSymbol ? formatted : formatted;
     });
 
     // Format date
-    Handlebars.registerHelper('date', (dateString, format = 'DD/MM/YYYY') => {
+    const dateFormatter = (dateString, format = 'DD/MM/YYYY') => {
       if (!dateString) return '';
       const date = new Date(dateString);
       const day = String(date.getDate()).padStart(2, '0');
@@ -46,7 +104,10 @@ class PdfGenerationService {
         .replace('DD', day)
         .replace('MM', month)
         .replace('YYYY', year);
-    });
+    };
+
+    Handlebars.registerHelper('date', dateFormatter);
+    Handlebars.registerHelper('formatDate', dateFormatter);
 
     // Arabic text direction
     Handlebars.registerHelper('rtl', (language) => {
@@ -71,6 +132,36 @@ class PdfGenerationService {
 
       const template = Handlebars.compile(templateHtml);
       const invoiceHtml = template(data);
+
+      // DEBUG: Check if image and note are rendering
+      if (data.quotation && data.quotation.items && data.quotation.items.length > 0) {
+        const firstItem = data.quotation.items[0];
+        console.log(`\n🔍 TEMPLATE RENDER DEBUG:`);
+        console.log(`   Input data.quotation.items[0].image: "${firstItem.image}"`);
+        console.log(`   Input data.quotation.items[0].note: "${firstItem.note}"`);
+        
+        // Check if image/note tags are in rendered HTML
+        if (invoiceHtml.includes('item-thumbnail')) {
+          console.log(`   ✅ Found item-thumbnail class in HTML`);
+        } else {
+          console.log(`   ❌ NO item-thumbnail class in HTML - image tag not rendering!`);
+        }
+        
+        if (invoiceHtml.includes('item-note')) {
+          console.log(`   ✅ Found item-note class in HTML`);
+        } else {
+          console.log(`   ❌ NO item-note class in HTML - note div not rendering!`);
+        }
+
+        // Extract relevant section of HTML for debugging
+        const itemRowStart = invoiceHtml.indexOf('<tr class="item-row">');
+        if (itemRowStart !== -1) {
+          const itemRowEnd = invoiceHtml.indexOf('</tr>', itemRowStart);
+          const itemRowHtml = invoiceHtml.substring(itemRowStart, itemRowEnd + 5);
+          console.log(`\n📝 Rendered item row HTML (first 500 chars):`);
+          console.log(itemRowHtml.substring(0, 500));
+        }
+      }
 
       // Combine CSS + HTML with base URL for image loading
       const baseTag = baseUrl ? `<base href="${baseUrl}">` : '';

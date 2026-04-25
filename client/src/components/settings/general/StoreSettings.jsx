@@ -6,6 +6,7 @@ import TerminalFormModal from './TerminalFormModal';
 import TerminalTypeSwitcher from './TerminalTypeSwitcher';
 import { useTerminal } from '../../../context/TerminalContext';
 import { clearTerminalConfigCache } from '../../../hooks/useTerminalConfig';
+import { saveStoreDetailsToCache } from '../../../hooks/useStoreDetails';
 
 const StoreSettings = () => {
   const [storeData, setStoreData] = useState({
@@ -124,6 +125,10 @@ const StoreSettings = () => {
             }
           }
         }));
+        
+        // ✅ Cache store details for print templates (performance optimization)
+        saveStoreDetailsToCache(response.data.data);
+        
         // Extract storeId for terminal management API
         if (response.data.data._id) {
           setStoreId(response.data.data._id);
@@ -281,9 +286,10 @@ const StoreSettings = () => {
       
       // ✅ INSTANT UPDATE: Refetch terminal config from context for all components
       // Cache is already cleared above, so this will fetch fresh data from API
+      // ⚠️ CRITICAL: Use forceRefresh=true to bypass cache and get fresh data from server
       console.log('🔄 Refetching terminal config for instant UI update...');
       setTimeout(() => {
-        refetchTerminalConfig();
+        refetchTerminalConfig(true); // Force refresh to get latest template IDs from server
       }, 300);
       
       setShowTerminalModal(false);
@@ -353,6 +359,10 @@ const StoreSettings = () => {
     try {
       setIsLoading(true);
       const response = await apiClient.post(`/settings/store`, storeData);
+      
+      // ✅ Cache store details after successful update
+      saveStoreDetailsToCache(storeData);
+      
       showToast('success', 'Store settings saved successfully');
     } catch (err) {
       showToast('error', err.response?.data?.message || 'Failed to save store settings');

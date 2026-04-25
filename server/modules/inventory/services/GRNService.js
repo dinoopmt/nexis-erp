@@ -30,7 +30,7 @@ class GRNService {
           $inc: { lastNumber: 1 }, // Atomic increment
         },
         {
-          new: true, // Return updated document
+          returnDocument: 'after', // Return updated document
           upsert: true, // Create if doesn't exist
         }
       );
@@ -338,7 +338,7 @@ class GRNService {
         await this.validateGRNItems(updateData.items);
       }
 
-      const updated = await Grn.findByIdAndUpdate(grnId, updateData, { new: true });
+      const updated = await Grn.findByIdAndUpdate(grnId, updateData, { returnDocument: 'after' });
 
       logger.info('GRN updated', { grnId, updatedFields: Object.keys(updateData) });
       return updated;

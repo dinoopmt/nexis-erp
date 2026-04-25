@@ -293,7 +293,7 @@ export const updateHSN = async (req, res) => {
     const hsn = await HSNMaster.findByIdAndUpdate(
       await HSNMaster.findByCode(code),
       updates,
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
 
     if (!hsn) {

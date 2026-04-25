@@ -277,7 +277,7 @@ class AccountGroupService {
       }
 
       const updated = await AccountGroup.findByIdAndUpdate(groupId, updateData, {
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
       });
 
@@ -308,7 +308,7 @@ class AccountGroupService {
         throw error;
       }
 
-      const group = await AccountGroup.findByIdAndUpdate(groupId, { isDeleted: true }, { new: true });
+      const group = await AccountGroup.findByIdAndUpdate(groupId, { isDeleted: true }, { returnDocument: 'after' });
 
       if (!group) {
         const error = new Error('Account group not found');
