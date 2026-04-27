@@ -64,7 +64,7 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
           <tr class="table-header">
             <th class="col-slno">SL</th>
             <th class="col-item">Item Description</th>
-            <th class="col-serial">Serial #</th>
+            <th class="col-uom">UOM</th>
             <th class="col-qty">Qty</th>
             <th class="col-rate">Rate</th>
             <th class="col-discount">Disc %</th>
@@ -77,9 +77,10 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
             <td class="col-slno">{{slNo}}</td>
             <td class="col-item">
               <div class="item-name">{{itemName}}</div>
-              {{#note}}<div class="item-note">Note: {{note}}</div>{{/note}}
+              {{#if serialNumbers}}<div class="item-serial">{{join serialNumbers ', '}}</div>{{/if}}
+              {{#if note}}<div class="item-note">{{note}}</div>{{/if}}
             </td>
-            <td class="col-serial">{{join serialNumbers ', '}}</td>
+            <td class="col-uom">{{unit}}</td>
             <td class="col-qty">{{quantity}}</td>
             <td class="col-rate">{{unitPrice}}</td>
             <td class="col-discount">{{discountPercentage}}%</td>
@@ -276,7 +277,7 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
 
     .col-slno { width: 5%; text-align: center; }
     .col-item { width: 30%; }
-    .col-serial { width: 12%; text-align: center; }
+    .col-uom { width: 10%; text-align: center; }
     .col-qty { width: 8%; text-align: center; }
     .col-rate { width: 12%; text-align: right; }
     .col-discount { width: 10%; text-align: center; }
@@ -284,7 +285,7 @@ export const INVOICE_TEMPLATE_EN_WITH_LOGO = {
 
     .item-note {
       font-size: 9px;
-      color: #ff6b6b;
+      color: #000;
       font-style: italic;
       margin-top: 3px;
     }
@@ -428,7 +429,7 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
           <tr class="table-header">
             <th class="col-slno">م</th>
             <th class="col-item">وصف المنتج</th>
-            <th class="col-serial">رقم الدفعة</th>
+            <th class="col-uom">الوحدة</th>
             <th class="col-qty">الكمية</th>
             <th class="col-rate">السعر</th>
             <th class="col-discount">خصم %</th>
@@ -441,9 +442,10 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
             <td class="col-slno">{{slNo}}</td>
             <td class="col-item">
               <div class="item-name">{{itemName}}</div>
-              {{#note}}<div class="item-note">ملاحظة: {{note}}</div>{{/note}}
+              {{#if serialNumbers}}<div class="item-serial">{{join serialNumbers ', '}}</div>{{/if}}
+              {{#if note}}<div class="item-note">{{note}}</div>{{/if}}
             </td>
-            <td class="col-serial">{{join serialNumbers ', '}}</td>
+            <td class="col-uom">{{unit}}</td>
             <td class="col-qty">{{quantity}}</td>
             <td class="col-rate">{{unitPrice}}</td>
             <td class="col-discount">{{discountPercentage}}%</td>
@@ -641,7 +643,7 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
 
     .col-slno { width: 5%; text-align: center; }
     .col-item { width: 30%; text-align: right; }
-    .col-serial { width: 12%; text-align: center; }
+    .col-uom { width: 10%; text-align: center; }
     .col-qty { width: 8%; text-align: center; }
     .col-rate { width: 12%; text-align: center; }
     .col-discount { width: 10%; text-align: center; }
@@ -649,7 +651,7 @@ export const INVOICE_TEMPLATE_AR_WITH_LOGO = {
 
     .item-note {
       font-size: 9px;
-      color: #ff6b6b;
+      color: #000;
       font-style: italic;
       margin-top: 3px;
     }

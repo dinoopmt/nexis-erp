@@ -37,6 +37,7 @@ import { CompanyContext } from "../../context/CompanyContext";
 import { showToast } from "../shared/AnimatedCenteredToast";
 import { clearAllCache } from "../../utils/searchCache";
 import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
+import SalesInvoiceUnitVariantSelector from "./modals/SalesInvoiceUnitVariantSelector";
 
 const Quotation = () => {
   const { company } = useContext(CompanyContext);
@@ -183,6 +184,10 @@ const Quotation = () => {
 
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [convertToType, setConvertToType] = useState("SalesOrder");
+
+  // ✅ Unit variant selection states (same as SalesInvoice)
+  const [showUnitSelector, setShowUnitSelector] = useState(false);
+  const [productForUnitSelection, setProductForUnitSelection] = useState(null);
 
   // ✅ CLEAR SEARCH CACHE ON MOUNT to force fresh data from backend
   useEffect(() => {
@@ -397,17 +402,15 @@ const Quotation = () => {
     setSelectedSearchIndex(0);
   }, [itemSearch]);
 
-  // Add item from search selection (takes product parameter like SalesInvoice)
-  const addItemFromSearch = (product) => {
-    console.log("📦 Adding product:", { name: product.name, imagePath: product.imagePath, image: product.image, images: product.images });
-    
+  // ✅ Add item to quotation with unit information (called after unit selection or directly if no variants)
+  const addItemToQuotationWithUnit = useCallback((product, selectedUnit = null) => {
     const existingItem = quotationData.items.find(
       (item) => item.productId === product._id,
     );
 
-    let newItems;
     if (existingItem) {
-      newItems = quotationData.items.map((item) => {
+      // Increment quantity if item already exists
+      const newItems = quotationData.items.map((item) => {
         if (item.productId === product._id) {
           const newQty = item.quantity + 1;
           const newLineAmount = newQty * item.unitPrice;
@@ -417,52 +420,91 @@ const Quotation = () => {
             quantity: newQty,
             lineAmount: newLineAmount,
             amountAfterDiscount: newLineAmount - item.discountAmount,
-            vatAmount: newVatAmount, // ✅ Recalculate VAT when incrementing quantity
+            vatAmount: newVatAmount,
           };
         }
         return item;
       });
+      setQuotationData((prev) => ({ ...prev, items: newItems }));
+      calculateTotals(newItems);
     } else {
+      // Create new item with selected unit info or product defaults
       const imageToUse = product.imagePath || null;
-      const salesprice = product.salesprice || product.price || 0;
-      const taxPercent = product.taxPercent || 0; // ✅ Extract tax percentage
-      const vatAmount = (salesprice * taxPercent) / 100; // ✅ Calculate VAT
+      const salesprice = selectedUnit?.price || product.salesprice || product.price || 0;
+      const unitCost = selectedUnit?.cost || product.cost || 0;
+      const taxPercent = product.taxPercent || 0;
+      const vatAmount = (salesprice * taxPercent) / 100;
+      const unit = selectedUnit?.unit || product.unitType?.unitSymbol || product.unitSymbol || 'Pcs';
+      const barcode = selectedUnit?.barcode || product.barcode || '';
       
-      console.log("✅ New item created:", { itemname: product.name, imageToUse, hasImagePath: !!product.imagePath });
+      const newItem = {
+        productId: product._id,
+        itemName: product.itemname || product.name,
+        itemcode: product.itemcode,
+        quantity: 1,
+        unitPrice: salesprice,
+        lineAmount: salesprice,
+        unitCost: unitCost,
+        lineCost: unitCost,
+        discountPercentage: 0,
+        discountAmount: 0,
+        amountAfterDiscount: salesprice,
+        taxPercent: taxPercent,
+        taxType: product.taxType || "",
+        vatPercentage: taxPercent,
+        vatAmount: vatAmount,
+        total: salesprice + vatAmount,
+        note: "",
+        image: imageToUse,
+        unit: unit,
+        barcode: barcode,
+      };
       
-      newItems = [
-        ...quotationData.items,
-        {
-          productId: product._id,
-          itemName: product.itemname || product.name,
-          itemcode: product.itemcode,
-          quantity: 1,
-          unitPrice: salesprice,
-          lineAmount: salesprice,
-          unitCost: product.cost || 0,
-          lineCost: product.cost || 0,
-          discountPercentage: 0,
-          discountAmount: 0,
-          amountAfterDiscount: salesprice,
-          taxPercent: taxPercent, // ✅ Store product tax percentage
-          taxType: product.taxType || "", // ✅ Store product tax type
-          vatPercentage: taxPercent,
-          vatAmount: vatAmount, // ✅ Store calculated VAT
-          total: salesprice + vatAmount, // ✅ Total includes VAT
-          note: "",
-          image: imageToUse, // ✅ Store image for display
-        },
-      ];
+      const newItems = [...quotationData.items, newItem];
+      setQuotationData((prev) => ({ ...prev, items: newItems }));
+      calculateTotals(newItems);
     }
-    setQuotationData((prev) => ({ ...prev, items: newItems }));
-    calculateTotals(newItems);
-    // Clear search after adding
+
     setItemSearch("");
     setShowSearchDropdown(false);
+    setLastScanTime(Date.now());
     setSelectedSearchIndex(0);
-    setProductPage(1);
-    searchInputRef.current?.focus();
+  }, [quotationData.items]);
+
+  // ✅ Add item from search - checks for unit variants before adding
+  const addItemFromSearch = (product) => {
+    // Check if product has packing units (multiple unit variants like pack/dozen/piece)
+    if (product?.packingUnits && product.packingUnits.length > 0) {
+      // Show unit selector modal
+      setProductForUnitSelection(product);
+      setShowUnitSelector(true);
+    } else {
+      // Add directly with base unit
+      addItemToQuotationWithUnit(product);
+    }
   };
+
+  // ✅ Handle unit variant selection from modal
+  const handleUnitVariantSelected = useCallback((selectedUnit) => {
+    if (productForUnitSelection) {
+      addItemToQuotationWithUnit(productForUnitSelection, selectedUnit);
+      setShowUnitSelector(false);
+      setProductForUnitSelection(null);
+    }
+  }, [productForUnitSelection, addItemToQuotationWithUnit]);
+
+  // ✅ UNIT VARIANT SELECTOR MODAL - For items with multiple packings (pack/dozen/piece etc)
+  const unitVariantModal = (
+    <SalesInvoiceUnitVariantSelector
+      product={productForUnitSelection}
+      isOpen={showUnitSelector}
+      onSelect={handleUnitVariantSelected}
+      onClose={() => {
+        setShowUnitSelector(false);
+        setProductForUnitSelection(null);
+      }}
+    />
+  );
 
   // ✅ Reset form (like GRN - clears everything including quotationNo)
   const resetForm = () => {
@@ -758,6 +800,7 @@ const Quotation = () => {
           total: (item.amountAfterDiscount || 0) + (item.vatAmount || 0),
           note: itemNotes[idx] || item.note || "", // ✅ Include itemwise notes
           image: item.image || item.imagePath || "", // ✅ Include item image for template rendering
+          unit: item.unit || 'Pcs', // ✅ Include unit of measure
         })),
       };
 
@@ -1292,6 +1335,7 @@ const Quotation = () => {
                       <th className="text-center px-2 py-3 w-28">Code</th>
                       <th className="text-center px-2 py-3 w-20">Image</th>
                       <th className="text-left px-2 py-3">Item Name</th>
+                      <th className="text-center px-2 py-3 w-28">UOM</th>
                       <th className="text-center px-2 py-3 w-20">Qty</th>
                       <th className="text-center px-2 py-3 w-24">Price</th>
                       <th className="text-right px-2 py-3 w-28">Total</th>
@@ -1302,7 +1346,7 @@ const Quotation = () => {
                     {quotationData.items.length === 0 ? (
                       <tr>
                         <td
-                          colSpan="8"
+                          colSpan="9"
                           className="text-center py-16 text-gray-400"
                         >
                           <p className="text-xs">
@@ -1394,6 +1438,15 @@ const Quotation = () => {
                                   </p>
                                 )}
                               </div>
+                            </td>
+
+                            {/* Unit */}
+                            <td className="px-2 py-2 text-center w-28">
+
+                              <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded"> 
+                                {item.unit || "Pcs"}
+                              </span>
+                              
                             </td>
 
                             {/* Quantity */}
@@ -1941,6 +1994,9 @@ const Quotation = () => {
             </div>
           </div>
         )}
+
+        {/* ✅ UNIT VARIANT SELECTOR MODAL */}
+        {unitVariantModal}
 
         {/* ✅ QUOTATION HISTORY MODAL */}
         {showHistoryModal && (

@@ -200,6 +200,11 @@ const SalesInvoiceSchema = new mongoose.Schema(
           type: Number, 
           default: 0 
         },
+        // ✅ Unit of Measure (e.g., 'Pcs', 'Pack', 'Dozen')
+        unit: {
+          type: String,
+          default: 'Pcs'
+        },
         serialNumbers: [
           { 
             type: String 

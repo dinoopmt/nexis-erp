@@ -19,7 +19,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Download, Printer, Loader, CheckCircle } from 'lucide-react';
+import { X, Download, Printer, Loader, CheckCircle, RefreshCw } from 'lucide-react';
 import { API_URL } from '../../../config/config';
 import axios from 'axios';
 import { useTerminal } from '../../../context/TerminalContext';
@@ -43,6 +43,25 @@ const GlobalDocumentPrintingComponent = ({ documentType, documentId, onClose }) 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pdfSource, setPdfSource] = useState('');
   const contentRef = useRef();
+
+  // ✅ Clear terminal config cache and refresh
+  const handleRefreshTerminalConfig = () => {
+    try {
+      const terminalId = terminalConfig?.terminalId;
+      if (terminalId) {
+        // Clear the cached terminal config from localStorage
+        const cacheKey = `terminalConfig_${terminalId}`;
+        localStorage.removeItem(cacheKey);
+        console.log('🔄 Cleared terminal config cache');
+        
+        // Reload the page to fetch fresh config
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('❌ Failed to refresh config:', err);
+      showToast('error', 'Failed to refresh terminal config');
+    }
+  };
 
   // Get correct API endpoint based on documentType
   const getDocumentEndpoint = (docType = documentType) => {
@@ -389,7 +408,16 @@ const GlobalDocumentPrintingComponent = ({ documentType, documentId, onClose }) 
         {/* Error */}
         {!templateLoading && error && !previewHtml && (
           <div className="p-4 bg-red-50 border-b border-red-200 print:hidden">
-            <p className="text-red-700 text-sm font-medium">⚠️ {error}</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-red-700 text-sm font-medium">⚠️ {error}</p>
+              <button
+                onClick={handleRefreshTerminalConfig}
+                className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition font-medium flex items-center gap-1 whitespace-nowrap"
+              >
+                <RefreshCw size={14} />
+                Refresh Config
+              </button>
+            </div>
           </div>
         )}
 

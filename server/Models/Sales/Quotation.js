@@ -175,6 +175,11 @@ const QuotationSchema = new mongoose.Schema(
           type: String,
           default: null,
           description: "Product image path - cached for template rendering"
+        },
+        unit: {
+          type: String,
+          default: 'Pcs',
+          description: "Unit of measure (e.g., Pcs, Box, Pack, Dozen)"
         }
       }
     ],

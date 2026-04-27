@@ -5,20 +5,16 @@ import Sequence from '../../../Models/SequenceModel.js';
 export const getNextOrderNumber = async (req, res) => {
   try {
     const { financialYear } = req.query;
-    let sequence = await Sequence.findOne({ name: 'SalesOrder', financialYear });
-    
-    if (!sequence) {
-      sequence = new Sequence({
-        name: 'SalesOrder',
-        financialYear,
-        lastNumber: 0,
-      });
+    if (!financialYear) {
+      return res.status(400).json({ error: 'Financial year is required' });
     }
-
-    sequence.lastNumber += 1;
-    await sequence.save();
-
-    const orderNumber = `SO-${financialYear}-${String(sequence.lastNumber).padStart(5, '0')}`;
+    const counter = await Sequence.findOneAndUpdate(
+      { module: 'sales_order', financialYear },
+      { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SO' } },
+      { returnDocument: 'after', upsert: true }
+    );
+    const paddedNumber = String(counter.lastNumber).padStart(5, '0');
+    const orderNumber = `SO-${financialYear}-${paddedNumber}`;
     res.json({ orderNumber });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -28,10 +24,19 @@ export const getNextOrderNumber = async (req, res) => {
 // Create sales order
 export const createSalesOrder = async (req, res) => {
   try {
+    console.log("📝 Creating SalesOrder with payload:", JSON.stringify(req.body, null, 2));
     const order = new SalesOrder(req.body);
     await order.save();
+    
+    // ✅ Populate customer and product data before returning
+    await order.populate('customerId');
+    await order.populate('items.productId');
+    
+    console.log("✅ SalesOrder created successfully:", order._id);
     res.status(201).json(order);
   } catch (err) {
+    console.error("❌ SalesOrder creation error:", err.message);
+    console.error("Error details:", err);
     res.status(400).json({ error: err.message });
   }
 };

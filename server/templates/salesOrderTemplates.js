@@ -95,7 +95,7 @@ export const SALES_ORDER_TEMPLATE_EN_WITH_LOGO = {
           </tr>
         </thead>
         <tbody>
-          {{#items}}
+          {{#order.items}}
           <tr class="item-row">
             <td class="col-slno">{{slNo}}</td>
             <td class="col-item">
@@ -108,7 +108,7 @@ export const SALES_ORDER_TEMPLATE_EN_WITH_LOGO = {
             <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}{{#discountAmount}}{{currency discountAmount decimals=company.decimalPlaces}}{{/discountAmount}}</td>
             <td class="col-amount">{{currency total decimals=company.decimalPlaces}}</td>
           </tr>
-          {{/items}}
+          {{/order.items}}
         </tbody>
       </table>
 
@@ -206,7 +206,7 @@ export const SALES_ORDER_TEMPLATE_EN_WITH_LOGO = {
     <style>
       .sales-order-container { font-family: Arial, sans-serif; padding: 20px; color: #333; }
       .header { text-align: center; margin-bottom: 15px; }
-      .logo { max-width: 200px; height: auto; }
+      .logo { max-width: 80px; height: auto; }
       .company-info { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; }
       .company-name { margin: 0; font-size: 18px; font-weight: bold; color: #f59e0b; }
       .company-details { margin: 5px 0; font-size: 11px; color: #666; }
@@ -338,7 +338,7 @@ export const SALES_ORDER_TEMPLATE_EN_WITHOUT_LOGO = {
           </tr>
         </thead>
         <tbody>
-          {{#items}}
+          {{#order.items}}
           <tr class="item-row">
             <td class="col-slno">{{slNo}}</td>
             <td class="col-item">{{itemName}}</td>
@@ -348,7 +348,7 @@ export const SALES_ORDER_TEMPLATE_EN_WITHOUT_LOGO = {
             <td class="col-discount">{{#discountPercentage}}{{discountPercentage}}%{{/discountPercentage}}</td>
             <td class="col-amount">{{currency total decimals=company.decimalPlaces}}</td>
           </tr>
-          {{/items}}
+          {{/order.items}}
         </tbody>
       </table>
 

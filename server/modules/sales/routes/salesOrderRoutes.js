@@ -12,7 +12,7 @@ import {
 const router = express.Router();
 
 // Get next order number
-router.get('/nextOrderNumber', getNextOrderNumber);
+router.get('/nextSalesOrderNumber', getNextOrderNumber);
 
 // Order operations
 router.post('/createSalesOrder', createSalesOrder);

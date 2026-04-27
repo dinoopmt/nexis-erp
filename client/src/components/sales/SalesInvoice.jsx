@@ -32,6 +32,7 @@ import { CompanyContext } from "../../context/CompanyContext";
 import { useTerminalFeature } from "../../context/TerminalContext";
 import ProductLookupModal from "./modals/ProductLookupModal";
 import GlobalDocumentPrintingComponent from "../shared/printing/GlobalDocumentPrintingComponent";
+import SalesInvoiceUnitVariantSelector from "./modals/SalesInvoiceUnitVariantSelector"; // ✅ Import unit variant selector
 
 const SalesInvoice = () => {
   // Get full company data from context
@@ -180,6 +181,10 @@ const SalesInvoice = () => {
   const [showSerialModal, setShowSerialModal] = useState(false);
   const [selectedItemSerial, setSelectedItemSerial] = useState(null);
   const [newSerialInput, setNewSerialInput] = useState("");
+
+  // ✅ Unit variant selector state (for items with multiple packings like pack/dozen/piece)
+  const [showUnitSelector, setShowUnitSelector] = useState(false);
+  const [productForUnitSelection, setProductForUnitSelection] = useState(null);
 
   // Toast notifications state
   const [toasts, setToasts] = useState([]);
@@ -551,6 +556,7 @@ const SalesInvoice = () => {
           itemDiscountAmount: 0,
           productId: product._id,
           barcode: matchedBarcode,
+          unit: variant.unit?.unitSymbol || product.unitType?.unitSymbol || product.unitSymbol || 'Pcs',
           serialNumbers: [],
         };
         console.log(`➕ [VARIANT] Added new item:`, newItem.itemName);
@@ -593,6 +599,7 @@ const SalesInvoice = () => {
           itemDiscountAmount: 0,
           productId: product._id,
           barcode: product.barcode,
+          unit: product.unitType?.unitSymbol || product.unitSymbol || 'Pcs',
           serialNumbers: [],
         };
         console.log(`➕ [PRODUCT] Added new item:`, newItem.itemName);
@@ -829,6 +836,26 @@ const SalesInvoice = () => {
     })
     .slice(0, 10); // Limit to 10 results
 
+  // ✅ Stable ref setter callback - ensures refs persist even after input value changes
+  const setItemInputRef = useCallback((key) => (el) => {
+    if (el) {
+      itemInputRefs.current[key] = el;
+    }
+  }, []);
+
+  // ✅ Helper: Find input by ID and field (uses DOM query as fallback for fresh refs)
+  const findInput = (itemId, field) => {
+    // First try the ref
+    const refKey = `${itemId}_${field}`;
+    if (itemInputRefs.current[refKey]) {
+      return itemInputRefs.current[refKey];
+    }
+    
+    // Fallback: query the DOM directly to get the current, live element
+    const inputs = document.querySelectorAll(`input[data-item-id="${itemId}"][data-field="${field}"]`);
+    return inputs.length > 0 ? inputs[0] : null;
+  };
+
   // Handle table cell keyboard navigation (Tab/Enter for columns, Arrow keys for rows, Delete to remove)
   const handleTableCellKeyDown = (e, itemId, currentField, itemIndex) => {
     // Define field order for navigation
@@ -847,11 +874,13 @@ const SalesInvoice = () => {
       e.preventDefault();
       if (itemIndex < invoiceData.items.length - 1) {
         const nextItemId = invoiceData.items[itemIndex + 1].id;
-        const nextRef = itemInputRefs.current[`${nextItemId}_${currentField}`];
-        if (nextRef) {
-          nextRef.focus();
-          nextRef.select();
-          setFocusedCell({ itemId: nextItemId, field: currentField });
+        const nextInput = findInput(nextItemId, currentField);
+        if (nextInput) {
+          setTimeout(() => {
+            nextInput.focus();
+            nextInput.select();
+            setFocusedCell({ itemId: nextItemId, field: currentField });
+          }, 0);
         }
       }
       return;
@@ -861,11 +890,13 @@ const SalesInvoice = () => {
       e.preventDefault();
       if (itemIndex > 0) {
         const prevItemId = invoiceData.items[itemIndex - 1].id;
-        const prevRef = itemInputRefs.current[`${prevItemId}_${currentField}`];
-        if (prevRef) {
-          prevRef.focus();
-          prevRef.select();
-          setFocusedCell({ itemId: prevItemId, field: currentField });
+        const prevInput = findInput(prevItemId, currentField);
+        if (prevInput) {
+          setTimeout(() => {
+            prevInput.focus();
+            prevInput.select();
+            setFocusedCell({ itemId: prevItemId, field: currentField });
+          }, 0);
         }
       }
       return;
@@ -883,11 +914,13 @@ const SalesInvoice = () => {
         if (itemIndex > 0) {
           const prevItemId = invoiceData.items[itemIndex - 1].id;
           const lastField = fieldOrder[fieldOrder.length - 1];
-          const prevRef = itemInputRefs.current[`${prevItemId}_${lastField}`];
-          if (prevRef) {
-            prevRef.focus();
-            prevRef.select();
-            setFocusedCell({ itemId: prevItemId, field: lastField });
+          const prevInput = findInput(prevItemId, lastField);
+          if (prevInput) {
+            setTimeout(() => {
+              prevInput.focus();
+              prevInput.select();
+              setFocusedCell({ itemId: prevItemId, field: lastField });
+            }, 0);
           }
         }
       } else if (nextFieldIndex >= fieldOrder.length) {
@@ -895,11 +928,13 @@ const SalesInvoice = () => {
         if (itemIndex < invoiceData.items.length - 1) {
           const nextItemId = invoiceData.items[itemIndex + 1].id;
           const firstField = fieldOrder[0];
-          const nextRef = itemInputRefs.current[`${nextItemId}_${firstField}`];
-          if (nextRef) {
-            nextRef.focus();
-            nextRef.select();
-            setFocusedCell({ itemId: nextItemId, field: firstField });
+          const nextInput = findInput(nextItemId, firstField);
+          if (nextInput) {
+            setTimeout(() => {
+              nextInput.focus();
+              nextInput.select();
+              setFocusedCell({ itemId: nextItemId, field: firstField });
+            }, 0);
           }
         } else {
           // Last field of last item - go back to search
@@ -909,11 +944,13 @@ const SalesInvoice = () => {
       } else {
         // Move to next field in current item
         const nextField = fieldOrder[nextFieldIndex];
-        const nextRef = itemInputRefs.current[`${itemId}_${nextField}`];
-        if (nextRef) {
-          nextRef.focus();
-          nextRef.select();
-          setFocusedCell({ itemId: itemId, field: nextField });
+        const nextInput = findInput(itemId, nextField);
+        if (nextInput) {
+          setTimeout(() => {
+            nextInput.focus();
+            nextInput.select();
+            setFocusedCell({ itemId: itemId, field: nextField });
+          }, 0);
         }
       }
     }
@@ -972,8 +1009,8 @@ const SalesInvoice = () => {
     setSelectedSearchIndex(0);
   }, [itemSearch]);
 
-  // Add item from search selection
-  const addItemFromSearch = (product) => {
+  // ✅ Add item with unit information (called after unit selection or directly if no variants)
+  const addItemToInvoiceWithUnit = useCallback((product, selectedUnit = null) => {
     let addedItemId = null;
 
     setInvoiceData((prev) => {
@@ -995,18 +1032,25 @@ const SalesInvoice = () => {
           ? (taxMaster?.find((tg) => tg._id === selectedCustomerDetails.taxGroupId)?.totalRate || 5)
           : 5;
         
+        // Use selected unit info if provided, otherwise use product base unit
+        const unit = selectedUnit?.unit || product.unitType?.unitSymbol || product.unitSymbol || 'Pcs';
+        const cost = selectedUnit?.cost || product.cost;
+        const price = selectedUnit?.price || product.price;
+        const barcode = selectedUnit?.barcode || product.barcode;
+        
         const newItem = {
           id: Date.now(),
           itemName: product.name,
           qty: 1,
-          cost: product.cost,
-          rate: product.price,
-          tax: customerTaxRateForItem, // Use customer tax rate instead of product tax
+          cost: cost,
+          rate: price,
+          tax: customerTaxRateForItem,
           itemDiscount: 0,
           itemDiscountAmount: 0,
           productId: product._id,
-          barcode: product.barcode,
+          barcode: barcode,
           itemcode: product.itemcode,
+          unit: unit,
           serialNumbers: [],
         };
         addedItemId = newItem.id;
@@ -1028,7 +1072,29 @@ const SalesInvoice = () => {
         setFocusedCell({ itemId: addedItemId, field: "qty" });
       }
     }, 50);
+  }, [selectedCustomerDetails, taxMaster]);
+
+  // ✅ Add item from search - checks for unit variants before adding
+  const addItemFromSearch = (product) => {
+    // Check if product has packing units (multiple unit variants like pack/dozen/piece)
+    if (product?.packingUnits && product.packingUnits.length > 0) {
+      // Show unit selector modal
+      setProductForUnitSelection(product);
+      setShowUnitSelector(true);
+    } else {
+      // Add directly with base unit
+      addItemToInvoiceWithUnit(product);
+    }
   };
+
+  // ✅ Handle unit variant selection from modal
+  const handleUnitVariantSelected = useCallback((selectedUnit) => {
+    if (productForUnitSelection) {
+      addItemToInvoiceWithUnit(productForUnitSelection, selectedUnit);
+      setShowUnitSelector(false);
+      setProductForUnitSelection(null);
+    }
+  }, [productForUnitSelection, addItemToInvoiceWithUnit]);
 
   // Close search dropdown when clicking outside
   useEffect(() => {
@@ -1375,6 +1441,7 @@ const SalesInvoice = () => {
             total: itemTotal,
 
             // Additional Details
+            unit: item.unit || 'Pcs', // ✅ Include unit of measure
             serialNumbers: item.serialNumbers || [],
             note: itemNotes[item.id] || "",
           };
@@ -1497,6 +1564,7 @@ const SalesInvoice = () => {
           itemDiscountAmount: Number(item.discountAmount) || 0,
           productId: item.productId,
           barcode: product?.barcode || item.barcode || "",
+          unit: item.unit || product?.unitType?.unitSymbol || product?.unitSymbol || 'Pcs',
           serialNumbers: item.serialNumbers || [],
         };
       }),
@@ -1931,12 +1999,13 @@ const SalesInvoice = () => {
                   <th className="text-center px-2 py-3 w-12">#</th>
                   <th className="text-center px-2 py-3 w-28">Code</th>
                   <th className="text-left px-2 py-3">Item Name</th>
+                  <th className="text-center px-2 py-3 w-20">UOM</th>
                   <th className="text-center px-2 py-3 w-20">Qty</th>
                   <th className="text-center px-2 py-3 w-24">Price</th>
                   <th className="text-center px-2 py-3 w-20">Disc%</th>
                   <th className="text-center px-2 py-3 w-20">Disc Amt</th>
-                  <th className="text-center px-1 py-3 w-12">VAT%</th>
-                  <th className="text-right px-2 py-3 w-28">Total</th>
+                  <th className="text-center px-1 py-3 w-10">VAT%</th>
+                  <th className="text-right px-2 py-3 w-20">Total</th>
                   <th className="text-center px-2 py-3 w-20">Actions</th>
                 </tr>
               </thead>
@@ -1996,24 +2065,31 @@ const SalesInvoice = () => {
                             </p>
                             {itemNotes[item.id] && (
                               <p className="text-xs italic text-gray-500 mt-1">
-                                Note: {itemNotes[item.id]}
+                                {itemNotes[item.id]}
                               </p>
                             )}
                             {item.serialNumbers?.length > 0 && (
                               <p className="text-xs italic text-gray-500 mt-1">
-                                Serial: {item.serialNumbers.join(", ")}
+                                {item.serialNumbers.join(", ")}
                               </p>
                             )}
                           </div>
+                        </td>
+                        {/* UOM */}
+                        
+
+                         <td className="px-2 py-2 text-center w-20">
+                          <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
+                            {item.unit || 'Pcs'}
+                          </span>
                         </td>
 
                         {/* Quantity */}
                         <td className="px-2 py-2 text-center w-20">
                           <input
-                            ref={(el) => {
-                              if (el)
-                                itemInputRefs.current[`${item.id}_qty`] = el;
-                            }}
+                            ref={setItemInputRef(`${item.id}_qty`)}
+                            data-item-id={item.id}
+                            data-field="qty"
                             type="number"
                             inputMode="numeric"
                             step="1"
@@ -2039,10 +2115,9 @@ const SalesInvoice = () => {
                         {/* Rate (Price) */}
                         <td className="px-2 py-2 text-center w-24">
                           <input
-                            ref={(el) => {
-                              if (el)
-                                itemInputRefs.current[`${item.id}_rate`] = el;
-                            }}
+                            ref={setItemInputRef(`${item.id}_rate`)}
+                            data-item-id={item.id}
+                            data-field="rate"
                             type="number"
                             inputMode="decimal"
                             step={getInputStep()}
@@ -2068,12 +2143,9 @@ const SalesInvoice = () => {
                         {/* Discount % */}
                         <td className="px-2 py-2 text-center w-20">
                           <input
-                            ref={(el) => {
-                              if (el)
-                                itemInputRefs.current[
-                                  `${item.id}_itemDiscount`
-                                ] = el;
-                            }}
+                            ref={setItemInputRef(`${item.id}_itemDiscount`)}
+                            data-item-id={item.id}
+                            data-field="itemDiscount"
                             type="number"
                             inputMode="decimal"
                             step={getInputStep()}
@@ -2107,12 +2179,9 @@ const SalesInvoice = () => {
                         {/* Discount Amount */}
                         <td className="px-2 py-2 text-center w-20">
                           <input
-                            ref={(el) => {
-                              if (el)
-                                itemInputRefs.current[
-                                  `${item.id}_itemDiscountAmount`
-                                ] = el;
-                            }}
+                            ref={setItemInputRef(`${item.id}_itemDiscountAmount`)}
+                            data-item-id={item.id}
+                            data-field="itemDiscountAmount"
                             type="number"
                             inputMode="decimal"
                             step={getInputStep()}
@@ -2144,12 +2213,12 @@ const SalesInvoice = () => {
                         </td>
 
                         {/* Tax */}
-                        <td className="px-1 py-2 text-center w-12 font-medium text-gray-800">
+                        <td className="px-1 py-2 text-center w-10 font-medium text-gray-800">
                           {item.tax || 0}%
                         </td>
 
                         {/* Total */}
-                        <td className="px-2 py-2 text-right font-bold text-gray-900 w-28">
+                        <td className="px-2 py-2 text-right font-bold text-gray-900 w-20">
                           {formatNumber(total)}
                         </td>
 
@@ -2709,6 +2778,17 @@ const SalesInvoice = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ UNIT VARIANT SELECTOR MODAL - For items with multiple packings (pack/dozen/piece etc) */}
+      <SalesInvoiceUnitVariantSelector
+        product={productForUnitSelection}
+        isOpen={showUnitSelector}
+        onSelect={handleUnitVariantSelected}
+        onClose={() => {
+          setShowUnitSelector(false);
+          setProductForUnitSelection(null);
+        }}
+      />
 
       {/* TOAST NOTIFICATIONS */}
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[999] space-y-2 max-w-sm pointer-events-none">

@@ -21,8 +21,8 @@ const SalesOrderSchema = new mongoose.Schema(
     },
     paymentType: {
       type: String,
-      enum: ['Cash', 'Credit', 'Bank'],
-      default: null
+      enum: ['', 'Cash', 'Bank', 'Cheque', 'Online', 'Credit'],
+      default: ''
     },
     paymentTerms: {
       type: String,
@@ -226,7 +226,12 @@ const SalesOrderSchema = new mongoose.Schema(
           default: 0 
         },
         serialNumbers: [{ type: String }],
-        note: { type: String }
+        note: { type: String },
+        unit: {
+          type: String,
+          default: 'Pcs',
+          description: "Unit of measure (e.g., Pcs, Box, Pack, Dozen)"
+        }
       }
     ]
   },
