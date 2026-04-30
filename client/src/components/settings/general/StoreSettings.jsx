@@ -19,6 +19,12 @@ const StoreSettings = () => {
     taxNumber: '',
     // ✅ NEW: Store logo ONLY (branding per location)
     logoUrl: '',
+    // ✅ NEW: Inventory Template Mappings (LPO, GRN, RTV)
+    templateMappings: {
+      lpo: { templateId: null },
+      grn: { templateId: null },
+      rtv: { templateId: null }
+    },
     salesControls: {
       enableInvoiceNumbering: true,
       invoiceNumberFormat: 'INV-YYMMDD-XXXX',
@@ -35,6 +41,8 @@ const StoreSettings = () => {
       enableReturns: true,
       enablePriceOverride: false,
       enableManagerApproval: true,
+      // ✅ SECURITY: Sales Return Settings (Invoice mandatory, strict return window only - prevents fraud)
+      salesReturnAllowedDays: 30,
     },
     // ✅ NEW: Weight Scale Settings
     weightScaleSettings: {
@@ -69,6 +77,12 @@ const StoreSettings = () => {
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [editingTerminal, setEditingTerminal] = useState(null);
   const [activeTab, setActiveTab] = useState('store-details');
+  const [availableInventoryTemplates, setAvailableInventoryTemplates] = useState({
+    lpo: [],
+    grn: [],
+    rtv: []
+  });
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
   // ✅ Terminal Management state - separate from store settings
   const [storeId, setStoreId] = useState(null);
   const [terminals, setTerminals] = useState([]);
@@ -81,6 +95,7 @@ const StoreSettings = () => {
 
   useEffect(() => {
     fetchStoreSettings();
+    fetchInventoryTemplates();
   }, []);
 
   // Fetch terminals whenever storeId changes - with debounce to prevent rate limiting
@@ -99,32 +114,43 @@ const StoreSettings = () => {
       setIsLoading(true);
       const response = await apiClient.get(`/settings/store`);
       if (response.ok && response.data.data) {
+        console.log('📥 Fetched store settings:', { templateMappings: response.data.data.templateMappings });
+        
         // Merge API response with default state to ensure all fields are defined
-        setStoreData(prev => ({
-          ...prev,
-          ...response.data.data,
-          // Ensure nested objects are properly merged
-          salesControls: {
-            ...prev.salesControls,
-            ...(response.data.data.salesControls || {})
-          },
-          storeControlSettings: {
-            ...prev.storeControlSettings,
-            ...(response.data.data.storeControlSettings || {})
-          },
-          weightScaleSettings: {
-            ...prev.weightScaleSettings,
-            ...(response.data.data.weightScaleSettings || {}),
-            barcodeMeasurement: {
-              ...prev.weightScaleSettings.barcodeMeasurement,
-              ...(response.data.data.weightScaleSettings?.barcodeMeasurement || {})
+        setStoreData(prev => {
+          const merged = {
+            ...prev,
+            ...response.data.data,
+            // Ensure nested objects are properly merged
+            salesControls: {
+              ...prev.salesControls,
+              ...(response.data.data.salesControls || {})
             },
-            scaleDevice: {
-              ...prev.weightScaleSettings.scaleDevice,
-              ...(response.data.data.weightScaleSettings?.scaleDevice || {})
+            storeControlSettings: {
+              ...prev.storeControlSettings,
+              ...(response.data.data.storeControlSettings || {})
+            },
+            templateMappings: {
+              lpo: { templateId: response.data.data.templateMappings?.lpo?.templateId || null },
+              grn: { templateId: response.data.data.templateMappings?.grn?.templateId || null },
+              rtv: { templateId: response.data.data.templateMappings?.rtv?.templateId || null }
+            },
+            weightScaleSettings: {
+              ...prev.weightScaleSettings,
+              ...(response.data.data.weightScaleSettings || {}),
+              barcodeMeasurement: {
+                ...prev.weightScaleSettings.barcodeMeasurement,
+                ...(response.data.data.weightScaleSettings?.barcodeMeasurement || {})
+              },
+              scaleDevice: {
+                ...prev.weightScaleSettings.scaleDevice,
+                ...(response.data.data.weightScaleSettings?.scaleDevice || {})
+              }
             }
-          }
-        }));
+          };
+          console.log('📤 Updated state:', { templateMappings: merged.templateMappings });
+          return merged;
+        });
         
         // ✅ Cache store details for print templates (performance optimization)
         saveStoreDetailsToCache(response.data.data);
@@ -237,6 +263,70 @@ const StoreSettings = () => {
       weightScaleSettings: {
         ...prev.weightScaleSettings,
         scaleDevice: { ...prev.weightScaleSettings.scaleDevice, [field]: value }
+      }
+    }));
+  };
+
+  // ✅ NEW: Fetch inventory templates from API
+  const fetchInventoryTemplates = async () => {
+    try {
+      setLoadingTemplates(true);
+      console.log('🔄 Fetching inventory templates...');
+      
+      const response = await apiClient.get(`/inventory-templates`);
+      console.log('📡 Raw API response:', response);
+      
+      // Handle different response formats
+      let templates = [];
+      if (response.ok) {
+        if (Array.isArray(response.data)) {
+          templates = response.data;
+        } else if (Array.isArray(response.data.data)) {
+          templates = response.data.data;
+        } else if (response.data.data && typeof response.data.data === 'object') {
+          // Single template response
+          templates = [response.data.data];
+        }
+      }
+      
+      console.log('📦 Parsed templates:', templates, `Total: ${templates.length}`);
+      
+      if (!templates || templates.length === 0) {
+        console.warn('⚠️  No templates found in response');
+        setAvailableInventoryTemplates({ lpo: [], grn: [], rtv: [] });
+        setLoadingTemplates(false);
+        return;
+      }
+      
+      const organized = {
+        lpo: templates.filter(t => t.documentType === 'LPO'),
+        grn: templates.filter(t => t.documentType === 'GRN'),
+        rtv: templates.filter(t => t.documentType === 'RTV')
+      };
+      
+      console.log('✅ Organized templates:', organized);
+      console.log(`   LPO: ${organized.lpo.length}, GRN: ${organized.grn.length}, RTV: ${organized.rtv.length}`);
+      
+      setAvailableInventoryTemplates(organized);
+    } catch (err) {
+      console.error('❌ Failed to fetch inventory templates:', err);
+      console.error('   Error details:', err.response?.data || err.message);
+      setAvailableInventoryTemplates({ lpo: [], grn: [], rtv: [] });
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  // ✅ NEW: Handle template mapping changes
+  const handleTemplateMappingChange = (docType, templateId) => {
+    console.log(`📋 Mapping change: ${docType} = ${templateId}`);
+    setStoreData(prev => ({
+      ...prev,
+      templateMappings: {
+        ...prev.templateMappings,
+        [docType]: { 
+          templateId: templateId && templateId.trim() ? templateId : null
+        }
       }
     }));
   };
@@ -358,13 +448,53 @@ const StoreSettings = () => {
 
     try {
       setIsLoading(true);
+      console.log('💾 Saving store settings...');
+      console.log('   Sending payload:');
+      console.log('   - LPO Template ID:', storeData.templateMappings?.lpo?.templateId);
+      console.log('   - GRN Template ID:', storeData.templateMappings?.grn?.templateId);
+      console.log('   - RTV Template ID:', storeData.templateMappings?.rtv?.templateId);
+      console.log('   - Full templateMappings:', JSON.stringify(storeData.templateMappings, null, 2));
+      
       const response = await apiClient.post(`/settings/store`, storeData);
       
-      // ✅ Cache store details after successful update
-      saveStoreDetailsToCache(storeData);
-      
-      showToast('success', 'Store settings saved successfully');
+      if (response.ok && response.data.data) {
+        console.log('✅ Server response received');
+        console.log('   Response templateMappings:', JSON.stringify(response.data.data.templateMappings, null, 2));
+        console.log('   - LPO from server:', response.data.data.templateMappings?.lpo?.templateId);
+        console.log('   - GRN from server:', response.data.data.templateMappings?.grn?.templateId);
+        console.log('   - RTV from server:', response.data.data.templateMappings?.rtv?.templateId);
+        
+        // ✅ Update state with server response (ensures data persisted correctly)
+        setStoreData(prev => {
+          const updated = {
+            ...prev,
+            ...response.data.data,
+            // Merge nested objects
+            salesControls: {
+              ...prev.salesControls,
+              ...(response.data.data.salesControls || {})
+            },
+            storeControlSettings: {
+              ...prev.storeControlSettings,
+              ...(response.data.data.storeControlSettings || {})
+            },
+            templateMappings: {
+              lpo: { templateId: response.data.data.templateMappings?.lpo?.templateId || null },
+              grn: { templateId: response.data.data.templateMappings?.grn?.templateId || null },
+              rtv: { templateId: response.data.data.templateMappings?.rtv?.templateId || null }
+            }
+          };
+          console.log('📤 Updated state templateMappings:', JSON.stringify(updated.templateMappings, null, 2));
+          return updated;
+        });
+        
+        // ✅ Cache store details after successful update
+        saveStoreDetailsToCache(response.data.data);
+        
+        showToast('success', 'Store settings saved successfully');
+      }
     } catch (err) {
+      console.error('❌ Save error:', err);
       showToast('error', err.response?.data?.message || 'Failed to save store settings');
     } finally {
       setIsLoading(false);
@@ -388,6 +518,10 @@ const StoreSettings = () => {
         <button onClick={() => setActiveTab('store-settings')} className={`flex items-center gap-2 px-4 py-2 rounded-md whitespace-nowrap font-medium text-sm transition ${activeTab === 'store-settings' ? 'bg-white text-blue-600 border border-gray-300 shadow-sm' : 'text-gray-700'}`}>
           <Cog size={16} />
           Store Settings
+        </button>
+        <button onClick={() => setActiveTab('template-mappings')} className={`flex items-center gap-2 px-4 py-2 rounded-md whitespace-nowrap font-medium text-sm transition ${activeTab === 'template-mappings' ? 'bg-white text-blue-600 border border-gray-300 shadow-sm' : 'text-gray-700'}`}>
+          <Printer size={16} />
+          Template Mappings
         </button>
         <button onClick={() => setActiveTab('terminal-settings')} className={`flex items-center gap-2 px-4 py-2 rounded-md whitespace-nowrap font-medium text-sm transition ${activeTab === 'terminal-settings' ? 'bg-white text-blue-600 border border-gray-300 shadow-sm' : 'text-gray-700'}`}>
           <Monitor size={16} />
@@ -699,6 +833,114 @@ const StoreSettings = () => {
       </>
       )}
 
+      {/* Template Mappings Tab */}
+      {activeTab === 'template-mappings' && (
+      <>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <div className="flex items-center gap-2 mb-3">
+            <Printer size={16} className="text-blue-600" />
+            <h3 className="text-sm font-semibold text-gray-900">Inventory Document Template Mappings</h3>
+          </div>
+          <p className="text-xs text-gray-600 mb-4">Select default templates for printing LPO, GRN, and RTV documents at this store</p>
+
+          {loadingTemplates ? (
+            <div className="text-center py-8 text-gray-600">
+              <div className="inline-block">
+                <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full mb-2"></div>
+                Loading templates...
+              </div>
+            </div>
+          ) : availableInventoryTemplates.lpo.length === 0 && availableInventoryTemplates.grn.length === 0 && availableInventoryTemplates.rtv.length === 0 ? (
+            <div className="bg-red-50 border border-red-200 p-4 rounded-lg text-red-700 text-sm">
+              <p className="font-semibold mb-2">⚠️ No Templates Available</p>
+              <p>No inventory templates found in the system.</p>
+              <p className="text-xs mt-2">Go to Settings → Template Configuration → Inventory Templates to create templates first.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* LPO Template */}
+              <div className="border border-blue-200 bg-blue-50 p-3 rounded-lg">
+                <h4 className="text-xs font-semibold text-gray-900 mb-2">Local Purchase Order (LPO)</h4>
+                <select
+                  value={storeData.templateMappings?.lpo?.templateId ? String(storeData.templateMappings.lpo.templateId) : ''}
+                  onChange={(e) => {
+                    console.log(`🔵 LPO selected: ${e.target.value}`);
+                    handleTemplateMappingChange('lpo', e.target.value);
+                  }}
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Select LPO Template --</option>
+                  {availableInventoryTemplates.lpo && availableInventoryTemplates.lpo.map(template => (
+                    <option key={template._id} value={String(template._id)}>
+                      {template.templateName} ({template.language || 'EN'})
+                    </option>
+                  ))}
+                </select>
+                {availableInventoryTemplates.lpo && availableInventoryTemplates.lpo.length === 0 && (
+                  <p className="text-xs text-red-600 mt-2">No LPO templates available</p>
+                )}
+                {storeData.templateMappings?.lpo?.templateId && (
+                  <p className="text-xs text-green-600 mt-2">✓ Template selected</p>
+                )}
+              </div>
+
+              {/* GRN Template */}
+              <div className="border border-green-200 bg-green-50 p-3 rounded-lg">
+                <h4 className="text-xs font-semibold text-gray-900 mb-2">Goods Receipt Note (GRN)</h4>
+                <select
+                  value={storeData.templateMappings?.grn?.templateId ? String(storeData.templateMappings.grn.templateId) : ''}
+                  onChange={(e) => {
+                    console.log(`🟢 GRN selected: ${e.target.value}`);
+                    handleTemplateMappingChange('grn', e.target.value);
+                  }}
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">-- Select GRN Template --</option>
+                  {availableInventoryTemplates.grn && availableInventoryTemplates.grn.map(template => (
+                    <option key={template._id} value={String(template._id)}>
+                      {template.templateName} ({template.language || 'EN'})
+                    </option>
+                  ))}
+                </select>
+                {availableInventoryTemplates.grn && availableInventoryTemplates.grn.length === 0 && (
+                  <p className="text-xs text-red-600 mt-2">No GRN templates available</p>
+                )}
+                {storeData.templateMappings?.grn?.templateId && (
+                  <p className="text-xs text-green-600 mt-2">✓ Template selected</p>
+                )}
+              </div>
+
+              {/* RTV Template */}
+              <div className="border border-orange-200 bg-orange-50 p-3 rounded-lg">
+                <h4 className="text-xs font-semibold text-gray-900 mb-2">Return to Vendor (RTV)</h4>
+                <select
+                  value={storeData.templateMappings?.rtv?.templateId ? String(storeData.templateMappings.rtv.templateId) : ''}
+                  onChange={(e) => {
+                    console.log(`🔴 RTV selected: ${e.target.value}`);
+                    handleTemplateMappingChange('rtv', e.target.value);
+                  }}
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="">-- Select RTV Template --</option>
+                  {availableInventoryTemplates.rtv && availableInventoryTemplates.rtv.map(template => (
+                    <option key={template._id} value={String(template._id)}>
+                      {template.templateName} ({template.language || 'EN'})
+                    </option>
+                  ))}
+                </select>
+                {availableInventoryTemplates.rtv && availableInventoryTemplates.rtv.length === 0 && (
+                  <p className="text-xs text-red-600 mt-2">No RTV templates available</p>
+                )}
+                {storeData.templateMappings?.rtv?.templateId && (
+                  <p className="text-xs text-green-600 mt-2">✓ Template selected</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+      )}
+
       {/* Store Control Settings & Weight Scale - Part of Store Settings */}
       {activeTab === 'store-settings' && (
       <>
@@ -771,6 +1013,33 @@ const StoreSettings = () => {
             </label>
           </div>
         </div>
+
+        {/* ✅ SECURITY: Sales Return Settings */}
+        {storeData.storeControlSettings.enableReturns && (
+          <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200 space-y-2">
+            <h4 className="text-xs font-semibold text-gray-900 mb-2">Sales Return Settings</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Allow Sales Return Days <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={storeData.storeControlSettings.salesReturnAllowedDays}
+                  onChange={(e) => handleStoreControlChange('salesReturnAllowedDays', parseInt(e.target.value) || 30)}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <p className="text-xs text-gray-600 mt-0.5">Days from invoice date when sales returns are allowed (1-365). Returns outside this window are NOT permitted.</p>
+              </div>
+              <div className="bg-red-50 p-2 rounded border border-red-200">
+                <p className="text-xs font-semibold text-red-900 mb-1">🔒 Strict Fraud Prevention</p>
+                <p className="text-xs text-red-800">✅ Invoice mandatory<br/>✅ Strict return window<br/>✅ No returns after allowed days</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
           <label className="text-xs font-semibold text-gray-700 flex items-center gap-2 cursor-pointer">

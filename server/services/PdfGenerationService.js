@@ -109,6 +109,11 @@ class PdfGenerationService {
     Handlebars.registerHelper('date', dateFormatter);
     Handlebars.registerHelper('formatDate', dateFormatter);
 
+    // Add 1 to index for 1-based serial numbering
+    Handlebars.registerHelper('slNo', (index) => {
+      return (parseInt(index) || 0) + 1;
+    });
+
     // Arabic text direction
     Handlebars.registerHelper('rtl', (language) => {
       return language === 'AR' ? 'rtl' : 'ltr';
@@ -193,31 +198,86 @@ class PdfGenerationService {
   // Generate PDF from HTML
   async generatePdfFromHtml(htmlContent, options = {}) {
     try {
+      console.log('🖨️ Starting PDF generation from HTML');
+      
+      // Minimal CSS injection
+      const a4CssInjection = `
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+          }
+        </style>
+      `;
+      
+      let enhancedHtml = htmlContent;
+      if (htmlContent.includes('<head>')) {
+        enhancedHtml = htmlContent.replace('<head>', `<head>${a4CssInjection}`);
+      } else if (htmlContent.includes('<body>')) {
+        enhancedHtml = htmlContent.replace('<body>', `<head>${a4CssInjection}</head><body>`);
+      } else {
+        enhancedHtml = `<!DOCTYPE html><html><head>${a4CssInjection}</head><body>${htmlContent}</body></html>`;
+      }
+      
       const browser = await this.initBrowser();
+      console.log('✅ Browser initialized');
+      
       const page = await browser.newPage();
+      console.log('✅ New page created');
 
+      // Calculate viewport size based on margins
+      // A4 = 210mm × 297mm at 96dpi = 794px × 1123px
+      // Subtract margins from width for viewport
+      const marginTopMm = options.margins?.top || 10;
+      const marginRightMm = options.margins?.right || 10;
+      const marginBottomMm = options.margins?.bottom || 10;
+      const marginLeftMm = options.margins?.left || 10;
+      
+      // 1mm ≈ 3.78px at 96dpi
+      const pxPerMm = 96 / 25.4;
+      const viewportWidth = Math.floor(210 * pxPerMm - (marginLeftMm + marginRightMm) * pxPerMm);
+      const viewportHeight = Math.floor(297 * pxPerMm - (marginTopMm + marginBottomMm) * pxPerMm);
+      
+      await page.setViewport({ width: viewportWidth, height: viewportHeight });
+      console.log(`✅ Viewport set to ${viewportWidth}×${viewportHeight} (A4 minus margins)`);
+      
       // Set page content
-      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      try {
+        await page.setContent(enhancedHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+        console.log('✅ Page content set');
+      } catch (err) {
+        console.error('⚠️ Content error:', err.message);
+        await page.setContent(enhancedHtml, { waitUntil: 'load' });
+      }
 
-      // Generate PDF with options
+      // Generate PDF with margins
       const pdfOptions = {
         format: options.pageSize || 'A4',
+        landscape: options.landscape || false,
         margin: {
-          top: `${options.margins?.top || 10}mm`,
-          bottom: `${options.margins?.bottom || 10}mm`,
-          left: `${options.margins?.left || 10}mm`,
-          right: `${options.margins?.right || 10}mm`
+          top: `${marginTopMm}mm`,
+          bottom: `${marginBottomMm}mm`,
+          left: `${marginLeftMm}mm`,
+          right: `${marginRightMm}mm`
         },
-        printBackground: true,
-        ...options.pdfOptions
+        printBackground: true
       };
 
+      console.log('🖨️ Generating A4 PDF:', { viewport: `${viewportWidth}×${viewportHeight}`, margins: pdfOptions.margin });
+      
       const pdf = await page.pdf(pdfOptions);
+      console.log('✅ PDF generated:', pdf.length, 'bytes');
+      
       await page.close();
+      console.log('✅ Page closed');
 
       return pdf;
     } catch (error) {
-      console.error('PDF generation error:', error);
+      console.error('❌ PDF generation error:', error.message);
+      console.error('Stack trace:', error.stack);
       throw new Error(`Failed to generate PDF: ${error.message}`);
     }
   }

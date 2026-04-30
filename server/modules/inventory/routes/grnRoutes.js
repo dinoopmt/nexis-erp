@@ -10,6 +10,7 @@ import {
   postGrnWithUpdates,
   deleteGrn,
   getGrnReport,
+  getGrnHtml,
 } from "../controllers/grnController.js";
 
 const router = express.Router();
@@ -35,6 +36,13 @@ router.get("/next-number", getNextGrnNumber);
  * @access  Public
  */
 router.get("/report", getGrnReport);
+
+/**
+ * @route   GET /api/v1/grn/:id/html
+ * @desc    Get GRN as HTML for printing/PDF
+ * @access  Public
+ */
+router.get("/:id/html", getGrnHtml);
 
 /**
  * @route   GET /api/v1/grn/:id

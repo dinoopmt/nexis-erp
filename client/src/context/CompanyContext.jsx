@@ -19,6 +19,7 @@ export const CompanyProvider = ({ children }) => {
     taxNumberLabel: 'TRN',
     taxStructure: 'SINGLE',
     taxRate: 5.0,
+    decimalPlaces: 2,
     companyName: '',
     email: '',
     phone: '',

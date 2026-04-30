@@ -1,5 +1,5 @@
 import express from 'express';
-import { createSalesInvoice, getSalesInvoices, getSalesInvoiceById, updateSalesInvoice, deleteSalesInvoice, getNextInvoiceNumber } from '../controllers/salesInvoiceController.js';
+import { createSalesInvoice, getSalesInvoices, getSalesInvoiceById, updateSalesInvoice, deleteSalesInvoice, getNextInvoiceNumber, getInvoicesByCustomer } from '../controllers/salesInvoiceController.js';
 import { validate, createSalesInvoiceSchema, updateSalesInvoiceSchema } from '../../../middleware/validators/schemaValidator.js';
 import { z } from 'zod';
 
@@ -18,6 +18,9 @@ router.post('/createSalesInvoice', validate(createSalesInvoiceSchema, 'body'), c
 
 // List - no validation needed
 router.get('/getSalesInvoices', getSalesInvoices);
+
+// ✅ NEW: Get invoices by customer ID (for Sales Return invoice lookup)
+router.get('/getInvoicesByCustomer/:customerId', getInvoicesByCustomer);
 
 // Get by ID - validate ID parameter
 router.get('/getSalesInvoiceById/:id', validate(idParamSchema, 'params'), getSalesInvoiceById);

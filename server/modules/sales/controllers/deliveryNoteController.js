@@ -6,12 +6,15 @@ export const getNextDeliveryNoteNumber = async (req, res) => {
   try {
     const { financialYear = '2025-26' } = req.query;
     const sequence = await Sequence.findOneAndUpdate(
-      { documentType: 'DeliveryNote', financialYear },
-      { $inc: { sequenceNumber: 1 } },
+      { module: 'delivery_note', financialYear },
+      { 
+        $inc: { lastNumber: 1 },
+        $setOnInsert: { prefix: 'DN', module: 'delivery_note', financialYear }
+      },
       { returnDocument: 'after', upsert: true }
     );
-    const deliveryNoteNumber = `DN-${financialYear}-${String(sequence.sequenceNumber).padStart(5, '0')}`;
-    res.json({ deliveryNoteNumber, sequenceNumber: sequence.sequenceNumber });
+    const deliveryNoteNumber = `DN-${financialYear}-${String(sequence.lastNumber).padStart(5, '0')}`;
+    res.json({ deliveryNoteNumber, sequenceNumber: sequence.lastNumber });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

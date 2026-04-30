@@ -2998,15 +2998,32 @@ const attachCurrentStockToProducts = async (products) => {
       stockMap.set(stock.productId.toString(), stock);
     });
 
-    // Merge currentStock into each product
-    return products.map(product => ({
-      ...product,
-      currentStock: stockMap.get(product._id.toString()) || null
-    }));
+    // ✅ Valid taxType enum values
+    const validTaxTypes = ['exclusive', 'inclusive', 'notax'];
+
+    // Merge currentStock into each product & normalize taxType
+    return products.map(product => {
+      // Normalize taxType: convert ObjectId to valid enum or default to 'inclusive'
+      let normalizedTaxType = product.taxType;
+      if (!validTaxTypes.includes(normalizedTaxType)) {
+        console.warn(`⚠️ Product ${product._id}: Invalid taxType "${normalizedTaxType}", defaulting to "inclusive"`);
+        normalizedTaxType = 'inclusive';
+      }
+
+      return {
+        ...product,
+        taxType: normalizedTaxType,
+        currentStock: stockMap.get(product._id.toString()) || null
+      };
+    });
   } catch (err) {
     console.error('⚠️ Error attaching CurrentStock to products:', err.message);
     // Return products without stock data if join fails
-    return products.map(p => ({ ...p, currentStock: null }));
+    return products.map(p => ({ 
+      ...p, 
+      currentStock: null,
+      taxType: ['exclusive', 'inclusive', 'notax'].includes(p.taxType) ? p.taxType : 'inclusive'
+    }));
   }
 };
 

@@ -211,12 +211,18 @@ async function getDocumentHtml(documentType, documentId, templateId, terminalId,
         item_fields: item.productId ? Object.keys(item.productId) : 'No product populated'
       });
 
+      // For DELIVERY_NOTE, use deliveredQuantity; for others use quantity
+      const qty = documentType === 'DELIVERY_NOTE' 
+        ? toNumber(item.deliveredQuantity || item.quantity || item.qty)
+        : toNumber(item.quantity || item.qty);
+
       return {
         slNo: index + 1,
-        itemCode: item.itemcode || item.productId?.itemcode || '',
+        itemcode: item.itemcode || item.productId?.itemcode || '',
         itemName: item.itemName || item.productId?.name || '',
         description: item.itemName || item.productId?.name || '',
-        quantity: toNumber(item.quantity || item.qty),
+        quantity: qty,
+        deliveredQuantity: qty,  // For delivery notes
         unit: item.unit || item.productId?.unit || 'PCS',
         unitPrice: toNumber(item.unitPrice || item.price),
         amount: toNumber(item.total || item.amount),
@@ -224,6 +230,7 @@ async function getDocumentHtml(documentType, documentId, templateId, terminalId,
         totalAmount: toNumber(item.totalAmount || item.total || item.amount),
         discountPercentage: toNumber(item.discountPercentage),
         discountAmount: toNumber(item.discountAmount),
+        vatPercentage: toNumber(item.vatPercentage),
         productImage: productImage,
         image: productImage,
         note: itemNote,
@@ -319,26 +326,23 @@ async function getDocumentHtml(documentType, documentId, templateId, terminalId,
         taxPercentage: toNumber(document.vatPercentage || 0),
       };
     } else if (documentType === 'DELIVERY_NOTE') {
-      documentData.delivery = {
-        deliveryNoteNumber: document.deliveryNoteNo || 'N/A',
-        date: document.deliveryNoteDate || new Date(),
+      documentData.deliveryNote = {
+        deliveryNoteNumber: document.deliveryNoteNumber || document.deliveryNoteNo || 'N/A',
+        date: document.date || document.deliveryNoteDate || new Date(),
         customerName: document.customerId?.name || document.customerName || 'N/A',
-        customerPhone: document.customerId?.phone || '',
-        customerAddress: document.customerId?.address || '',
+        customerPhone: document.customerId?.phone || document.customerPhone || '',
+        customerAddress: document.customerId?.address || document.customerAddress || '',
         customerTRN: document.customerId?.trn || '',
-        items: itemsWithImages,
-        subtotal: Number(document.subtotal || 0),
-        discountAmount: Number(document.discountAmount || 0),
-        discountPercentage: Number(document.discountPercentage || 0),
-        vatAmount: Number(document.vatAmount || 0),
-        vatPercentage: Number(document.vatPercentage || 0),
-        totalIncludeVat: Number(document.totalIncludeVat || 0),
-        notes: document.notes || '',
+        totalItems: document.items?.length || 0,
       };
+      documentData.items = itemsWithImages;
     } else if (documentType === 'SALES_RETURN') {
       documentData.return = {
-        returnNoteNumber: document.returnNoteNo || 'N/A',
-        date: document.returnDate || new Date(),
+        returnNoteNumber: document.returnNumber || document.returnNoteNo || 'N/A',
+        date: document.date || document.returnDate || new Date(),
+        invoiceNumber: document.invoiceNumber || 'N/A',
+        invoiceDate: document.invoiceDate || new Date(),
+        returnReason: document.returnReason || '',
         customerName: document.customerId?.name || document.customerName || 'N/A',
         customerPhone: document.customerId?.phone || '',
         customerAddress: document.customerId?.address || '',
@@ -347,10 +351,12 @@ async function getDocumentHtml(documentType, documentId, templateId, terminalId,
         subtotal: toNumber(document.subtotal),
         discountAmount: toNumber(document.discountAmount),
         discountPercentage: toNumber(document.discountPercentage),
+        totalAfterDiscount: toNumber(document.totalAfterDiscount || document.subtotal - document.discountAmount),
         vatAmount: toNumber(document.vatAmount),
         vatPercentage: toNumber(document.vatPercentage),
         totalIncludeVat: toNumber(document.totalIncludeVat),
         notes: document.notes || '',
+        paymentType: document.paymentType || '',
       };
     }
 

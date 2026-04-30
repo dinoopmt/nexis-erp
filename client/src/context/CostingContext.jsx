@@ -12,7 +12,7 @@ export const CostingProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const companyId = localStorage.getItem('companyId');
-  const API_URL = '/api';
+  const API_URL = '/api/v1';
   
   // ✅ Prevent duplicate API calls in StrictMode
   const hasFetched = useRef(false);
@@ -22,7 +22,7 @@ export const CostingProvider = ({ children }) => {
     if (!companyId) return;
     setLoading(true);
     try {
-      const response = await axios.get(`${API_URL}/api/v1/costing/config/${companyId}`, {
+      const response = await axios.get(`${API_URL}/costing/config/${companyId}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
       setCostingConfig(response.data.data);
@@ -49,7 +49,7 @@ export const CostingProvider = ({ children }) => {
       setLoading(true);
       try {
         const response = await axios.put(
-          `${API_URL}/api/v1/costing/config/${companyId}`,
+          `${API_URL}/costing/config/${companyId}`,
           configUpdates,
           {
             headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -74,7 +74,7 @@ export const CostingProvider = ({ children }) => {
       setLoading(true);
       try {
         const response = await axios.post(
-          `${API_URL}/api/v1/costing/calculate`,
+          `${API_URL}/costing/calculate`,
           {
             productId,
             quantityNeeded,
@@ -101,7 +101,7 @@ export const CostingProvider = ({ children }) => {
       setLoading(true);
       try {
         const response = await axios.post(
-          `${API_URL}/api/v1/costing/compare`,
+          `${API_URL}/costing/compare`,
           {
             productId,
             quantityNeeded,
@@ -126,7 +126,7 @@ export const CostingProvider = ({ children }) => {
     setLoading(true);
     try {
       const params = productId ? { productId } : {};
-      const response = await axios.get(`${API_URL}/api/v1/costing/analysis/abc`, {
+      const response = await axios.get(`${API_URL}/costing/analysis/abc`, {
         params,
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
@@ -148,7 +148,7 @@ export const CostingProvider = ({ children }) => {
           ...(productId && { productId }),
           costingMethod: method,
         };
-        const response = await axios.get(`${API_URL}/api/v1/costing/analysis/valuation`, {
+        const response = await axios.get(`${API_URL}/costing/analysis/valuation`, {
           params,
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         });

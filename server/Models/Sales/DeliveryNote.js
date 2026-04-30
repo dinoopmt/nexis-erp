@@ -4,7 +4,7 @@ const DeliveryNoteSchema = new mongoose.Schema(
   {
     deliveryNoteNumber: { type: String, required: true, unique: true },
     financialYear: { type: String, default: '2025-26' },
-    salesOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder', required: true },
+    salesOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder', sparse: true },
     salesInvoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesInvoice' },
     date: { type: Date, required: true },
     deliveryDate: { type: Date, required: true },

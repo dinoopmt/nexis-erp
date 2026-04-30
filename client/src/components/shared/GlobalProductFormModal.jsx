@@ -43,7 +43,7 @@ const GlobalProductFormModal = () => {
     closeProductForm,
     updateMode,
     hasOnSaveCallback,
-    onSaveCallback, // ✅ Callback function to call directly
+    getOnSaveCallback, // ✅ Getter function to retrieve callback from ref
     products = [], // ✅ Optional: products list from Product.jsx
     filteredProducts = [], // ✅ Optional: filtered products from Product.jsx
     editIndex = -1, // ✅ Optional: current product index from Product.jsx
@@ -1094,8 +1094,11 @@ const GlobalProductFormModal = () => {
 
   // Complete Save Handler - EXACT REPLICA from Product.jsx
   const handleSaveProduct = async () => {
+    console.log('💾 [GlobalProductFormModal] handleSaveProduct called', { mode, loading });
+    
     // Prevent multiple simultaneous save attempts
     if (loading) {
+      console.log('⚠️ [GlobalProductFormModal] Save already in progress, aborting');
       return;
     }
 
@@ -1394,8 +1397,15 @@ const GlobalProductFormModal = () => {
               updateMode('edit');
               
               // ✅ Call callback in background to refresh list (if exists)
-              if (hasOnSaveCallback && onSaveCallback) {
-                onSaveCallback(savedProduct);
+              // ONLY call on actual successful save from handleSaveProduct
+              if (hasOnSaveCallback) {
+                const callback = getOnSaveCallback();
+                if (typeof callback === 'function') {
+                  console.log('🔄 [CREATE] Invoking onSaveCallback after product save', { productId: savedProduct._id, productName: savedProduct.name });
+                  callback(savedProduct);
+                } else {
+                  console.warn('⚠️ [CREATE] hasOnSaveCallback is true but callback is not a function:', typeof callback);
+                }
               }
               
               // Keep modal OPEN - user can continue editing
@@ -1420,9 +1430,15 @@ const GlobalProductFormModal = () => {
             setNewProduct(updatedProduct);
             
             // Call callback directly WITHOUT closing modal
-            // (notifyProductSaved closes modal, but we want to keep it open in EDIT mode)
+            // ONLY call on actual successful save from handleSaveProduct
           if (hasOnSaveCallback) {
-            onSaveCallback(savedProduct);
+            const callback = getOnSaveCallback();
+            if (typeof callback === 'function') {
+              console.log('🔄 [EDIT] Invoking onSaveCallback after product save', { productId: savedProduct._id, productName: savedProduct.name });
+              callback(savedProduct);
+            } else {
+              console.warn('⚠️ [EDIT] hasOnSaveCallback is true but callback is not a function:', typeof callback);
+            }
           }
           
           // ✅ CRITICAL: Reset ref so next save attempt is properly processed

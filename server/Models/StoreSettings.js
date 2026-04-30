@@ -158,6 +158,24 @@ const storeSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Sales Return Settings
+      salesReturnAllowedDays: {
+        type: Number,
+        default: 30,
+        min: 1,
+        max: 365,
+        description: "Number of days from invoice date when sales returns are allowed",
+      },
+      allowReturnWithoutInvoice: {
+        type: Boolean,
+        default: false,
+        description: "If false, invoice selection is mandatory for sales returns",
+      },
+      requireReturnApprovalAfterDays: {
+        type: Boolean,
+        default: false,
+        description: "Require manager approval for returns made after allowedDays",
+      },
     },
     // ✅ Weight Scale Configuration
     weightScaleSettings: {
@@ -299,6 +317,33 @@ const storeSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+    },
+    // ✅ Template Mappings for Global Document Printing
+    templateMappings: {
+      lpo: {
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'InventoryTemplate',
+          default: null,
+          description: "LPO template for this store"
+        }
+      },
+      grn: {
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'InventoryTemplate',
+          default: null,
+          description: "GRN template for this store"
+        }
+      },
+      rtv: {
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'InventoryTemplate',
+          default: null,
+          description: "RTV template for this store"
+        }
+      }
     },
     createdAt: {
       type: Date,

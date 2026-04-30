@@ -75,7 +75,8 @@ const CompanyMaster = () => {
         taxRate: company.taxRate || 0,
         industry: company.industry || '',
         fiscalYearEnd: company.fiscalYearEnd || '',
-        logoUrl: company.logoUrl || ''
+        logoUrl: company.logoUrl || '',
+        decimalPlaces: company.decimalPlaces || 2, // ✅ Load decimal places from company
       }
 
       setFormData((prev) => ({

@@ -56,14 +56,25 @@ export async function updateCompanySettings(req, res) {
       });
     }
 
+    // ✅ Validate decimal places if provided
+    const validDecimalPlaces = [0, 1, 2, 3, 4];
+    if (req.body.decimalPlaces !== undefined && !validDecimalPlaces.includes(parseInt(req.body.decimalPlaces))) {
+      return res.status(400).json({ 
+        message: `Invalid decimal places. Must be one of: ${validDecimalPlaces.join(', ')}`
+      });
+    }
+
     // Prepare update data - exclude _id and __v
     const updateData = { ...req.body };
     delete updateData._id;
     delete updateData.__v;
 
-    // Convert taxRate to proper number
+    // Convert numeric fields to proper types
     if (updateData.taxRate !== undefined) {
       updateData.taxRate = parseFloat(updateData.taxRate);
+    }
+    if (updateData.decimalPlaces !== undefined) {
+      updateData.decimalPlaces = parseInt(updateData.decimalPlaces);
     }
 
     let company = await Company.findOne();

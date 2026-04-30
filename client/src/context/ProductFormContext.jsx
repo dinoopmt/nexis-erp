@@ -7,7 +7,7 @@
  * const { openProductForm } = useContext(ProductFormContext);
  * openProductForm({ mode: 'create', onSave: handleProductSaved });
  */
-import React, { createContext, useState, useCallback } from 'react';
+import React, { createContext, useState, useCallback, useRef } from 'react';
 import { clearAllCache } from '../utils/searchCache';
 
 export const ProductFormContext = createContext();
@@ -16,11 +16,13 @@ export const ProductFormProvider = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState('create'); // 'create' or 'edit'
   const [productData, setProductData] = useState(null);
-  const [onSaveCallback, setOnSaveCallback] = useState(null);
   const [hasOnSaveCallback, setHasOnSaveCallback] = useState(false); // ✅ Track if callback exists
   const [products, setProducts] = useState([]); // ✅ Optional: products list for modal search/nav (Product.jsx)
   const [filteredProducts, setFilteredProducts] = useState([]); // ✅ Optional: filtered products for search (Product.jsx)
   const [editIndex, setEditIndex] = useState(-1); // ✅ Optional: current product index in filtered list (Product.jsx)
+  
+  // ✅ FIX: Use ref to store callback to avoid triggering re-renders on callback change
+  const onSaveCallbackRef = useRef(null);
 
   const openProductForm = useCallback((options = {}) => {
     const {
@@ -32,10 +34,27 @@ export const ProductFormProvider = ({ children }) => {
       editIndex: currentIndex = -1, // ✅ Optional: current product index from Product.jsx
     } = options;
 
+    console.log('🔓 [ProductFormContext] openProductForm called', { 
+      mode: formMode, 
+      productId: product?._id,
+      hasCallback: !!onSave,
+      callbackType: typeof onSave,
+      stackTrace: new Error().stack
+    });
+
     setMode(formMode);
     setProductData(product);
-    setOnSaveCallback(() => onSave);
-    setHasOnSaveCallback(!!onSave); // ✅ Track if onSave was provided
+    
+    // ✅ FIX: Store callback in ref to avoid state update triggering render that calls it
+    if (typeof onSave === 'function') {
+      console.log('✅ [ProductFormContext] Setting valid callback function');
+      onSaveCallbackRef.current = onSave;
+      setHasOnSaveCallback(true);
+    } else {
+      console.warn('⚠️ [ProductFormContext] onSave is not a function:', typeof onSave, onSave);
+      onSaveCallbackRef.current = null;
+      setHasOnSaveCallback(false);
+    }
     setProducts(productsList); // ✅ Store products list for search functionality
     setFilteredProducts(filteredList); // ✅ Store filtered products for navigation
     setEditIndex(currentIndex); // ✅ Store current index for nav buttons
@@ -45,7 +64,7 @@ export const ProductFormProvider = ({ children }) => {
   const closeProductForm = useCallback(() => {
     setIsOpen(false);
     setProductData(null);
-    setOnSaveCallback(null);
+    onSaveCallbackRef.current = null; // ✅ Clear callback ref
     setHasOnSaveCallback(false);
     setProducts([]); // ✅ Clear products when closing
     setFilteredProducts([]); // ✅ Clear filtered products when closing
@@ -57,28 +76,10 @@ export const ProductFormProvider = ({ children }) => {
     setMode(newMode);
   }, []);
 
-  const notifyProductSaved = useCallback((newProduct) => {
-    if (onSaveCallback) {
-      onSaveCallback(newProduct);
-    }
-    
-    // ✅ Clear product search cache when product is updated
-    clearAllCache();
-    console.log('🧹 Cleared search cache after product update');
-    
-    // 🔴 P2: Broadcast product update event (include productId for downstream handlers)
-    window.dispatchEvent(
-      new CustomEvent('productUpdated', {
-        detail: {
-          product: newProduct,
-          productId: newProduct?._id,  // ✅ Include productId for auto-retry logic
-          timestamp: Date.now(),
-        },
-      })
-    );
-    
-    closeProductForm();
-  }, [onSaveCallback, closeProductForm]);
+  // ✅ Getter function to safely retrieve callback from ref
+  const getOnSaveCallback = useCallback(() => {
+    return onSaveCallbackRef.current;
+  }, []);
 
   const value = {
     isOpen,
@@ -88,8 +89,7 @@ export const ProductFormProvider = ({ children }) => {
     closeProductForm,
     updateMode,
     hasOnSaveCallback,
-    onSaveCallback, // ✅ Expose callback function so modal can call it directly
-    notifyProductSaved,
+    getOnSaveCallback, // ✅ Use getter function instead of storing callback directly
     products, // ✅ Optional products list for search/nav
     filteredProducts, // ✅ Optional filtered products
     editIndex, // ✅ Optional current product index

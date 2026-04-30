@@ -13,6 +13,9 @@ router.get("/grn/list", rtvController.getGrnList);
 router.get("/grn/available", rtvController.getAvailableRtvStock);
 router.get("/grn/stock/:grnId", rtvController.getGrnStockTracking);
 
+// HTML Endpoint for Printing
+router.get("/:id/html", rtvController.getRtvHtml);
+
 // CRUD Operations
 router.post("/", rtvController.createRtv);
 router.get("/", rtvController.getRtvList);

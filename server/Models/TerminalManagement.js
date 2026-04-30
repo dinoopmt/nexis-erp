@@ -56,7 +56,8 @@ const terminalManagementSchema = new mongoose.Schema(
     },
 
     // ========================================
-    // ✅ SIMPLIFIED: FORMAT MAPPING (Document Templates Only)
+    // ✅ FORMAT MAPPING (Sales Templates Only - Invoice, Delivery Note, Quotation, Sales Order, Sales Return)
+    // NOTE: Inventory templates (LPO, GRN, RTV) are managed at STORE level, not terminal level
     // ========================================
     formatMapping: {
       invoice: {

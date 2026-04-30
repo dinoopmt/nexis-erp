@@ -6,8 +6,13 @@ import Rtv from "../../../Models/Rtv.js";
 import Grn from "../../../Models/Grn.js";
 import AddProduct from "../../../Models/AddProduct.js";
 import CreateVendor from "../../../Models/CreateVendor.js";
+import InventoryTemplate from "../../../Models/InventoryTemplate.js";
+import TerminalManagement from "../../../Models/TerminalManagement.js";
+import StoreSettings from "../../../Models/StoreSettings.js";
+import Company from "../../../Models/Company.js";
 import RTVStockUpdateService from "../../accounting/services/RTVStockUpdateService.js";
 import RTVJournalService from "../../accounting/services/RTVJournalService.js";
+import PdfGenerationService from "../../../services/PdfGenerationService.js";
 
 // Generate RTV Number
 const generateRtvNo = async () => {
@@ -855,6 +860,129 @@ export const getAvailableRtvStock = async (req, res) => {
       success: false,
       message: "Failed to fetch available RTV stock",
       error: error.message,
+    });
+  }
+};
+
+// ✅ NEW: Get RTV as HTML for printing/PDF (using store-mapped template)
+export const getRtvHtml = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const terminalId = req.headers["terminal-id"] || req.headers.terminalId;
+
+    console.log(`📄 [RTV HTML] Generating HTML for RTV: ${id}, terminalId: ${terminalId}`);
+
+    // Fetch RTV
+    const rtv = await Rtv.findById(id).populate("vendorId");
+    if (!rtv) {
+      return res.status(404).json({ message: "RTV not found" });
+    }
+
+    // Fetch company details
+    const company = await Company.findOne().select("name currencySymbol decimalPlaces");
+
+    // ✅ Fetch store settings and template mapping
+    let storeDetails = null;
+    let template = null;
+    let storeSettings = null;
+
+    if (terminalId) {
+      try {
+        const terminal = await TerminalManagement.findOne({ terminalId });
+        if (terminal?.storeId) {
+          storeSettings = await StoreSettings.findById(terminal.storeId);
+          storeDetails = {
+            storeName: storeSettings?.storeName || company?.name || 'Store',
+            storeCode: storeSettings?.storeCode || '',
+            address1: storeSettings?.address1 || '',
+            address2: storeSettings?.address2 || '',
+            phone: storeSettings?.phone || '',
+            email: storeSettings?.email || '',
+            taxNumber: storeSettings?.taxNumber || '',
+            logoUrl: storeSettings?.logoUrl || ''
+          };
+
+          // ✅ Get RTV template ID from store settings
+          const templateId = storeSettings?.templateMappings?.rtv?.templateId;
+          if (templateId) {
+            console.log(`📋 [RTV HTML] Fetching template ID: ${templateId}`);
+            template = await InventoryTemplate.findById(templateId);
+            if (template) {
+              console.log(`✅ [RTV HTML] Template found: ${template.templateName}`);
+            } else {
+              console.warn(`⚠️ [RTV HTML] Template not found, will use default`);
+            }
+          } else {
+            console.log(`📋 [RTV HTML] No template mapping found in store settings, using default`);
+          }
+        }
+      } catch (err) {
+        console.warn("Error fetching store details:", err.message);
+      }
+    }
+
+    // ✅ If template found, use Handlebars rendering; otherwise use hardcoded HTML
+    let html;
+    if (template?.htmlContent) {
+      console.log(`📝 [RTV HTML] Using store-mapped template: ${template.templateName}`);
+      
+      // Prepare RTV data for Handlebars
+      const rtvData = {
+        rtv: {
+          rtvNumber: rtv.rtvNumber || 'N/A',
+          rtvDate: new Date(rtv.rtvDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          }),
+          vendorName: rtv.vendorId?.name || rtv.vendorId?.vendorName || 'N/A',
+          vendorCode: rtv.vendorId?.vendorCode || '',
+          vendorPhone: rtv.vendorId?.phone || '',
+          vendorEmail: rtv.vendorId?.email || '',
+          grnNumber: rtv.grnNumber || '',
+          creditNoteNo: rtv.creditNoteNo || '',
+          returnReason: rtv.returnReason || '',
+          items: (rtv.items || []).map((item, idx) => ({
+            slNo: idx + 1,
+            itemcode: item.itemCode || '',
+            itemName: item.itemName || '',
+            quantity: item.quantity || 0,
+            unit: item.unit || 'PCS',
+            unitPrice: item.unitCost || 0,
+            total: (item.quantity || 0) * (item.unitCost || 0),
+            batchNo: item.batchNo || ''
+          })),
+          subtotal: rtv.subtotal || 0,
+          discountAmount: rtv.discountAmount || 0,
+          taxAmount: rtv.taxAmount || 0,
+          totalAmount: rtv.netTotal || rtv.totalAmount || 0,
+          notes: rtv.notes || ''
+        },
+        store: storeDetails,
+        company: {
+          companyName: company?.name || 'Company',
+          currencySymbol: company?.currencySymbol || '$',
+          decimalPlaces: company?.decimalPlaces || 2
+        }
+      };
+
+      html = PdfGenerationService.renderTemplate(template.htmlContent, template.cssContent || '', rtvData);
+    } else {
+      console.log(`📝 [RTV HTML] Using default hardcoded template`);
+      // For now, return a simple HTML if template is not available
+      html = `<html><body><h1>RTV: ${rtv.rtvNumber}</h1><p>Default template - template mapping not found</p></body></html>`;
+    }
+
+    console.log(`✅ [RTV HTML] Generated HTML length: ${html?.length}`);
+
+    res.status(200)
+      .contentType("text/html; charset=utf-8")
+      .send(html);
+  } catch (error) {
+    console.error("Error generating RTV HTML:", error);
+    res.status(500).json({
+      message: "Failed to generate RTV HTML",
+      error: error.message
     });
   }
 };

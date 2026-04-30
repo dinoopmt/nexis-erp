@@ -73,6 +73,7 @@ const GlobalDocumentPrintingComponent = ({ documentType, documentId, onClose }) 
       'SALES_RETURN': '/sales-returns',
       'GRN': '/grn',
       'RTV': '/rtv',
+      'LPO': '/lpo',
     };
     return endpointMap[docType] || '/documents';
   };
@@ -87,6 +88,7 @@ const GlobalDocumentPrintingComponent = ({ documentType, documentId, onClose }) 
       'SALES_RETURN': terminalConfig?.hardwareMapping?.salesReturnPrinter?.printerName,
       'GRN': terminalConfig?.hardwareMapping?.grnPrinter?.printerName,
       'RTV': terminalConfig?.hardwareMapping?.rtvPrinter?.printerName,
+      'LPO': terminalConfig?.hardwareMapping?.lpoPrinter?.printerName,
     };
     // Try document-specific printer first, fallback to generic documentPrinter
     return printerMap[docType] || terminalConfig?.hardwareMapping?.documentPrinter?.printerName;
@@ -102,6 +104,7 @@ const GlobalDocumentPrintingComponent = ({ documentType, documentId, onClose }) 
       'SALES_RETURN': 'salesReturn',
       'GRN': 'grn',
       'RTV': 'rtv',
+      'LPO': 'lpo',
     };
     return typeMap[docType] || docType.toLowerCase();
   };

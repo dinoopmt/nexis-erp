@@ -60,6 +60,7 @@ class StoreSettingsService extends EventEmitter {
   async getStoreSettings() {
     try {
       let settings = await StoreSettings.findOne();
+      console.log('📤 getStoreSettings - retrieved templateMappings:', JSON.stringify(settings?.templateMappings, null, 2));
 
       if (!settings) {
         // Create default store settings if not exists
@@ -79,8 +80,10 @@ class StoreSettingsService extends EventEmitter {
           ],
         });
         await settings.save();
+        console.log('📤 Created default settings with templateMappings:', JSON.stringify(settings?.templateMappings, null, 2));
       }
 
+      console.log('📤 Returning settings with templateMappings:', JSON.stringify(settings.templateMappings, null, 2));
       return settings;
     } catch (error) {
       logger.error('Error fetching store settings:', error);
@@ -93,20 +96,78 @@ class StoreSettingsService extends EventEmitter {
    */
   async updateStoreSettings(storeData) {
     try {
+      console.log('📝 updateStoreSettings called with storeData keys:', Object.keys(storeData));
+      console.log('📝 Input storeData.templateMappings:', JSON.stringify(storeData?.templateMappings, null, 2));
+      
       let settings = await StoreSettings.findOne();
+      console.log('🔍 Fetched existing settings, has templateMappings:', !!settings?.templateMappings);
 
       if (!settings) {
+        console.log('✨ Creating new StoreSettings');
         settings = new StoreSettings(storeData);
       } else {
-        Object.assign(settings, storeData);
+        // ✅ Explicitly set each field to avoid Mongoose nested object issues
+        settings.storeName = storeData.storeName || settings.storeName;
+        settings.storeCode = storeData.storeCode || settings.storeCode;
+        settings.address1 = storeData.address1 || settings.address1;
+        settings.address2 = storeData.address2 || settings.address2;
+        settings.phone = storeData.phone || settings.phone;
+        settings.email = storeData.email || settings.email;
+        settings.taxNumber = storeData.taxNumber || settings.taxNumber;
+        settings.logoUrl = storeData.logoUrl || settings.logoUrl;
+        
+        // Merge nested objects
+        if (storeData.salesControls) {
+          settings.salesControls = { ...settings.salesControls, ...storeData.salesControls };
+        }
+        if (storeData.storeControlSettings) {
+          settings.storeControlSettings = { ...settings.storeControlSettings, ...storeData.storeControlSettings };
+        }
+        if (storeData.weightScaleSettings) {
+          settings.weightScaleSettings = { ...settings.weightScaleSettings, ...storeData.weightScaleSettings };
+        }
+        
+        // 🔴 CRITICAL FIX: Completely rebuild templateMappings from incoming data
+        // Mongoose nested objects can be tricky - rebuild from scratch instead of merge
+        if (storeData.templateMappings) {
+          console.log('📥 Backend received templateMappings:', JSON.stringify(storeData.templateMappings, null, 2));
+          
+          settings.templateMappings = {
+            lpo: {
+              templateId: storeData.templateMappings?.lpo?.templateId || null
+            },
+            grn: {
+              templateId: storeData.templateMappings?.grn?.templateId || null
+            },
+            rtv: {
+              templateId: storeData.templateMappings?.rtv?.templateId || null
+            }
+          };
+          
+          // 🚩 FIX: Mark templateMappings as modified
+          settings.markModified('templateMappings');
+          
+          console.log('💾 Backend storing templateMappings:', JSON.stringify(settings.templateMappings, null, 2));
+          console.log('✅ Marked templateMappings as modified');
+        } else {
+          console.log('⚠️  No templateMappings in storeData!');
+        }
       }
 
       settings.updatedAt = new Date();
-      await settings.save();
+      console.log('💾 Before save - settings.templateMappings:', JSON.stringify(settings.templateMappings, null, 2));
+      
+      const savedSettings = await settings.save();
+      
+      console.log('✅ After save - settings.templateMappings:', JSON.stringify(savedSettings.templateMappings, null, 2));
 
       logger.info('Store settings updated successfully');
+      
+      // ✅ Return fresh read from database to confirm persistence
+      const freshSettings = await StoreSettings.findOne();
+      console.log('🔄 Fresh read from DB - templateMappings:', JSON.stringify(freshSettings.templateMappings, null, 2));
 
-      return settings;
+      return freshSettings;
     } catch (error) {
       logger.error('Error updating store settings:', error);
       throw error;

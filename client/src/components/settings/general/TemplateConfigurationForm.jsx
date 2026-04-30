@@ -9,6 +9,9 @@ import {
   Barcode,
   Eye,
   AlertCircle,
+  Package,
+  Inbox,
+  Archive,
 } from 'lucide-react';
 import axios from 'axios';
 import { API_URL } from '../../../config/config';
@@ -16,15 +19,24 @@ import toast from 'react-hot-toast';
 import Modal from '../../shared/Model';
 import InvoiceTemplateForm from './InvoiceTemplateForm';
 import BarcodeTemplateForm from './BarcodeTemplateForm';
+import InventoryTemplateForm from './InventoryTemplateForm';
 
 const TemplateConfigurationForm = () => {
   const [activeTab, setActiveTab] = useState('sales');
+  const [activeInventoryType, setActiveInventoryType] = useState('LPO'); // For inventory sub-tabs
   const [invoiceTemplates, setInvoiceTemplates] = useState([]);
   const [barcodeTemplates, setBarcodeTemplates] = useState([]);
+  const [inventoryTemplates, setInventoryTemplates] = useState({
+    LPO: [],
+    GRN: [],
+    RTV: []
+  });
   const [loading, setLoading] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
+  const [editingTemplateType, setEditingTemplateType] = useState(null);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [showBarcodeForm, setShowBarcodeForm] = useState(false);
+  const [showInventoryForm, setShowInventoryForm] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -37,25 +49,49 @@ const TemplateConfigurationForm = () => {
     try {
       setLoading(true);
       
-      // Fetch invoice templates from database
-      const invoiceResponse = await axios.get(`${API_URL}/invoice-templates`);
-      if (invoiceResponse.data && Array.isArray(invoiceResponse.data)) {
-        setInvoiceTemplates(invoiceResponse.data);
-      } else if (invoiceResponse.data && invoiceResponse.data.data && Array.isArray(invoiceResponse.data.data)) {
-        setInvoiceTemplates(invoiceResponse.data.data);
+      // Fetch invoice templates
+      try {
+        const invoiceResponse = await axios.get(`${API_URL}/invoice-templates`);
+        const invoiceData = Array.isArray(invoiceResponse.data) 
+          ? invoiceResponse.data 
+          : invoiceResponse.data?.data || [];
+        setInvoiceTemplates(invoiceData);
+      } catch (err) {
+        console.warn('Invoice templates fetch failed:', err);
       }
       
-      // Fetch barcode templates from database (if endpoint exists)
+      // Fetch barcode templates
       try {
         const barcodeResponse = await axios.get(`${API_URL}/barcode-templates`);
-        if (barcodeResponse.data && Array.isArray(barcodeResponse.data)) {
-          setBarcodeTemplates(barcodeResponse.data);
-        } else if (barcodeResponse.data && barcodeResponse.data.data && Array.isArray(barcodeResponse.data.data)) {
-          setBarcodeTemplates(barcodeResponse.data.data);
-        }
-      } catch (barcodeError) {
-        // Barcode templates endpoint not available - this is expected if not yet implemented
-        // Silently continue without barcode templates
+        const barcodeData = Array.isArray(barcodeResponse.data) 
+          ? barcodeResponse.data 
+          : barcodeResponse.data?.data || [];
+        setBarcodeTemplates(barcodeData);
+      } catch (err) {
+        console.warn('Barcode templates fetch failed:', err);
+      }
+
+      // ✅ Fetch unified inventory templates
+      try {
+        const inventoryResponse = await axios.get(`${API_URL}/inventory-templates`, {
+          params: { activeOnly: false }
+        });
+        
+        const templates = Array.isArray(inventoryResponse.data?.data) 
+          ? inventoryResponse.data.data 
+          : [];
+        
+        // Group by documentType
+        const grouped = { LPO: [], GRN: [], RTV: [] };
+        templates.forEach(template => {
+          if (grouped[template.documentType]) {
+            grouped[template.documentType].push(template);
+          }
+        });
+        
+        setInventoryTemplates(grouped);
+      } catch (err) {
+        console.warn('Inventory templates fetch failed:', err);
       }
     } catch (error) {
       console.error('Error fetching templates:', error);
@@ -65,19 +101,34 @@ const TemplateConfigurationForm = () => {
     }
   };
 
-  const handleDeleteTemplate = (templateId, type) => {
+  const handleDeleteTemplate = (templateId, type, documentType) => {
     if (confirm('Are you sure you want to delete this template?')) {
       try {
-        // Make API call to delete
-        axios.delete(`${API_URL}/invoice-templates/${templateId}`);
+        let endpoint = '';
         
-        // Update local state
         if (type === 'invoice') {
-          setInvoiceTemplates(invoiceTemplates.filter(t => t._id !== templateId));
-        } else {
-          setBarcodeTemplates(barcodeTemplates.filter(t => t._id !== templateId));
+          endpoint = `${API_URL}/invoice-templates/${templateId}`;
+          axios.delete(endpoint).then(() => {
+            setInvoiceTemplates(invoiceTemplates.filter(t => t._id !== templateId));
+            toast.success('Template deleted successfully');
+          });
+        } else if (type === 'barcode') {
+          endpoint = `${API_URL}/barcode-templates/${templateId}`;
+          axios.delete(endpoint).then(() => {
+            setBarcodeTemplates(barcodeTemplates.filter(t => t._id !== templateId));
+            toast.success('Template deleted successfully');
+          });
+        } else if (type === 'inventory') {
+          endpoint = `${API_URL}/inventory-templates/${templateId}`;
+          axios.delete(endpoint).then(() => {
+            setInventoryTemplates(prev => ({
+              ...prev,
+              [documentType]: prev[documentType].filter(t => t._id !== templateId)
+            }));
+            toast.success('Template deleted successfully');
+          });
         }
-        toast.success('Template deleted successfully');
+        
         fetchTemplates();
       } catch (error) {
         console.error('Error deleting template:', error);
@@ -91,28 +142,36 @@ const TemplateConfigurationForm = () => {
     setShowPreview(true);
   };
 
-  const handleCreateTemplate = (type = 'invoice') => {
+  const handleCreateTemplate = (type = 'invoice', documentType = null) => {
     setEditingTemplate(null);
+    setEditingTemplateType(type);
     if (type === 'invoice') {
       setShowInvoiceForm(true);
-    } else {
+    } else if (type === 'barcode') {
       setShowBarcodeForm(true);
+    } else if (type === 'inventory') {
+      setShowInventoryForm(true);
     }
   };
 
-  const handleEditTemplate = (template, type = 'invoice') => {
+  const handleEditTemplate = (template, type = 'invoice', documentType = null) => {
     setEditingTemplate(template);
+    setEditingTemplateType(type);
     if (type === 'invoice') {
       setShowInvoiceForm(true);
-    } else {
+    } else if (type === 'barcode') {
       setShowBarcodeForm(true);
+    } else if (type === 'inventory') {
+      setShowInventoryForm(true);
     }
   };
 
   const handleFormClose = () => {
     setShowInvoiceForm(false);
     setShowBarcodeForm(false);
+    setShowInventoryForm(false);
     setEditingTemplate(null);
+    setEditingTemplateType(null);
   };
 
   const handleFormSave = () => {
@@ -133,11 +192,11 @@ const TemplateConfigurationForm = () => {
 
       {/* Tabs Navigation */}
       <div className="border-b border-gray-200">
-        <div className="flex gap-0">
+        <div className="flex gap-0 overflow-x-auto">
           {/* Sales Templates Tab */}
           <button
             onClick={() => setActiveTab('sales')}
-            className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
+            className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'sales'
                 ? 'border-blue-500 text-blue-600 bg-blue-50'
                 : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -150,7 +209,7 @@ const TemplateConfigurationForm = () => {
           {/* Barcode Templates Tab */}
           <button
             onClick={() => setActiveTab('barcode')}
-            className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 ${
+            className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'barcode'
                 ? 'border-blue-500 text-blue-600 bg-blue-50'
                 : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -158,6 +217,19 @@ const TemplateConfigurationForm = () => {
           >
             <Barcode className="w-4 h-4" />
             Barcode Templates
+          </button>
+
+          {/* ✅ Inventory Templates Tab */}
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`px-4 py-3 font-medium text-sm border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'inventory'
+                ? 'border-blue-500 text-blue-600 bg-blue-50'
+                : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            Inventory Templates
           </button>
         </div>
       </div>
@@ -396,6 +468,136 @@ const TemplateConfigurationForm = () => {
             </div>
           </div>
         )}
+
+        {/* ✅ Inventory Templates Tab Content (LPO, GRN, RTV) */}
+        {activeTab === 'inventory' && (
+          <div className="space-y-6">
+            {/* Sub-Tab Navigation for Document Types */}
+            <div className="border-b border-gray-200">
+              <div className="flex gap-2">
+                {['LPO', 'GRN', 'RTV'].map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setActiveInventoryType(type)}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      activeInventoryType === type
+                        ? 'border-indigo-500 text-indigo-600 bg-indigo-50'
+                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {type === 'LPO' && '📋'} {type === 'GRN' && '📦'} {type === 'RTV' && '↩️'} {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Content for each Document Type */}
+            {['LPO', 'GRN', 'RTV'].map((docType) => (
+              activeInventoryType === docType && (
+                <div key={docType} className="space-y-6">
+                  {/* Header */}
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        {docType === 'LPO' && 'Local Purchase Order Templates'}
+                        {docType === 'GRN' && 'Goods Receipt Note Templates'}
+                        {docType === 'RTV' && 'Return to Vendor Templates'}
+                      </h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Manage {docType} templates with custom design and layout
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleCreateTemplate('inventory', docType)}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors whitespace-nowrap"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New Template
+                    </button>
+                  </div>
+
+                  {/* Templates List */}
+                  {inventoryTemplates[docType]?.length === 0 ? (
+                    <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
+                      <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                      <p className="text-gray-600 mb-4">No {docType} templates found</p>
+                      <button
+                        onClick={() => handleCreateTemplate('inventory', docType)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                      >
+                        Create First Template
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {inventoryTemplates[docType]?.map((template) => (
+                        <div key={template._id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+                            {/* Template Info */}
+                            <div className="md:col-span-2">
+                              <h4 className="font-semibold text-gray-900">{template.templateName}</h4>
+                              <div className="flex gap-3 mt-2 text-xs text-gray-600">
+                                <span>🌐 {template.language === 'EN' ? 'English' : 'Arabic'}</span>
+                                <span>•</span>
+                                <span>📄 {template.documentType}</span>
+                              </div>
+                              {template.description && (
+                                <p className="text-xs text-gray-500 mt-2">{template.description}</p>
+                              )}
+                            </div>
+
+                            {/* Status */}
+                            <div className="flex justify-start md:justify-center">
+                              <div className="space-y-1 text-xs">
+                                <span className={`px-3 py-1 rounded-full text-xs font-medium block ${
+                                  template.isActive
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {template.isActive ? 'Active' : 'Inactive'}
+                                </span>
+                                {template.isDefault && (
+                                  <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 block">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center gap-2 justify-start md:justify-end">
+                              <button
+                                onClick={() => handlePreview(template)}
+                                className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                title="Preview template"
+                              >
+                                <Eye className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => handleEditTemplate(template, 'inventory', docType)}
+                                className="px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                title="Edit template"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTemplate(template._id, 'inventory', docType)}
+                                className="px-3 py-2 border border-gray-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                                title="Delete template"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Preview Modal */}
@@ -564,6 +766,16 @@ const TemplateConfigurationForm = () => {
       {showBarcodeForm && (
         <BarcodeTemplateForm
           template={editingTemplate}
+          onClose={handleFormClose}
+          onSave={handleFormSave}
+        />
+      )}
+
+      {/* ✅ Inventory Template Form Modal (LPO/GRN/RTV) */}
+      {showInventoryForm && (
+        <InventoryTemplateForm
+          template={editingTemplate}
+          documentType={editingTemplate?.documentType || activeInventoryType}
           onClose={handleFormClose}
           onSave={handleFormSave}
         />

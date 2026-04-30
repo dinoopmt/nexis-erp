@@ -63,7 +63,7 @@ const PrinterConfigurationManagement = () => {
   const handleToggleActive = async (configId, currentStatus) => {
     try {
       const response = await axios.put(
-        `${API_URL}/api/v1/settings/printer-configurations/${configId}`,
+        `${API_URL}/settings/printer-configurations/${configId}`,
         { isActive: !currentStatus }
       );
 

@@ -3,8 +3,8 @@
  * Manages all company accounts, balances, and account properties
  */
 
-import ChartOfAccounts from '../../Models/ChartOfAccounts.js';
-import AccountGroup from '../../Models/AccountGroup.js';
+import ChartOfAccounts from '../../../Models/ChartOfAccounts.js';
+import AccountGroup from '../../../Models/AccountGroup.js';
 import logger from '../../../config/logger.js';
 
 class ChartOfAccountsService {

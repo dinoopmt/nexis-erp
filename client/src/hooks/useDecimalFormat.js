@@ -6,18 +6,16 @@ import DecimalFormatService from '../services/DecimalFormatService';
  * Custom Hook: useDecimalFormat
  * Provides company-aware decimal formatting functions
  * Uses the company's decimalPlaces setting automatically
+ * ✅ Safe fallback to 2 decimal places if context unavailable
  */
 export const useDecimalFormat = () => {
   const context = useContext(CompanyContext);
 
-  if (!context) {
-    throw new Error('useDecimalFormat must be used within CompanyProvider');
-  }
-
-  const { company } = context;
-  const decimalPlaces = company?.decimalPlaces || 2;
-  const currency = company?.currency || 'AED';
-  const countryCode = company?.countryCode || 'AE';
+  // ✅ Safely handle missing context with fallback defaults
+  const company = context?.company || {};
+  const decimalPlaces = company?.decimalPlaces ?? 2;
+  const currency = company?.currency ?? 'AED';
+  const countryCode = company?.countryCode ?? 'AE';
 
   return {
     /**

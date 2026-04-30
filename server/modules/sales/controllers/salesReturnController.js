@@ -1,5 +1,7 @@
 import SalesReturn from '../../../Models/Sales/SalesReturn.js';
 import Counter from '../../../Models/SequenceModel.js';
+import SalesReturnJournalService from '../services/SalesReturnJournalService.js';
+import logger from '../../../config/logger.js';
 
 // Auto-generate next return number
 export const getNextReturnNumber = async (req, res) => {
@@ -23,10 +25,70 @@ export const getNextReturnNumber = async (req, res) => {
 
 export const createSalesReturn = async (req, res) => {
   try {
+    logger.info('Creating sales return', { payload: req.body });
+
+    // ✅ Validate required fields
+    const { invoiceId, invoiceNumber, invoiceDate, returnReason, items } = req.body;
+
+    if (!invoiceId || !invoiceNumber || !invoiceDate) {
+      return res.status(400).json({
+        error: 'Invoice information is required (invoiceId, invoiceNumber, invoiceDate)',
+      });
+    }
+
+    if (!returnReason || returnReason.trim().length < 5) {
+      return res.status(400).json({
+        error: 'Return reason is required (minimum 5 characters)',
+      });
+    }
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({
+        error: 'At least one item is required for sales return',
+      });
+    }
+
+    // Create sales return document
     const salesReturn = new SalesReturn(req.body);
     await salesReturn.save();
-    res.status(201).json(salesReturn);
+    logger.info('Sales return created', { returnId: salesReturn._id });
+
+    // ✅ NEW: Create accounting entries (Double-Entry System)
+    try {
+      const journalEntryIds = await SalesReturnJournalService.createSalesReturnEntries(
+        salesReturn
+      );
+
+      // Update sales return with journal entry IDs
+      salesReturn.journalEntryIds = journalEntryIds;
+      if (journalEntryIds.length > 0) {
+        salesReturn.mainJournalEntryId = journalEntryIds[0];
+        salesReturn.accountingStatus = 'posted';
+        salesReturn.postedDate = new Date();
+      }
+
+      await salesReturn.save();
+      logger.info('Accounting entries created for sales return', {
+        returnId: salesReturn._id,
+        entriesCount: journalEntryIds.length,
+      });
+    } catch (accountingErr) {
+      logger.error('Failed to create accounting entries', {
+        error: accountingErr.message,
+        returnId: salesReturn._id,
+      });
+      // Note: We save the return even if accounting fails, but log the error
+      salesReturn.accountingStatus = 'pending';
+      await salesReturn.save();
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Sales return created successfully',
+      data: salesReturn,
+    });
   } catch (err) {
+    logger.error('Error creating sales return', { error: err.message });
     res.status(400).json({ error: err.message });
   }
 };

@@ -56,7 +56,7 @@ const InventoryAdjust = () => {
     const fetchProducts = async () => {
       try {
         const response = await axios.get(
-          `${API_URL}/api/v1/products/listProduct?country=${config?.country || "UAE"}`
+          `${API_URL}/products/listProduct?country=${config?.country || "UAE"}`
         );
         setProducts(response.data || []);
       } catch (err) {
@@ -131,7 +131,7 @@ const InventoryAdjust = () => {
     try {
       setIsLoading(true);
       const response = await axios.get(
-        `${API_URL}/api/v1/stock/current/${productId}`
+        `${API_URL}/stock/current/${productId}`
       );
       setFormData(prev => ({
         ...prev,
@@ -181,7 +181,7 @@ const InventoryAdjust = () => {
       };
 
       // Replace with actual API call
-      // const response = await axios.post(`${API_URL}/api/v1/stock/adjustment`, payload);
+      // const response = await axios.post(`${API_URL}/stock/adjustment`, payload);
 
       // Mock success
       const newAdjustment = {

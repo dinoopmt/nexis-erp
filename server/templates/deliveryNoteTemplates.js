@@ -63,10 +63,8 @@ export const DELIVERY_NOTE_TEMPLATE_EN_WITH_LOGO = {
           <tr class="table-header">
             <th class="col-slno">SL</th>
             <th class="col-item">Item Description</th>
-            <th class="col-serial">Serial #</th>
             <th class="col-qty">Qty Delivered</th>
             <th class="col-unit">Unit</th>
-            <th class="col-batch">Batch/Lot #</th>
           </tr>
         </thead>
         <tbody>
@@ -75,12 +73,11 @@ export const DELIVERY_NOTE_TEMPLATE_EN_WITH_LOGO = {
             <td class="col-slno">{{slNo}}</td>
             <td class="col-item">
               <div class="item-name">{{itemName}}</div>
+              {{#itemcode}}<div class="item-code">Code: {{itemcode}}</div>{{/itemcode}}
               {{#note}}<div class="item-note">Note: {{note}}</div>{{/note}}
             </td>
-            <td class="col-serial">{{join serialNumbers ', '}}</td>
-            <td class="col-qty">{{quantity}}</td>
+            <td class="col-qty">{{deliveredQuantity}}</td>
             <td class="col-unit">{{unit}}</td>
-            <td class="col-batch">{{batchNumber}}</td>
           </tr>
           {{/items}}
         </tbody>
@@ -129,7 +126,7 @@ export const DELIVERY_NOTE_TEMPLATE_EN_WITH_LOGO = {
         margin-bottom: 15px;
       }
       .logo {
-        max-width: 200px;
+        max-width: 80px;
         height: auto;
       }
       .company-info {
@@ -218,14 +215,13 @@ export const DELIVERY_NOTE_TEMPLATE_EN_WITH_LOGO = {
         font-size: 10px;
         border: 1px solid #ddd;
       }
-      .col-slno { width: 4%; text-align: center; }
-      .col-item { width: 35%; }
-      .col-serial { width: 15%; }
-      .col-qty { width: 10%; text-align: center; }
-      .col-unit { width: 10%; text-align: center; }
-      .col-batch { width: 15%; }
-      .item-name { font-weight: bold; }
-      .item-note { font-size: 9px; color: #666; margin-top: 2px; }
+      .col-slno { width: 5%; text-align: center; }
+      .col-item { width: 71%; }
+      .col-qty { width: 12%; text-align: center; }
+      .col-unit { width: 12%; text-align: center; }
+      .item-name { font-weight: bold; font-size: 11px; }
+      .item-code { font-size: 9px; color: #666; margin-top: 2px; }
+      .item-note { font-size: 9px; color: #666; margin-top: 2px; font-style: italic; }
       .summary-section {
         text-align: right;
         margin-bottom: 20px;
@@ -329,21 +325,21 @@ export const DELIVERY_NOTE_TEMPLATE_EN_WITHOUT_LOGO = {
           <tr class="table-header">
             <th class="col-slno">SL</th>
             <th class="col-item">Item Description</th>
-            <th class="col-serial">Serial #</th>
             <th class="col-qty">Qty Delivered</th>
             <th class="col-unit">Unit</th>
-            <th class="col-batch">Batch/Lot #</th>
           </tr>
         </thead>
         <tbody>
           {{#items}}
           <tr class="item-row">
             <td class="col-slno">{{slNo}}</td>
-            <td class="col-item">{{itemName}}</td>
-            <td class="col-serial">{{join serialNumbers ', '}}</td>
-            <td class="col-qty">{{quantity}}</td>
+            <td class="col-item">
+              <div class="item-name">{{itemName}}</div>
+              {{#itemcode}}<div class="item-code">Code: {{itemcode}}</div>{{/itemcode}}
+              {{#note}}<div class="item-note">Note: {{note}}</div>{{/note}}
+            </td>
+            <td class="col-qty">{{deliveredQuantity}}</td>
             <td class="col-unit">{{unit}}</td>
-            <td class="col-batch">{{batchNumber}}</td>
           </tr>
           {{/items}}
         </tbody>
@@ -366,12 +362,13 @@ export const DELIVERY_NOTE_TEMPLATE_EN_WITHOUT_LOGO = {
       .table-header { background-color: #059669; color: white; }
       .table-header th { padding: 8px; text-align: left; font-size: 11px; font-weight: bold; border: 1px solid #ccc; }
       .item-row td { padding: 6px; font-size: 10px; border: 1px solid #ddd; }
-      .col-slno { width: 4%; text-align: center; }
-      .col-item { width: 40%; }
-      .col-serial { width: 15%; }
-      .col-qty { width: 10%; text-align: center; }
-      .col-unit { width: 10%; text-align: center; }
-      .col-batch { width: 15%; }
+      .col-slno { width: 5%; text-align: center; }
+      .col-item { width: 71%; }
+      .col-qty { width: 12%; text-align: center; }
+      .col-unit { width: 12%; text-align: center; }
+      .item-name { font-weight: bold; font-size: 11px; }
+      .item-code { font-size: 9px; color: #666; margin-top: 2px; }
+      .item-note { font-size: 9px; color: #666; margin-top: 2px; font-style: italic; }
     </style>
   `,
   cssContent: ''

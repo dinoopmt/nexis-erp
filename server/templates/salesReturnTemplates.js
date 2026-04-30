@@ -36,7 +36,7 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
           <table class="document-details-table">
             <tr>
               <td class="label">Return Note #:</td>
-              <td class="value">{{return.returnNumber}}</td>
+              <td class="value">{{return.returnNoteNumber}}</td>
             </tr>
             <tr>
               <td class="label">Date:</td>
@@ -44,7 +44,11 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
             </tr>
             <tr>
               <td class="label">Reference Invoice:</td>
-              <td class="value">{{return.referenceInvoice}}</td>
+              <td class="value">{{return.invoiceNumber}}</td>
+            </tr>
+            <tr>
+              <td class="label">Invoice Date:</td>
+              <td class="value">{{date return.invoiceDate 'DD/MM/YYYY'}}</td>
             </tr>
             <tr>
               <td class="label">Return Reason:</td>
@@ -63,84 +67,84 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
         </div>
       </div>
 
-      {{#return.returnDetails}}
+      {{#return.paymentType}}
       <div class="return-info-box">
         <table class="return-info-table">
           <tr>
-            <td class="info-label">Return Condition:</td>
-            <td class="info-value">{{return.returnDetails.condition}}</td>
+            <td class="info-label">Payment Type:</td>
+            <td class="info-value">{{return.paymentType}}</td>
           </tr>
-          <tr>
-            <td class="info-label">Refund Status:</td>
-            <td class="info-value">{{return.returnDetails.refundStatus}}</td>
-          </tr>
-          {{#return.returnDetails.inspectionNotes}}
-          <tr>
-            <td class="info-label">Inspection Notes:</td>
-            <td class="info-value">{{return.returnDetails.inspectionNotes}}</td>
-          </tr>
-          {{/return.returnDetails.inspectionNotes}}
         </table>
       </div>
-      {{/return.returnDetails}}
+      {{/return.paymentType}}
 
       <table class="items-table">
         <thead>
           <tr class="table-header">
             <th class="col-slno">SL</th>
             <th class="col-item">Item Description</th>
-            <th class="col-serial">Serial #</th>
-            <th class="col-qty">Return Qty</th>
-            <th class="col-rate">Original Price</th>
-            <th class="col-condition">Condition</th>
-            <th class="col-amount">Refund Amount</th>
+            <th class="col-code">Item Code</th>
+            <th class="col-uom">UOM</th>
+            <th class="col-qty">Qty</th>
+            <th class="col-rate">Unit Price</th>
+            <th class="col-discount">Discount %</th>
+            <th class="col-tax">VAT %</th>
+            <th class="col-amount">Total</th>
           </tr>
         </thead>
         <tbody>
-          {{#items}}
+          {{#return.items}}
           <tr class="item-row">
-            <td class="col-slno">{{slNo}}</td>
+            <td class="col-slno">{{slNo @index}}</td>
             <td class="col-item">
               <div class="item-name">{{itemName}}</div>
-              {{#reason}}<div class="item-reason">Reason: {{reason}}</div>{{/reason}}
             </td>
-            <td class="col-serial">{{join serialNumbers ', '}}</td>
-            <td class="col-qty">{{returnQuantity}}</td>
-            <td class="col-rate">{{currency originalPrice decimals=company.decimalPlaces}}</td>
-            <td class="col-condition">{{condition}}</td>
-            <td class="col-amount">{{currency refundAmount decimals=company.decimalPlaces}}</td>
+            <td class="col-code">{{itemcode}}</td>
+            <td class="col-uom text-center">{{unit}}</td>
+            <td class="col-qty text-center">{{quantity}}</td>
+            <td class="col-rate text-right">{{currency unitPrice decimals=../../company.decimalPlaces}}</td>
+            <td class="col-discount text-center">{{discountPercentage}}%</td>
+            <td class="col-tax text-center">{{vatPercentage}}%</td>
+            <td class="col-amount text-right">{{currency total decimals=../../company.decimalPlaces}}</td>
           </tr>
-          {{/items}}
+          {{/return.items}}
         </tbody>
       </table>
 
       <div class="totals-section">
         <table class="totals-table">
           <tr>
-            <td class="label">Original Total:</td>
-            <td class="value">{{currency return.originalTotal decimals=company.decimalPlaces}}</td>
+            <td class="label">Subtotal:</td>
+            <td class="value">{{currency return.subtotal decimals=company.decimalPlaces}}</td>
           </tr>
-          {{#return.deductions}}
+          {{#return.discountPercentage}}
           <tr>
-            <td class="label">Deductions/Damage Charges:</td>
-            <td class="value">- {{currency return.deductions decimals=company.decimalPlaces}}</td>
+            <td class="label">Discount ({{return.discountPercentage}}%):</td>
+            <td class="value">- {{currency return.discountAmount decimals=company.decimalPlaces}}</td>
           </tr>
-          {{/return.deductions}}
+          {{/return.discountPercentage}}
+          <tr>
+            <td class="label">Total after Discount:</td>
+            <td class="value">{{currency return.totalAfterDiscount decimals=company.decimalPlaces}}</td>
+          </tr>
+          <tr>
+            <td class="label">VAT ({{return.vatPercentage}}%):</td>
+            <td class="value">{{currency return.vatAmount decimals=company.decimalPlaces}}</td>
+          </tr>
           <tr class="total-row">
-            <td class="label">TOTAL REFUND:</td>
-            <td class="value">{{currency return.totalRefund decimals=company.decimalPlaces}}</td>
+            <td class="label">TOTAL RETURN AMOUNT:</td>
+            <td class="value">{{currency return.totalIncludeVat decimals=company.decimalPlaces}}</td>
           </tr>
         </table>
       </div>
 
       <div class="refund-info">
-        <p class="refund-label">Refund Method:</p>
-        <p class="refund-details">
-          {{#return.refundMethod.creditNote}}Credit Note{{/return.refundMethod.creditNote}}
-          {{#return.refundMethod.cashRefund}}Cash Refund{{/return.refundMethod.cashRefund}}
-          {{#return.refundMethod.storeCredit}}Store Credit{{/return.refundMethod.storeCredit}}
-          {{#return.refundMethod.originalPaymentMethod}}Original Payment Method{{/return.refundMethod.originalPaymentMethod}}
-        </p>
+        <p class="refund-label">Payment Type:</p>
+        <p class="refund-details">{{return.paymentType}}</p>
+        {{#return.notes}}
+        <p class="refund-label">Notes:</p>
+        <p class="refund-details">{{return.notes}}</p>
+        {{/return.notes}}
       </div>
 
       <div class="signature-section">
@@ -174,7 +178,7 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
     <style>
       .sales-return-container { font-family: Arial, sans-serif; padding: 20px; color: #333; }
       .header { text-align: center; margin-bottom: 15px; }
-      .logo { max-width: 200px; height: auto; }
+      .logo { max-width: 80px; height: auto; }
       .company-info { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #dc2626; padding-bottom: 10px; }
       .company-name { margin: 0; font-size: 18px; font-weight: bold; color: #dc2626; }
       .company-details { margin: 5px 0; font-size: 11px; color: #666; }
@@ -198,14 +202,18 @@ export const SALES_RETURN_TEMPLATE_EN_WITH_LOGO = {
       .item-row { border-bottom: 1px solid #eee; }
       .item-row td { padding: 6px; font-size: 10px; border: 1px solid #ddd; }
       .col-slno { width: 4%; text-align: center; }
-      .col-item { width: 25%; }
-      .col-serial { width: 12%; }
-      .col-qty { width: 8%; text-align: center; }
-      .col-rate { width: 12%; text-align: right; }
-      .col-condition { width: 12%; text-align: center; }
-      .col-amount { width: 14%; text-align: right; font-weight: bold; }
+      .col-item { width: 18%; }
+      .col-code { width: 8%; text-align: center; }
+      .col-uom { width: 6%; text-align: center; }
+      .col-qty { width: 6%; text-align: center; }
+      .col-rate { width: 10%; text-align: right; }
+      .col-discount { width: 8%; text-align: center; }
+      .col-tax { width: 8%; text-align: center; }
+      .col-amount { width: 12%; text-align: right; font-weight: bold; }
       .item-name { font-weight: bold; }
-      .item-reason { font-size: 9px; color: #dc2626; margin-top: 2px; }
+      .item-note { font-size: 9px; color: #dc2626; margin-top: 2px; }
+      .text-center { text-align: center; }
+      .text-right { text-align: right; }
       .totals-section { margin: 20px 0; }
       .totals-table { width: 100%; border-collapse: collapse; margin-left: auto; width: 50%; }
       .totals-table tr { vertical-align: top; }

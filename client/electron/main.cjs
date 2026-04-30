@@ -496,7 +496,7 @@ function setupPrinterIPC() {
     try {
       if (!mainWindow) return [];
       
-      const printers = await mainWindow.webContents.getPrinters();
+      const printers = await mainWindow.webContents.getPrintersAsync();
       return printers.map(p => ({
         name: p.name,
         isDefault: p.isDefault,

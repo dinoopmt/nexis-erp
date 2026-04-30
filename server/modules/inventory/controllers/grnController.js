@@ -1,6 +1,11 @@
 import Grn from "../../../Models/Grn.js";
 import GrnService from "../services/GRNService.js";
 import VendorPaymentService from "../../accounting/services/VendorPaymentService.js";
+import InventoryTemplate from "../../../Models/InventoryTemplate.js";
+import TerminalManagement from "../../../Models/TerminalManagement.js";
+import StoreSettings from "../../../Models/StoreSettings.js";
+import Company from "../../../Models/Company.js";
+import PdfGenerationService from "../../../services/PdfGenerationService.js";
 
 /**
  * Map frontend payment terms format to VendorPayment enum values
@@ -1385,6 +1390,135 @@ export const getGrnReport = async (req, res) => {
     res.status(500).json({
       message: "Failed to fetch GRN report",
       error: error.message,
+    });
+  }
+};
+
+// ✅ NEW: Get GRN as HTML for printing/PDF (using store-mapped template)
+export const getGrnHtml = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const terminalId = req.headers["terminal-id"] || req.headers.terminalId;
+
+    console.log(`📄 [GRN HTML] Generating HTML for GRN: ${id}, terminalId: ${terminalId}`);
+
+    // Fetch GRN
+    const grn = await Grn.findById(id).populate("vendorId");
+    if (!grn) {
+      return res.status(404).json({ message: "GRN not found" });
+    }
+
+    // Fetch company details
+    const company = await Company.findOne().select("name currencySymbol decimalPlaces");
+
+    // ✅ Fetch store settings and template mapping
+    let storeDetails = null;
+    let template = null;
+    let storeSettings = null;
+
+    if (terminalId) {
+      try {
+        const terminal = await TerminalManagement.findOne({ terminalId });
+        if (terminal?.storeId) {
+          storeSettings = await StoreSettings.findById(terminal.storeId);
+          storeDetails = {
+            storeName: storeSettings?.storeName || company?.name || 'Store',
+            storeCode: storeSettings?.storeCode || '',
+            address1: storeSettings?.address1 || '',
+            address2: storeSettings?.address2 || '',
+            phone: storeSettings?.phone || '',
+            email: storeSettings?.email || '',
+            taxNumber: storeSettings?.taxNumber || '',
+            logoUrl: storeSettings?.logoUrl || ''
+          };
+
+          // ✅ Get GRN template ID from store settings
+          const templateId = storeSettings?.templateMappings?.grn?.templateId;
+          if (templateId) {
+            console.log(`📋 [GRN HTML] Fetching template ID: ${templateId}`);
+            template = await InventoryTemplate.findById(templateId);
+            if (template) {
+              console.log(`✅ [GRN HTML] Template found: ${template.templateName}`);
+            } else {
+              console.warn(`⚠️ [GRN HTML] Template not found, will use default`);
+            }
+          } else {
+            console.log(`📋 [GRN HTML] No template mapping found in store settings, using default`);
+          }
+        }
+      } catch (err) {
+        console.warn("Error fetching store details:", err.message);
+      }
+    }
+
+    // ✅ If template found, use Handlebars rendering; otherwise use hardcoded HTML
+    let html;
+    if (template?.htmlContent) {
+      console.log(`📝 [GRN HTML] Using store-mapped template: ${template.templateName}`);
+      
+      // Prepare GRN data for Handlebars
+      const grnData = {
+        grn: {
+          grnNumber: grn.grnNumber || 'N/A',
+          grnDate: new Date(grn.grnDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          }),
+          vendorName: grn.vendorId?.name || grn.vendorId?.vendorName || 'N/A',
+          vendorCode: grn.vendorId?.vendorCode || '',
+          vendorPhone: grn.vendorId?.phone || '',
+          vendorEmail: grn.vendorId?.email || '',
+          invoiceNo: grn.invoiceNo || '',
+          lpoNo: grn.lpoNo || '',
+          deliveryDate: grn.deliveryDate ? new Date(grn.deliveryDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          }) : '',
+          items: (grn.items || []).map((item, idx) => ({
+            slNo: idx + 1,
+            itemcode: item.itemCode || '',
+            itemName: item.itemName || '',
+            quantity: item.quantity || 0,
+            unit: item.unit || 'PCS',
+            unitPrice: item.unitCost || 0,
+            total: (item.quantity || 0) * (item.unitCost || 0),
+            batchNo: item.batchNo || '',
+            expiryDate: item.expiryDate || ''
+          })),
+          subtotal: grn.subtotal || 0,
+          discountAmount: grn.discountAmount || 0,
+          taxAmount: grn.taxAmount || 0,
+          totalAmount: grn.netTotal || grn.finalTotal || 0,
+          notes: grn.notes || ''
+        },
+        store: storeDetails,
+        company: {
+          companyName: company?.name || 'Company',
+          currencySymbol: company?.currencySymbol || '$',
+          decimalPlaces: company?.decimalPlaces || 2
+        }
+      };
+
+      html = PdfGenerationService.renderTemplate(template.htmlContent, template.cssContent || '', grnData);
+    } else {
+      console.log(`📝 [GRN HTML] Using default hardcoded template`);
+      // For now, return a simple HTML if template is not available
+      // In future, you may want to use a hardcoded GRN template renderer similar to LPO
+      html = `<html><body><h1>GRN: ${grn.grnNumber}</h1><p>Default template - template mapping not found</p></body></html>`;
+    }
+
+    console.log(`✅ [GRN HTML] Generated HTML length: ${html?.length}`);
+
+    res.status(200)
+      .contentType("text/html; charset=utf-8")
+      .send(html);
+  } catch (error) {
+    console.error("Error generating GRN HTML:", error);
+    res.status(500).json({
+      message: "Failed to generate GRN HTML",
+      error: error.message
     });
   }
 };

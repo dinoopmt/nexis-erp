@@ -32,11 +32,17 @@ import invoiceTemplateRoutes from './routes/invoiceTemplateRoutes.js';
 import barcodeTemplateRoutes from './routes/barcodeTemplateRoutes.js';
 import invoicePdfRoutes from './routes/invoicePdfRoutes.js';
 import documentPdfRoutes from './routes/documentPdfRoutes.js';
+import lpoTemplateRoutes from './modules/templates/routes/lpoTemplateRoutes.js';
+import grnTemplateRoutes from './modules/templates/routes/grnTemplateRoutes.js';
+import rtvTemplateRoutes from './modules/templates/routes/rtvTemplateRoutes.js';
+import inventoryTemplateRoutes from './routes/inventoryTemplateRoutes.js';
+import printerRoutes from './routes/printerRoutes.js';
 import { validateTerminalIdRoute } from './routes/terminalValidationRoute.js';
 import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
-import { seedDocumentTemplates } from './seedDocumentTemplates.js';
+import { seedDocumentTemplates } from './seeders/seedDocumentTemplates.js';
 import { seedBarcodeTemplates, seedAdditionalBarcodeTemplates } from './Seeders/barcodeSeed.js';
 import { seedDefaultTerminals } from './seeders/seedDefaultTerminals.js';
+import { seedInventoryTemplates } from './seedInventoryTemplates.js';
 import { globalLimiter, authLimiter, apiLimiter } from './middleware/rateLimiter.js';
 import { requestLogger } from './middleware/structuredLogger.js';
 
@@ -138,6 +144,15 @@ try {
   console.error('❌ Error seeding barcode templates:', barcodeErr.message);
 }
 
+// ✅ STEP 4B: Seed inventory templates (LPO, GRN, RTV) on startup
+console.log('📋 Seeding inventory templates...');
+try {
+  await seedInventoryTemplates();
+  console.log('✅ Inventory templates seeded successfully');
+} catch (inventoryErr) {
+  console.error('❌ Error seeding inventory templates:', inventoryErr.message);
+}
+
 // ✅ STEP 5: Seed default terminals on startup (REQUIRED for license control)
 console.log('🖥️  Seeding default terminals...');
 try {
@@ -229,6 +244,7 @@ app.use(`${apiV1}/stock`, inventoryRoutes.stockRoutes);
 app.use(`${apiV1}/stock-variance`, inventoryRoutes.stockVarianceRoutes);
 app.use(`${apiV1}/grn`, inventoryRoutes.grnRoutes);
 app.use(`${apiV1}/rtv`, inventoryRoutes.rtvRoutes);
+app.use(`${apiV1}/lpo`, inventoryRoutes.lpoRoutes);
 
 // Accounting module
 app.use(`${apiV1}/chart-of-accounts`, accountingRoutes.chartOfAccountsRoutes);
@@ -301,6 +317,17 @@ app.use(`${apiV1}/invoice-templates`, invoiceTemplateRoutes);
 app.use(`${apiV1}/barcode-templates`, barcodeTemplateRoutes);
 app.use(`${apiV1}`, invoicePdfRoutes);
 app.use(`${apiV1}`, documentPdfRoutes);
+
+// Unified Inventory Template Management (LPO, GRN, RTV)
+app.use(`${apiV1}/inventory-templates`, inventoryTemplateRoutes);
+
+// Document Template Management (Legacy - LPO, GRN, RTV) - Keep for backward compatibility
+app.use(`${apiV1}/lpo-templates`, lpoTemplateRoutes);
+app.use(`${apiV1}/grn-templates`, grnTemplateRoutes);
+app.use(`${apiV1}/rtv-templates`, rtvTemplateRoutes);
+
+// Printer Management - Printer selection and print job submission
+app.use(`${apiV1}/printer`, printerRoutes);
 
 // Health check endpoints
 app.get('/health', (req, res) => {

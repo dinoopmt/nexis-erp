@@ -3,10 +3,10 @@
  * Displays list of existing GRNs with pagination
  */
 import React, { useState, useEffect } from "react";
-import { Edit, Eye } from "lucide-react";
+import { Edit, Eye, Printer } from "lucide-react";
 import useDecimalFormat from "../../../hooks/useDecimalFormat";
 
-const GrnListTable = ({ grnList, onEdit, onView, onDelete }) => {
+const GrnListTable = ({ grnList, onEdit, onView, onDelete, onPrint }) => {
   // ✅ Country-based Decimal Format Hook
   const {  formatNumber } = useDecimalFormat();
   
@@ -134,10 +134,17 @@ const GrnListTable = ({ grnList, onEdit, onView, onDelete }) => {
                       </button>
                       <button
                         onClick={() => onEdit(grn)}
-                        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1 rounded transition"
+                        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1 rounded transition mr-1"
                         title="Edit"
                       >
                         <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => onPrint?.(grn)}
+                        className="text-purple-600 hover:text-purple-800 hover:bg-purple-50 p-1 rounded transition"
+                        title="Print"
+                      >
+                        <Printer size={16} />
                       </button>
                     </td>
                   </tr>

@@ -38,7 +38,7 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
     invoiceControls: {
       invoiceNumberPrefix: '',
     },
-    // ✅ Simplified: formatMapping only has templateId
+    // ✅ Simplified: formatMapping only has Sales templates (Inventory templates are at store level)
     formatMapping: {
       invoice: {
         templateId: null,
@@ -237,25 +237,24 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
   const fetchAvailableTemplates = async () => {
     try {
       setLoadingTemplates(true)
-      const response = await apiClient.get(`/invoice-templates`)
+      const invoiceResponse = await apiClient.get(`/invoice-templates`)
       
-      if (response.ok && response.data.data) {
-        const templates = Array.isArray(response.data.data) ? response.data.data : [response.data.data]
-        
-        // Organize templates by templateType
-        const organized = {
-          invoice: templates.filter(t => t.templateType === 'INVOICE' || !t.templateType),
-          deliveryNote: templates.filter(t => t.templateType === 'DELIVERY_NOTE'),
-          quotation: templates.filter(t => t.templateType === 'QUOTATION'),
-          salesOrder: templates.filter(t => t.templateType === 'SALES_ORDER'),
-          salesReturn: templates.filter(t => t.templateType === 'SALES_RETURN' || t.templateType === 'RTV'),
-        }
-        
-        setAvailableTemplates(organized)
-        console.log('✅ Templates organized by type:', organized)
+      const invoiceTemplates = invoiceResponse.ok && invoiceResponse.data.data ? 
+        (Array.isArray(invoiceResponse.data.data) ? invoiceResponse.data.data : [invoiceResponse.data.data]) : []
+      
+      // Organize invoice templates by templateType
+      const organized = {
+        invoice: invoiceTemplates.filter(t => t.templateType === 'INVOICE' || !t.templateType),
+        deliveryNote: invoiceTemplates.filter(t => t.templateType === 'DELIVERY_NOTE'),
+        quotation: invoiceTemplates.filter(t => t.templateType === 'QUOTATION'),
+        salesOrder: invoiceTemplates.filter(t => t.templateType === 'SALES_ORDER'),
+        salesReturn: invoiceTemplates.filter(t => t.templateType === 'SALES_RETURN' || t.templateType === 'RTV'),
       }
+      
+      setAvailableTemplates(organized)
+      console.log('✅ Templates organized by type:', organized)
     } catch (error) {
-      console.error('Failed to fetch invoice templates:', error)
+      console.error('Failed to fetch templates:', error)
       showToast('error', 'Failed to load document templates')
     } finally {
       setLoadingTemplates(false)

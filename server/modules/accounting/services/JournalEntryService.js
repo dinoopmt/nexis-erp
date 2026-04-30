@@ -3,8 +3,8 @@
  * Handles double-entry bookkeeping with debit/credit validation and account balance updates
  */
 
-import JournalEntry from '../../Models/JournalEntry.js';
-import ChartOfAccounts from '../../Models/ChartOfAccounts.js';
+import JournalEntry from '../../../Models/JournalEntry.js';
+import ChartOfAccounts from '../../../Models/ChartOfAccounts.js';
 import ChartOfAccountsService from './ChartOfAccountsService.js';
 import logger from '../../../config/logger.js';
 

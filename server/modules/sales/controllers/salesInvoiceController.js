@@ -484,6 +484,34 @@ export const getSalesInvoices = async (req, res) => {
   }
 };
 
+// ✅ NEW: Get Sales Invoices by Customer ID (for Sales Return invoice lookup)
+export const getInvoicesByCustomer = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    
+    if (!customerId) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
+
+    console.log('🔍 Fetching invoices for customer:', customerId);
+
+    const invoices = await SalesInvoice.find({
+      customerId: customerId,
+      isDeleted: false,
+    })
+      .populate('customerId', 'name phone email vendorTRN')
+      .populate('items.productId', 'name itemcode barcode')
+      .sort({ date: -1 });
+
+    console.log(`✅ Found ${invoices.length} invoices for customer ${customerId}`);
+    
+    res.json(invoices);
+  } catch (err) {
+    console.error('❌ Error fetching invoices by customer:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // Get Sales Invoice by ID
 export const getSalesInvoiceById = async (req, res) => {
   try {
