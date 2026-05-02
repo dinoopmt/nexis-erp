@@ -78,6 +78,9 @@ class APIClient {
       ...customHeaders,
     };
 
+    // ✅ Always reload auth token from localStorage (in case it changed after login)
+    this.loadAuthToken();
+
     // Add authentication token
     if (this.authToken) {
       headers['Authorization'] = `Bearer ${this.authToken}`;

@@ -99,8 +99,17 @@ const StoreSettings = () => {
   }, []);
 
   // Fetch terminals whenever storeId changes - with debounce to prevent rate limiting
+  // ✅ IMPORTANT: Wait for auth token to be available before fetching terminals
   useEffect(() => {
     if (storeId) {
+      // Check if auth token is available
+      const authToken = localStorage.getItem('token') || localStorage.getItem('authToken');
+      
+      if (!authToken) {
+        console.warn('⚠️ Auth token not available yet, skipping terminal fetch');
+        return;
+      }
+
       const timer = setTimeout(() => {
         fetchTerminals(storeId);
       }, 300);
