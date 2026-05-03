@@ -27,7 +27,7 @@ export const getNextLpoNumber = async (req, res) => {
     const lpoNumber = await LpoService.generateLPONumber(financialYear);
 
     res.status(200).json({
-      lpoNumber: lpoNumber,
+      lpoNo: lpoNumber,  // ✅ FIXED: Match frontend expectation (lpoNo not lpoNumber)
       financialYear: financialYear,
     });
   } catch (error) {
@@ -42,13 +42,17 @@ export const getNextLpoNumber = async (req, res) => {
 // Get all LPOs
 export const getAllLpos = async (req, res) => {
   try {
+    console.log("🔍 [LPO FETCH] Starting getAllLpos request...");
+    
     const lpos = await Lpo.find()
       .populate("vendorId", "name vendorName")
       .sort({ lpoDate: -1 });
 
+    console.log(`✅ [LPO FETCH] Found ${lpos.length} LPOs in collection`);
+    
     res.status(200).json(lpos);
   } catch (error) {
-    logger.error("Error fetching LPOs:", error);
+    console.error("❌ [LPO FETCH] Error fetching LPOs:", error);
     res.status(500).json({
       message: "Failed to fetch LPOs",
       error: error.message,
@@ -81,19 +85,28 @@ export const createLpo = async (req, res) => {
   try {
     const lpoData = req.body;
 
+    console.log("🆕 [CREATE] Creating new LPO:", {
+      lpoNumber: lpoData.lpoNumber,
+      status: lpoData.status,
+      itemCount: lpoData.items?.length || 0,
+      note: "Stock entries will NOT be updated on draft creation",
+    });
+
     // ✅ Validate items
     await LpoService.validateLPOItems(lpoData.items);
 
     // ✅ Calculate totals
     const totals = LpoService.calculateLPOTotals(lpoData.items);
 
-    // Create LPO with totals
+    // Create LPO with totals (NO stock or accounting updates on creation)
     const lpo = new Lpo({
       ...lpoData,
       ...totals,
     });
 
     await lpo.save();
+
+    console.log(`✅ [CREATE] LPO created successfully: ${lpo.lpoNumber} (Status: ${lpo.status})`);
 
     res.status(201).json({
       message: "LPO created successfully",
@@ -114,6 +127,13 @@ export const updateLpo = async (req, res) => {
     const { id } = req.params;
     const lpoData = req.body;
 
+    console.log("📝 [UPDATE] Updating LPO:", {
+      lpoId: id,
+      status: lpoData.status,
+      itemCount: lpoData.items?.length || 0,
+      note: "Stock entries will NOT be updated on regular update. Only on explicit 'post' action.",
+    });
+
     // ✅ Validate items if updating items
     if (lpoData.items) {
       await LpoService.validateLPOItems(lpoData.items);
@@ -123,6 +143,7 @@ export const updateLpo = async (req, res) => {
       lpoData.netTotal = totals.netTotal;
     }
 
+    // Update LPO (NO stock or accounting updates on regular update)
     const lpo = await Lpo.findByIdAndUpdate(id, lpoData, {
       new: true,
       runValidators: true,
@@ -131,6 +152,8 @@ export const updateLpo = async (req, res) => {
     if (!lpo) {
       return res.status(404).json({ message: "LPO not found" });
     }
+
+    console.log(`✅ [UPDATE] LPO updated successfully: ${lpo.lpoNumber} (Status: ${lpo.status})`);
 
     res.status(200).json({
       message: "LPO updated successfully",

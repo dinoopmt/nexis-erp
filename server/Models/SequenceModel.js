@@ -8,4 +8,7 @@ const counterSchema = new mongoose.Schema({
   lastNumber: { type: Number, default: 0 }
 });
 
+// ✅ CRITICAL: Unique index on (module, financialYear) to prevent duplicates
+counterSchema.index({ module: 1, financialYear: 1 }, { unique: true });
+
 export default mongoose.model("Counter", counterSchema, "sequences");

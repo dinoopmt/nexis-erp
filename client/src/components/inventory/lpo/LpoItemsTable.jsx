@@ -1,7 +1,6 @@
 /**
  * LpoItemsTable Component
  * Displays AG Grid table with LPO items
- * ✅ EXACT MIRROR of GrnItemsTable structure
  * ✅ Supports highlighting newly added items and auto-scroll
  */
 import React, { useRef, useEffect } from "react";
@@ -24,7 +23,7 @@ const LpoItemsTable = ({
   highlightedItemId,
   editTargetItemId,
   onEditTargetHandled,
-  isViewMode = false, // ✅ Read-only mode
+  isViewMode = false, // ✅ NEW: Read-only mode
 }) => {
   const gridRef = useRef(null);
 
@@ -137,13 +136,12 @@ const LpoItemsTable = ({
           suppressMenuHide={gridConfig.suppressMenuHide}
           stopEditingWhenCellsLoseFocus={gridConfig.stopEditingWhenCellsLoseFocus}
           suppressClickEdit={isViewMode} // ✅ Prevent edit mode on cell click when read-only
-          overlayNoRowsTemplate={items && items.length === 0 ? '<div style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No items added yet. Use item search to add items.</div>' : undefined}
           getRowClass={(params) => {
             const rowId = params.data?.id;
             const shouldHighlight = highlightedItemId && rowId === highlightedItemId;
             return shouldHighlight ? 'ag-row-highlight' : '';
           }}
-          getRowId={(params) => params.data?.id || `row-${params.rowIndex}`}
+          getRowId={(params) => params.data.id}
         />
       </div>
     </div>
@@ -151,3 +149,5 @@ const LpoItemsTable = ({
 };
 
 export default LpoItemsTable;
+
+

@@ -1,7 +1,6 @@
 /**
  * LpoUnitVariantSelector Component
  * Modal for selecting unit variant when adding item to LPO
- * ✅ EXACT MIRROR OF GrnUnitVariantSelector
  */
 import React, { useState } from "react";
 import { X } from "lucide-react";
@@ -99,35 +98,39 @@ const LpoUnitVariantSelector = ({
               
               {/* ✅ Bottom row: Unit, Factor, Cost, Price in 4-column grid */}
               <div className="grid grid-cols-4 gap-1 text-xs text-gray-600 min-w-0">
-                <div className="truncate">
-                  <span className="font-semibold text-gray-800">{option.unit}</span>
+                <div className="min-w-0">
+                  <span className="text-gray-500 block text-[9px] truncate">Unit</span>
+                  <div className="font-medium text-gray-800 truncate">{option.unit}</div>
                 </div>
-                <div className="text-center">
-                  <span className="text-gray-600">×{option.factor}</span>
+                <div className="min-w-0">
+                  <span className="text-gray-500 block text-[9px] truncate">Factor</span>
+                  <div className="font-medium text-gray-800 truncate">{option.factor}</div>
                 </div>
-                <div className="text-right">
-                  <span className="text-gray-800 font-semibold">{option.cost}</span>
+                <div className="min-w-0">
+                  <span className="text-gray-500 block text-[9px] truncate">Cost</span>
+                  <div className="font-medium text-gray-800 truncate">{option.cost}</div>
                 </div>
-                <div className="text-right">
-                  <span className="text-gray-800 font-semibold">{option.price}</span>
+                <div className="min-w-0">
+                  <span className="text-gray-500 block text-[9px] truncate">Price</span>
+                  <div className="font-medium text-gray-800 truncate">{option.price}</div>
                 </div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Footer: Cancel and Select buttons */}
-        <div className="flex gap-2 justify-end">
+        {/* Buttons */}
+        <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-300 text-gray-900 rounded-lg hover:bg-gray-400 transition text-sm font-medium"
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium text-xs"
           >
             Cancel
           </button>
           <button
             onClick={handleSelect}
             disabled={selectedVariant === null}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium"
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs"
           >
             Select
           </button>
@@ -138,3 +141,5 @@ const LpoUnitVariantSelector = ({
 };
 
 export default LpoUnitVariantSelector;
+
+

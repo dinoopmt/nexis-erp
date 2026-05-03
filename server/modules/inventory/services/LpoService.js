@@ -12,11 +12,30 @@ class LpoService {
   /**
    * ✅ UPDATED: Generate next LPO number using database sequence (FIFO method)
    * Uses atomic increment to prevent duplicates in concurrent scenarios (multi-terminal)
+   * ✅ FIXED: Cleanup duplicate sequences if they exist
    * @param {string} financialYear - Financial year (e.g., "2025-2026")
    * @returns {Promise<string>} - LPO number (e.g., "LPO-2025-2026-00001")
    */
   async generateLPONumber(financialYear = "2025-2026") {
     try {
+      // ✅ CLEANUP: Check for and remove duplicate sequences
+      const duplicates = await Counter.find({
+        module: "LPO",
+        financialYear: financialYear,
+      });
+
+      if (duplicates.length > 1) {
+        logger.warn(`Found ${duplicates.length} duplicate LPO sequences for FY ${financialYear}. Cleaning up...`);
+        
+        // Keep the one with highest lastNumber, delete others
+        duplicates.sort((a, b) => b.lastNumber - a.lastNumber);
+        const keepId = duplicates[0]._id;
+        const deleteIds = duplicates.slice(1).map(d => d._id);
+        
+        await Counter.deleteMany({ _id: { $in: deleteIds } });
+        logger.info(`Deleted ${deleteIds.length} duplicate sequences, keeping sequence with lastNumber=${duplicates[0].lastNumber}`);
+      }
+
       // ✅ Use atomic findOneAndUpdate for FIFO
       // Increments counter atomically to prevent race conditions across multiple terminals
       const sequence = await Counter.findOneAndUpdate(

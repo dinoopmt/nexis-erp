@@ -91,7 +91,7 @@ export const useLpoGridConfig = (removeItemFromLpo, onEditProduct = null) => {
       },
       {
         headerName: "Unit",
-        field: "unit",
+        field: "unitType",
         flex: 0.6,
         minWidth: 55,
         cellStyle: { fontSize: '12px' },
@@ -120,12 +120,16 @@ export const useLpoGridConfig = (removeItemFromLpo, onEditProduct = null) => {
       },
       {
         headerName: "Net Amt",
-        field: "netCost",
         flex: 0.8,
         minWidth: 65,
         cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
         headerStyle: { fontSize: '12px' },
+        valueGetter: (params) => {
+          const qty = params.data?.qty || 0;
+          const cost = params.data?.cost || 0;
+          return qty * cost;
+        },
         valueFormatter: (params) => formatNumber(params.value || 0),
       },
       {
@@ -141,22 +145,35 @@ export const useLpoGridConfig = (removeItemFromLpo, onEditProduct = null) => {
       },
       {
         headerName: "Tax Amt",
-        field: "taxAmount",
         flex: 0.8,
         minWidth: 65,
         cellStyle: { textAlign: "right", fontSize: '12px' },
         headerClass: "ag-right-aligned-header",
         headerStyle: { fontSize: '12px' },
+        valueGetter: (params) => {
+          const qty = params.data?.qty || 0;
+          const cost = params.data?.cost || 0;
+          const taxPercent = params.data?.taxPercent || 0;
+          const netCost = qty * cost;
+          return (netCost * taxPercent) / 100;
+        },
         valueFormatter: (params) => formatNumber(params.value || 0),
       },
       {
         headerName: "Total",
-        field: "finalCost",
         flex: 0.8,
         minWidth: 65,
         cellStyle: { textAlign: "right", fontSize: '11px', fontWeight: 'bold' },
         headerClass: "ag-right-aligned-header",
         headerStyle: { fontSize: '12px', fontWeight: 'bold' },
+        valueGetter: (params) => {
+          const qty = params.data?.qty || 0;
+          const cost = params.data?.cost || 0;
+          const taxPercent = params.data?.taxPercent || 0;
+          const netCost = qty * cost;
+          const taxAmount = (netCost * taxPercent) / 100;
+          return netCost + taxAmount;
+        },
         valueFormatter: (params) => formatNumber(params.value || 0),
       },
       {

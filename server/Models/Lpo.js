@@ -92,7 +92,7 @@ const lpoSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Draft", "Confirmed", "Received", "Cancelled"],
+      enum: ["Draft", "Requested", "Confirmed", "Received", "Cancelled"],
       default: "Draft",
     },
     // ✅ LPO Level Totals
@@ -132,6 +132,7 @@ lpoSchema.index({ lpoDate: -1 });
 lpoSchema.index({ status: 1 });
 lpoSchema.index({ branchId: 1 });
 
-const Lpo = mongoose.model("Lpo", lpoSchema);
+// ✅ Explicitly set collection name to "lpos"
+const Lpo = mongoose.model("Lpo", lpoSchema, "lpos");
 
 export default Lpo;

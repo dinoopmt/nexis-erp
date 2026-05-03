@@ -30,6 +30,9 @@ const seedSequences = async () => {
       { module: "journal_entry", prefix: "JE", lastNumber: 0 },
       { module: "payment", prefix: "PMT", lastNumber: 0 },
       { module: "receipt", prefix: "RCP", lastNumber: 0 },
+      { module: "LPO", prefix: "LPO", lastNumber: 0 },
+      { module: "GRN", prefix: "GRN", lastNumber: 0 },
+      { module: "RTV", prefix: "RTV", lastNumber: 0 },
     ];
 
     // Insert sequences for current financial year
