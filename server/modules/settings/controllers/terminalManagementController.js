@@ -83,16 +83,19 @@ export const createTerminal = async (req, res) => {
         quotation: { templateId: formatMapping.quotation?.templateId || null },
         salesOrder: { templateId: formatMapping.salesOrder?.templateId || null },
         salesReturn: { templateId: formatMapping.salesReturn?.templateId || null },
+        thermalInvoice: { templateId: formatMapping.thermalInvoice?.templateId || null },
       } : {
         invoice: { templateId: null },
         deliveryNote: { templateId: null },
         quotation: { templateId: null },
         salesOrder: { templateId: null },
         salesReturn: { templateId: null },
+        thermalInvoice: { templateId: null },
       },
       hardwareMapping: hardwareMapping || {
         invoicePrinter: { enabled: true, printerName: "", timeout: 5000 },
         barcodePrinter: { enabled: false, printerName: "", timeout: 5000 },
+        thermalPrinter: { enabled: false, printerName: "", timeout: 5000 },
         customerDisplay: {
           enabled: false,
           displayType: "VFD",

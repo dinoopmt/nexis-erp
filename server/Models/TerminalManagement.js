@@ -99,6 +99,14 @@ const terminalManagementSchema = new mongoose.Schema(
           default: null,
           description: "Sales return/credit note template"
         }
+      },
+      thermalInvoice: {
+        templateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "InvoiceTemplate",
+          default: null,
+          description: "Thermal receipt template (58mm or 80mm) for supermarket POS"
+        }
       }
     },
 
@@ -134,6 +142,24 @@ const terminalManagementSchema = new mongoose.Schema(
           type: String,
           default: "",
           description: "Barcode printer name or network IP"
+        },
+        timeout: {
+          type: Number,
+          default: 5000,
+          min: 1000,
+          description: "Printer timeout in milliseconds"
+        }
+      },
+      thermalPrinter: {
+        enabled: {
+          type: Boolean,
+          default: false,
+          description: "Enable thermal printer for supermarket invoice printing"
+        },
+        printerName: {
+          type: String,
+          default: "",
+          description: "Thermal printer name or network IP"
         },
         timeout: {
           type: Number,

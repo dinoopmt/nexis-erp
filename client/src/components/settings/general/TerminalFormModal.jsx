@@ -18,6 +18,7 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
     quotation: [],
     salesOrder: [],
     salesReturn: [],
+    thermalInvoice: [],
   })
   const [loadingTemplates, setLoadingTemplates] = useState(true)
   const [installedPrinters, setInstalledPrinters] = useState([])
@@ -55,6 +56,9 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
       salesReturn: {
         templateId: null,
       },
+      thermalInvoice: {
+        templateId: null,
+      },
     },
     hardwareMapping: {
       invoicePrinter: {
@@ -63,6 +67,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
         timeout: 5000,
       },
       barcodePrinter: {
+        enabled: false,
+        printerName: '',
+        timeout: 5000,
+      },
+      thermalPrinter: {
         enabled: false,
         printerName: '',
         timeout: 5000,
@@ -224,6 +233,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
           updated.hardwareMapping.barcodePrinter.printerName = installedPrinters[1].name
         }
         
+        // Auto-set thermal printer if empty and we have a third printer
+        if (!updated.hardwareMapping.thermalPrinter.printerName && installedPrinters.length > 2) {
+          updated.hardwareMapping.thermalPrinter.printerName = installedPrinters[2].name
+        }
+        
         // Auto-set COM port if empty
         if (!updated.hardwareMapping.customerDisplay.comPort && availableComPorts.length > 0) {
           updated.hardwareMapping.customerDisplay.comPort = availableComPorts[0]
@@ -244,11 +258,12 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
       
       // Organize invoice templates by templateType
       const organized = {
-        invoice: invoiceTemplates.filter(t => t.templateType === 'INVOICE' || !t.templateType),
+        invoice: invoiceTemplates.filter(t => t.templateType === 'INVOICE' && !t.templateName?.includes('Thermal')),
         deliveryNote: invoiceTemplates.filter(t => t.templateType === 'DELIVERY_NOTE'),
         quotation: invoiceTemplates.filter(t => t.templateType === 'QUOTATION'),
         salesOrder: invoiceTemplates.filter(t => t.templateType === 'SALES_ORDER'),
         salesReturn: invoiceTemplates.filter(t => t.templateType === 'SALES_RETURN' || t.templateType === 'RTV'),
+        thermalInvoice: invoiceTemplates.filter(t => t.templateType === 'INVOICE' && t.templateName?.includes('Thermal')),
       }
       
       setAvailableTemplates(organized)
@@ -362,6 +377,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
             printerName: installedPrinters[1]?.name || '',
             timeout: 5000,
           },
+          thermalPrinter: {
+            enabled: false,
+            printerName: '',
+            timeout: 5000,
+          },
         }
         // Remove old printer field
         delete hardwareMapping.printer
@@ -380,6 +400,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
             printerName: installedPrinters[1]?.name || '',
             timeout: 5000,
           },
+          thermalPrinter: {
+            enabled: false,
+            printerName: '',
+            timeout: 5000,
+          },
           customerDisplay: {
             enabled: false,
             displayType: 'VFD',
@@ -391,6 +416,33 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
             displayTotal: true,
             displayDiscount: true,
           },
+        }
+      }
+      
+      // Ensure invoicePrinter exists
+      if (!hardwareMapping.invoicePrinter) {
+        hardwareMapping.invoicePrinter = {
+          enabled: true,
+          printerName: installedPrinters[0]?.name || '',
+          timeout: 5000,
+        }
+      }
+      
+      // Ensure barcodePrinter exists
+      if (!hardwareMapping.barcodePrinter) {
+        hardwareMapping.barcodePrinter = {
+          enabled: false,
+          printerName: '',
+          timeout: 5000,
+        }
+      }
+      
+      // Ensure thermalPrinter exists
+      if (!hardwareMapping.thermalPrinter) {
+        hardwareMapping.thermalPrinter = {
+          enabled: false,
+          printerName: '',
+          timeout: 5000,
         }
       }
       
@@ -825,6 +877,30 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
                     )}
                   </div>
                 </div>
+
+                {/* Thermal Invoice Template */}
+                <div className="bg-orange-50 rounded p-2 border border-orange-200">
+                  <h4 className="font-semibold text-xs text-gray-900 mb-2">🔥 Thermal Invoice (Supermarket POS)</h4>
+                  <div className="space-y-1 p-2 bg-white rounded border border-orange-100">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Select Thermal Template</label>
+                    <select
+                      value={formData.formatMapping.thermalInvoice.templateId || ''}
+                      onChange={(e) => handleDeepNestedChange('formatMapping', 'thermalInvoice', 'templateId', e.target.value || null)}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="">-- Select Thermal Receipt Template --</option>
+                      {availableTemplates.thermalInvoice.map((template) => (
+                        <option key={template._id} value={template._id}>
+                          {template.templateName} ({template.language || 'EN'})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-600 mt-1">58mm or 80mm thermal receipt printers for supermarket checkout</p>
+                    {availableTemplates.thermalInvoice.length === 0 && !loadingTemplates && (
+                      <p className="text-xs text-orange-600 mt-1">No thermal templates available - run seeding script</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -964,6 +1040,76 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
                           step="1000"
                           value={formData.hardwareMapping.barcodePrinter.timeout}
                           onChange={(e) => handleDeepNestedChange('hardwareMapping', 'barcodePrinter', 'timeout', parseInt(e.target.value))}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Thermal Printer Configuration */}
+                <div className="bg-red-50 rounded p-2 border border-red-200">
+                  <div className="flex items-center gap-1 mb-2">
+                    <Printer size={14} className="text-red-600" />
+                    <h4 className="font-semibold text-xs text-gray-900">Thermal Printer</h4>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-2">For thermal receipt printing in supermarket/retail environments</p>
+                  
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.hardwareMapping.thermalPrinter.enabled}
+                      onChange={(e) => handleDeepNestedChange('hardwareMapping', 'thermalPrinter', 'enabled', e.target.checked)}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span className="text-xs text-gray-700">Enable thermal printer</span>
+                  </label>
+
+                  {formData.hardwareMapping.thermalPrinter.enabled && (
+                    <div className="ml-4 space-y-2 p-2 bg-white rounded border border-red-100">
+                      {/* Installed Printers Dropdown */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-medium text-gray-700">Select Installed Printer</label>
+                          <button
+                            type="button"
+                            onClick={fetchHardwareDevices}
+                            disabled={loadingHardware}
+                            className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >
+                            {loadingHardware ? '🔄 Detecting...' : '🔍 Detect'}
+                          </button>
+                        </div>
+                        <select
+                          value={formData.hardwareMapping.thermalPrinter.printerName}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'thermalPrinter', 'printerName', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="">-- Select from installed printers --</option>
+                          {installedPrinters.length > 0 ? (
+                            installedPrinters.map((printer, idx) => (
+                              <option key={idx} value={typeof printer === 'string' ? printer : printer.name}>
+                                {typeof printer === 'string' ? printer : (printer.displayName || printer.name)}
+                              </option>
+                            ))
+                          ) : (
+                            <option disabled>No printers detected</option>
+                          )}
+                        </select>
+                        {loadingHardware && <p className="text-xs text-gray-500 mt-1">🔄 Detecting printers...</p>}
+                        {!loadingHardware && installedPrinters.length > 0 && (
+                          <p className="text-xs text-green-600 mt-1">✅ {installedPrinters.length} printer(s) detected</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Timeout (ms)</label>
+                        <input
+                          type="number"
+                          min="1000"
+                          step="1000"
+                          value={formData.hardwareMapping.thermalPrinter.timeout}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'thermalPrinter', 'timeout', parseInt(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                         />
                       </div>

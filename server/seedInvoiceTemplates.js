@@ -1,5 +1,6 @@
 import InvoiceTemplate from './Models/InvoiceTemplate.js';
 import { INVOICE_TEMPLATE_EN_WITH_LOGO, INVOICE_TEMPLATE_AR_WITH_LOGO } from './templates/invoiceTemplates.js';
+import { THERMAL_INVOICE_TEMPLATE_EN_58MM, THERMAL_INVOICE_TEMPLATE_AR_58MM, THERMAL_INVOICE_TEMPLATE_EN_80MM, THERMAL_INVOICE_TEMPLATE_AR_80MM } from './templates/thermalInvoiceTemplate.js';
 
 /**
  * Seed default invoice templates to database
@@ -56,6 +57,29 @@ export async function seedInvoiceTemplates() {
         cssContent: INVOICE_TEMPLATE_AR_WITH_LOGO.cssContent,
         isActive: true,
         isDefault: false
+      },
+      // ✅ Thermal Invoice Templates for Supermarket POS (58mm)
+      {
+        ...THERMAL_INVOICE_TEMPLATE_EN_58MM,
+        isActive: true,
+        isDefault: false
+        // Note: createdBy field is removed to avoid ObjectId validation issues
+      },
+      {
+        ...THERMAL_INVOICE_TEMPLATE_AR_58MM,
+        isActive: true,
+        isDefault: false
+      },
+      // ✅ Thermal Invoice Templates for Supermarket POS (80mm)
+      {
+        ...THERMAL_INVOICE_TEMPLATE_EN_80MM,
+        isActive: true,
+        isDefault: false
+      },
+      {
+        ...THERMAL_INVOICE_TEMPLATE_AR_80MM,
+        isActive: true,
+        isDefault: false
       }
     ];
 
@@ -77,7 +101,7 @@ export async function seedInvoiceTemplates() {
     }
 
     console.log(`✅ Invoice template seeding completed successfully!`);
-    console.log(`Total templates: ${templates.length} (EN×2, AR×2) - ${createdCount} new created`);
+    console.log(`Total templates: ${templates.length} (EN×2 Standard, AR×2 Standard, EN+AR×2 Thermal 58mm, EN+AR×2 Thermal 80mm) - ${createdCount} new created`);
 
   } catch (error) {
     console.error('❌ Error seeding invoice templates:', error);

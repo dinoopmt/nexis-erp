@@ -61,6 +61,7 @@ export const seedDefaultTerminals = async () => {
         quotation: { templateId: null },
         salesOrder: { templateId: null },
         salesReturn: { templateId: null },
+        thermalInvoice: { templateId: null },
       },
       hardwareMapping: {
         invoicePrinter: {
@@ -69,6 +70,11 @@ export const seedDefaultTerminals = async () => {
           timeout: 5000,
         },
         barcodePrinter: {
+          enabled: false,
+          printerName: '',
+          timeout: 5000,
+        },
+        thermalPrinter: {
           enabled: false,
           printerName: '',
           timeout: 5000,
