@@ -614,12 +614,51 @@ router.get('/invoices/:invoiceId/html', async (req, res) => {
     // Debug logging
     console.log(`📊 [HTML] Template: ${template.templateName}, includeLogo: ${template.includeLogo}, logoUrl: ${storeDetails?.logoUrl ? '✅' : '❌'}, withLogo: ${invoiceData.withLogo}`);
 
-    // 5. Render HTML with base URL for image loading in iframes
+    // 6. CREATE SIMPLE PAGE STRUCTURE FOR PREVIEW (single page with all items)
+    console.log(`📄 [HTML] Preparing single-page preview...`);
+    
+    // For preview, create a single page with all items
+    const previewPages = [{
+      pageNumber: 1,
+      totalPages: 1,
+      isFirstPage: true,
+      isLastPage: true,
+      items: invoiceData.items || [],
+      broughtForward: 0,
+      carryForward: 0,
+      globalSerialNumber: 0
+    }];
+
+    // Add pages to invoice data
+    invoiceData.pages = previewPages;
+
+    console.log(`✅ [HTML] Preview data prepared: ${previewPages.length} page(s), ${previewPages[0].items.length} items`);
+
+    // 7. Render HTML with base URL for image loading in iframes
     const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // Ensure root properties are accessible via @root in template
+    const renderData = {
+      ...invoiceData,
+      pages: previewPages,
+      // Explicitly add root-level references for Handlebars @root access
+      store: invoiceData.store,
+      company: invoiceData.company,
+      invoice: invoiceData.invoice
+    };
+
+    console.log(`📊 [HTML] Render data: store=${renderData.store?.storeName}, pages=${renderData.pages?.length}, items=${renderData.pages[0]?.items?.length}`);
+    console.log(`💰 [HTML] Invoice summary data:`, {
+      subtotal: renderData.invoice?.subtotal,
+      discountAmount: renderData.invoice?.discountAmount,
+      vatAmount: renderData.invoice?.vatAmount,
+      totalIncludeVat: renderData.invoice?.totalIncludeVat
+    });
+    
     const htmlContent = PdfGenerationService.renderTemplate(
       template.htmlContent,
       template.cssContent,
-      invoiceData,
+      renderData,
       baseUrl
     );
 

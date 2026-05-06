@@ -128,6 +128,60 @@ class PdfGenerationService {
     Handlebars.registerHelper('eq', (a, b) => {
       return a === b;
     });
+
+    // Format number with decimal places
+    Handlebars.registerHelper('formatNumber', (value, decimals = 2) => {
+      let numValue = 0;
+      
+      try {
+        // Handle undefined/null
+        if (value === undefined || value === null) {
+          numValue = 0;
+        }
+        // Already a number
+        else if (typeof value === 'number') {
+          numValue = value;
+        }
+        // String
+        else if (typeof value === 'string') {
+          numValue = parseFloat(value) || 0;
+        }
+        // Object - could be Decimal128
+        else if (typeof value === 'object') {
+          // Decimal128 with $numberDecimal property
+          if (value.$numberDecimal) {
+            numValue = parseFloat(value.$numberDecimal) || 0;
+          }
+          // Decimal128 with toNumber method
+          else if (typeof value.toNumber === 'function') {
+            numValue = value.toNumber();
+          }
+          // BigInt
+          else if (typeof value === 'bigint') {
+            numValue = Number(value);
+          }
+          // Object.toString() as last resort
+          else {
+            numValue = parseFloat(value.toString()) || 0;
+          }
+        }
+        // Fallback
+        else {
+          numValue = parseFloat(value) || 0;
+        }
+      } catch (e) {
+        console.warn(`formatNumber helper error for value: ${value}`, e);
+        numValue = 0;
+      }
+      
+      const validDecimals = Math.min(Math.max(parseInt(decimals) || 2, 0), 4);
+      return numValue.toFixed(validDecimals);
+    });
+
+    // Add two numbers
+    Handlebars.registerHelper('add', (a, b) => {
+      return (parseInt(a) || 0) + (parseInt(b) || 0);
+    });
   }
 
   // Render template with data
@@ -297,10 +351,12 @@ class PdfGenerationService {
     }
   }
 
-  // Main method: Generate PDF from template and invoice data
+  // Main method: Generate PDF from template and invoice data (2-PASS DYNAMIC PAGINATION)
   async generateInvoicePdf(template, invoiceData, options = {}) {
     try {
-      // Prepare data for template
+      const { paginateDynamic } = await import('../utils/paginateDynamic.js');
+
+      // PASS 1: Prepare initial template data
       const templateData = {
         ...invoiceData,
         language: template.language,
@@ -308,21 +364,51 @@ class PdfGenerationService {
         company: invoiceData.company,
         invoice: invoiceData.invoice,
         items: invoiceData.items || [],
+        pages: [], // Empty pages for first render
         formatCurrency: (value) => {
           const formatted = parseFloat(value).toFixed(invoiceData.company?.decimalPlaces || 2);
           return `${template.customDesign.currency} ${formatted}`;
         }
       };
 
-      // Render template with data
-      const htmlContent = this.renderTemplate(
+      // PASS 1: Render template for measurement
+      const tempHtmlContent = this.renderTemplate(
         template.htmlContent,
         template.cssContent,
         templateData
       );
 
-      // Generate PDF
-      const pdf = await this.generatePdfFromHtml(htmlContent, {
+      // Launch browser for pagination measurement
+      const browser = await this.initBrowser();
+      const page = await browser.newPage();
+      await page.setContent(tempHtmlContent, { waitUntil: 'load' });
+
+      // PASS 2: Calculate pages with dynamic pagination
+      const paginationConfig = {
+        pageHeight: 1120,      // A4 usable height in pixels
+        headerHeight: 300,     // Header section
+        footerHeight: 140,     // Footer section
+        defaultRowHeight: 28
+      };
+
+      const pages = await paginateDynamic(page, invoiceData.items || [], paginationConfig);
+      
+      await page.close();
+
+      // PASS 3: Final render with pagination data
+      const finalTemplateData = {
+        ...templateData,
+        pages: pages // Use calculated pages
+      };
+
+      const finalHtmlContent = this.renderTemplate(
+        template.htmlContent,
+        template.cssContent,
+        finalTemplateData
+      );
+
+      // Generate PDF from final render
+      const pdf = await this.generatePdfFromHtml(finalHtmlContent, {
         pageSize: template.customDesign.pageSize,
         margins: template.customDesign.margins,
         ...options
