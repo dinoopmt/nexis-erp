@@ -5,6 +5,7 @@ import Company from '../Models/Company.js';
 import TerminalManagement from '../Models/TerminalManagement.js';
 import StoreSettings from '../Models/StoreSettings.js';
 import PdfGenerationService from '../services/PdfGenerationService.js';
+import * as PrinterService from '../services/PrinterService.js';
 
 const router = express.Router();
 
@@ -845,6 +846,209 @@ router.get('/invoices/:invoiceId/html', async (req, res) => {
       success: false,
       message: 'Failed to generate HTML',
       error: error.message
+    });
+  }
+});
+
+// ============ PRINT TO TERMINAL ============
+
+/**
+ * POST /api/invoices/:invoiceId/print-to-terminal
+ * Generates PDF for local client printing
+ * ✅ Server generates PDF, sends to CLIENT
+ * ✅ Client handles local printing to their printer
+ * 
+ * For multiple clients with different printers:
+ * - Server generates PDF once
+ * - Each client receives PDF
+ * - Client prints to their LOCAL configured printer
+ * 
+ * Body: { printerName, templateId, terminalId }
+ * Response: PDF blob (client prints locally)
+ */
+router.post('/invoices/:invoiceId/print-to-terminal', async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const { printerName, templateId, terminalId, language = 'EN', withLogo = 'true' } = req.body;
+
+    console.log('\n========== PRINT TO TERMINAL ENDPOINT ==========');
+    console.log(`📄 Invoice ID: ${invoiceId}`);
+    console.log(`🖨️ Client Printer: ${printerName}`);
+    console.log(`📋 Template ID: ${templateId}`);
+    console.log(`🔧 Terminal ID: ${terminalId}`);
+    console.log(`📝 Generating PDF for CLIENT local printing...`);
+
+    // Validate inputs
+    if (!invoiceId || !templateId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: invoiceId, templateId'
+      });
+    }
+
+    console.log(`\n[Step 1] Fetching invoice data...`);
+    // 1. Fetch invoice
+    const invoice = await SalesInvoice.findById(invoiceId)
+      .populate('customerId', 'name phone address trn email')
+      .populate('items.productId', 'name itemcode barcode');
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    console.log(`✅ Invoice found: ${invoice.invoiceNumber}`);
+
+    console.log(`\n[Step 2] Fetching template...`);
+    // 2. Fetch template
+    let template = await InvoiceTemplate.findById(templateId);
+    if (!template) {
+      console.warn(`⚠️ Template not found with ID: ${templateId}, falling back to language/logo`);
+      template = await InvoiceTemplate.findOne({
+        language: language.toUpperCase(),
+        templateType: 'INVOICE',
+        includeLogo: withLogo === 'true',
+        isActive: true
+      });
+    }
+
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        message: `Template not found`
+      });
+    }
+
+    console.log(`✅ Template found: ${template.templateName || template._id}`);
+
+    console.log(`\n[Step 3] Fetching company & store details...`);
+    // 3. Fetch company settings
+    const company = await Company.findOne({ id: 1 });
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Company settings not found'
+      });
+    }
+
+    // 4. Fetch store details
+    const storeDetails = await getStoreDetails(terminalId);
+    if (storeDetails) {
+      console.log(`✅ Store details loaded: ${storeDetails.storeName}`);
+    } else {
+      console.warn(`⚠️ No store details found for terminal: ${terminalId}`);
+    }
+
+    console.log(`\n[Step 4] Preparing invoice data...`);
+    // 5. Prepare invoice data - SAME AS /generate-pdf endpoint
+    const invoiceData = {
+      company: {
+        companyName: storeDetails?.storeName || '',
+        address1: storeDetails?.address1 || '',
+        address2: storeDetails?.address2 || '',
+        email: storeDetails?.email || '',
+        phone: storeDetails?.phone || '',
+        city: company.city,
+        state: company.state,
+        country: company.country,
+        taxId: storeDetails?.taxNumber || '',
+        logoUrl: storeDetails?.logoUrl || '',
+        decimalPlaces: company.decimalPlaces || 2,
+        currency: company.currency || 'AED'
+      },
+      store: {
+        storeName: storeDetails?.storeName || '',
+        storeCode: storeDetails?.storeCode || '',
+        address1: storeDetails?.address1 || '',
+        address2: storeDetails?.address2 || '',
+        phone: storeDetails?.phone || '',
+        email: storeDetails?.email || '',
+        taxNumber: storeDetails?.taxNumber || '',
+        logoUrl: storeDetails?.logoUrl || '',
+      },
+      invoice: {
+        invoiceNumber: invoice.invoiceNumber,
+        date: invoice.date,
+        customerName: invoice.customerName,
+        customerEmail: invoice.customerEmail,
+        customerPhone: invoice.customerPhone,
+        customerAddress: invoice.customerAddress,
+        customerTRN: invoice.customerTRN,
+        subtotal: invoice.subtotal,
+        discountPercentage: invoice.discountPercentage,
+        discountAmount: invoice.discountAmount,
+        totalAfterDiscount: invoice.totalAfterDiscount,
+        vatPercentage: invoice.vatPercentage,
+        vatAmount: invoice.vatAmount,
+        totalIncludeVat: invoice.totalIncludeVat,
+        notes: invoice.notes,
+        paymentType: invoice.paymentType
+      },
+      items: invoice.items.map((item, idx) => ({
+        slNo: idx + 1,
+        itemName: item.itemName,
+        itemCode: item.itemcode,
+        serialNumbers: item.serialNumbers || [],
+        note: item.note,
+        quantity: item.quantity,
+        unit: item.unit || 'Pcs',
+        unitPrice: item.unitPrice,
+        discountPercentage: item.discountPercentage,
+        discountAmount: item.discountAmount,
+        vatPercentage: item.vatPercentage,
+        vatAmount: item.vatAmount,
+        total: item.total
+      })),
+      language: 'EN',
+      withLogo: template.includeLogo && storeDetails?.logoUrl ? true : false
+    };
+
+    console.log(`✅ Invoice data prepared`);
+
+    console.log(`\n[Step 5] Generating PDF...`);
+    // 6. Generate PDF - SAME METHOD as /generate-pdf endpoint
+    const pdfBuffer = await PdfGenerationService.generateInvoicePdf(
+      template,
+      invoiceData,
+      {
+        pdfOptions: {
+          displayHeaderFooter: true,
+          footerTemplate: `
+            <div style="font-size: 10px; width: 100%; text-align: center;">
+              <span class="pageNumber"></span> / <span class="totalPages"></span>
+            </div>
+          `
+        }
+      }
+    );
+
+    console.log(`✅ PDF generated: ${pdfBuffer.length} bytes`);
+
+    console.log(`\n[Step 6] Sending PDF to CLIENT...`);
+    console.log(`📤 Client will print locally to: ${printerName}`);
+
+    // 7. Send PDF to CLIENT for local printing
+    // ✅ Client receives PDF and prints to their local printer
+    res.contentType('application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=Invoice_${invoice.invoiceNumber}.pdf`
+    );
+    res.setHeader('X-Printer-Name', printerName); // Pass printer name to client
+    res.send(pdfBuffer);
+
+    console.log(`✅ PDF sent to CLIENT for printing`);
+
+  } catch (error) {
+    console.error('❌ Print to terminal error:', error);
+    console.error('   Stack:', error.stack);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate PDF for printing',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

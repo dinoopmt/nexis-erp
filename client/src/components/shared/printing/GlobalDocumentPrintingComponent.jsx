@@ -333,56 +333,124 @@ const GlobalDocumentPrintingComponent = ({ documentType, documentId, onClose }) 
     }, 500);
   };
 
-  // Silent print to terminal-mapped printer
+  // Silent print to terminal-mapped printer (LOCAL CLIENT PRINTER)
   const handlePrintSafe = async () => {
+    if (!documentId) {
+      const errorMsg = `❌ ${documentType} ID not available`;
+      console.error(errorMsg);
+      showToast('error', errorMsg);
+      return;
+    }
+
+    // Get printer name using document-type-specific lookup
+    const printerName = getPrinterName(documentType);
+    const terminalId = terminalConfig?.terminalId;
+    
+    console.log('🖨️ Starting local client printer print...');
+    console.log(`   Document: ${documentType} ${documentId}`);
+    console.log(`   Template: ${templateId}`);
+    console.log(`   Terminal: ${terminalId}`);
+    console.log(`   Local Printer: ${printerName || 'SYSTEM DEFAULT'}`);
+    
+    if (!printerName) {
+      const errorMsg = `❌ No printer configured for ${documentType} on terminal ${terminalId}. Please configure printer mapping in Terminal Settings.`;
+      console.error(errorMsg);
+      showToast('error', errorMsg);
+      return;
+    }
+
+    if (!templateId) {
+      const errorMsg = `❌ No template configured for ${documentType}. Cannot proceed with printing.`;
+      console.error(errorMsg);
+      showToast('error', errorMsg);
+      return;
+    }
+
     try {
-      if (!documentId) {
-        showToast('error', `❌ ${documentType} ID not available`);
-        return;
-      }
+      console.log('\n========== CLIENT LOCAL PRINTING ==========');
+      console.log(`📤 Requesting PDF from server...`);
+      console.log(`   Printer: ${printerName}`);
 
-      // Get printer name using document-type-specific lookup
-      const printerName = getPrinterName(documentType);
-      const terminalId = terminalConfig?.terminalId;
+      // Step 1: Request PDF from server for printing
+      const endpoint = getDocumentEndpoint();
       
-      console.log('🖨️ Starting A4 silent print...');
-      console.log(`   Document: ${documentType} ${documentId}`);
-      console.log(`   Template: ${templateId}`);
-      console.log(`   Terminal: ${terminalId}`);
-      console.log(`   Printer: ${printerName || 'SYSTEM DEFAULT'}`);
-      
-      // Generic Electron handler - all document types use same method
-      if (!window.electronAPI?.pdf?.printDocumentA4Silent) {
-        console.warn(`⚠️ Electron silent print not available`);
-        console.warn('💡 Falling back to browser print dialog...');
-        
-        // Fallback to browser print
-        handlePrint();
-        return;
-      }
-
-      const result = await window.electronAPI.pdf.printDocumentA4Silent(
-        documentType,
-        documentId,
-        templateId,
-        terminalId,
-        printerName,
-        API_URL
+      const printResponse = await axios.post(
+        `${API_URL}${endpoint}/${documentId}/print-to-terminal`,
+        {
+          printerName,
+          templateId,
+          terminalId
+        },
+        {
+          responseType: 'blob' // Get PDF as blob
+        }
       );
+
+      if (printResponse.status !== 200) {
+        throw new Error(`Server returned status ${printResponse.status}`);
+      }
+
+      const pdfBlob = printResponse.data;
+      console.log(`✅ PDF received from server: ${pdfBlob.size} bytes`);
+
+      // Step 2: Print PDF locally using Electron or Browser
+      console.log(`📄 Printing to local printer: ${printerName}`);
       
-      if (result.success) {
-        console.log('✅ Print job sent successfully');
-        showToast('success', `🖨️ ${documentType} printing on ${printerName || 'system default printer'}...`);
+      // Try Electron printing (works in Electron app)
+      if (window.electronAPI?.printer?.sendPrintPdf) {
+        console.log(`✅ Electron detected - Using native print API`);
+        
+        // Convert blob to arraybuffer for IPC
+        const arrayBuffer = await pdfBlob.arrayBuffer();
+        
+        // Send to main process for printing via exposed API
+        window.electronAPI.printer.sendPrintPdf(
+          arrayBuffer,
+          printerName,
+          `${documentType}_${documentId.substring(0, 8)}`
+        );
+
+        console.log(`✅ Print job sent to Electron main process`);
+        showToast('success', `✅ Printing to: ${printerName}`);
         
         setTimeout(() => {
           onClose();
-        }, 1500);
-      } else {
-        throw new Error(result.message || 'Print failed');
+        }, 1000);
+      } 
+      // Fallback: Browser print dialog
+      else {
+        console.log(`⚠️ Electron not detected - Using browser print dialog`);
+        
+        // Create blob URL and open in iframe for printing
+        const url = URL.createObjectURL(pdfBlob);
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        
+        document.body.appendChild(iframe);
+        
+        // Wait for iframe to load, then print
+        iframe.onload = () => {
+          console.log(`🖨️ Opening browser print dialog...`);
+          iframe.contentWindow.print();
+          
+          // Clean up after print
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            URL.revokeObjectURL(url);
+            console.log(`✅ Browser print completed`);
+            showToast('success', 'Print dialog opened - select your local printer');
+            onClose();
+          }, 500);
+        };
       }
+
     } catch (error) {
-      console.error('❌ Print error:', error);
-      showToast('error', `❌ Failed to print. Please download PDF and print manually.`);
+      const errorDetails = error.response?.data?.message || error.message || 'Unknown print error';
+      const fullErrorMsg = `❌ Failed to print: ${errorDetails}`;
+      console.error(fullErrorMsg);
+      console.error('Full error object:', error);
+      showToast('error', fullErrorMsg);
     }
   };
 

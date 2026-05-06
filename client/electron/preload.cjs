@@ -56,38 +56,32 @@ const printerAPI = {
    * Returns: Promise<{ name, type }>
    */
   getConfigured: () => ipcRenderer.invoke("printer:get-configured"),
-  
-  /**
-   * Print HTML content
-   * @param {string} html - HTML to print
-   * @param {string} printerName - Printer device name (optional)
-   * Returns: Promise<{ success, message }>
-   */
-  printHTML: (html, printerName) =>
-    ipcRenderer.invoke("printer:print-html", html, printerName),
-  
-  /**
-   * Print PDF file
-   * @param {string} filePath - Path to PDF file
-   * @param {string} printerName - Printer device name (optional)
-   * Returns: Promise<{ success, message }>
-   */
-  printPDF: (filePath, printerName) =>
-    ipcRenderer.invoke("printer:print-pdf", filePath, printerName),
-  
-  /**
-   * Test print - Print a test page
-   * @param {string} printerName - Printer device name (optional)
-   * Returns: Promise<{ success, message }>
-   */
-  testPrint: (printerName) =>
-    ipcRenderer.invoke("printer:test-print", printerName),
 
+  // [DEPRECATED] Old printer APIs - replaced by sendPrintPdf
+  // OLD: printHTML() - REMOVED (use sendPrintPdf instead)
+  // OLD: printPDF() - REMOVED (use sendPrintPdf instead)
+  // OLD: testPrint() - REMOVED (use sendPrintPdf for testing)
+  
   /**
    * Listen for printer status changes
    */
   onStatusChange: (callback) => {
     ipcRenderer.on("printer:status-changed", (_, data) => callback(data));
+  },
+
+  /**
+   * Send PDF buffer to print (one-way, no response)
+   * Used for local client printer printing
+   * @param {ArrayBuffer} pdfBuffer - PDF file as ArrayBuffer
+   * @param {string} printerName - Local printer name
+   * @param {string} documentName - Document name for temp file
+   */
+  sendPrintPdf: (pdfBuffer, printerName, documentName) => {
+    ipcRenderer.send("print-pdf", {
+      pdfBuffer,
+      printerName,
+      documentName,
+    });
   },
 };
 
@@ -356,29 +350,11 @@ const pdfAPI = {
    * @param {string} apiUrl - API base URL
    * Returns: Promise<{ success, message }>
    */
-  /**
-   * Generic A4 silent print for all document types
-   * Direct HTML printing - no PDF generation needed
-   * Uses terminal-mapped printer if configured
-   * @param {string} documentType - 'INVOICE'|'QUOTATION'|'SALES_ORDER'|'DELIVERY_NOTE'|'SALES_RETURN'
-   * @param {string} documentId - Document ID
-   * @param {string} templateId - Template ID from terminal formatMapping
-   * @param {string} terminalId - Terminal ID
-   * @param {string} printerName - Printer name from terminal settings (undefined = system default)
-   * @param {string} apiUrl - API base URL
-   * Returns: Promise<{ success, message }>
-   */
-  printDocumentA4Silent: (documentType, documentId, templateId, terminalId, printerName, apiUrl) =>
-    ipcRenderer.invoke("pdf:print-document-a4", documentType, documentId, templateId, terminalId, printerName, apiUrl),
-
-  /**
-   * Print PDF blob directly to printer (legacy)
-   * @param {ArrayBuffer} blob - PDF blob to print
-   * @param {object} options - Print options
-   * Returns: Promise<{ success, message }>
-   */
-  printBlob: (blob, options = {}) =>
-    ipcRenderer.invoke("pdf:print-blob", blob, options),
+  // ⚠️ DEPRECATED: Old handlers removed
+  // Use new dual printing system with usePrint hook instead
+  // The new system uses:
+  //   - POST /api/v1/print/generate-a4-invoice-pdf for server-side PDF generation
+  //   - window.ipcRenderer.send('print-a4-invoice') for Electron printing
 };
 
 // ================== EXPOSE API TO RENDERER ==================

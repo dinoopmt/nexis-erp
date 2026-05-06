@@ -208,11 +208,17 @@ function createWindow() {
   mainWindow.webContents.session.webRequest.onHeadersReceived(
     (details, callback) => {
       const headers = details.responseHeaders;
+      const url = details.url;
+      
+      // Don't apply CSP to chrome-extension URLs (they manage their own security)
+      if (url.startsWith('chrome-extension://')) {
+        return callback({ responseHeaders: headers });
+      }
       
       // Set CSP headers (using system fonts - no internet required)
       const cspPolicy = isDev
-        ? "default-src 'self'; script-src 'self' 'unsafe-inline' http://localhost:5173; style-src 'self' 'unsafe-inline' http://localhost:5173; connect-src 'self' http://localhost:5000 http://localhost:5173 ws://localhost:5173; img-src 'self' data: http: https:; font-src 'self' data:; object-src 'none'; frame-src 'none';"
-        : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:5000; img-src 'self' data: https:; font-src 'self'; object-src 'none'; frame-src 'none'; upgrade-insecure-requests";
+        ? "default-src 'self' chrome-extension:; script-src 'self' 'unsafe-inline' http://localhost:5173 chrome-extension:; style-src 'self' 'unsafe-inline' http://localhost:5173; connect-src 'self' http://localhost:5000 http://localhost:5173 ws://localhost:5173; img-src 'self' data: http: https:; font-src 'self' data:; object-src 'none'; frame-src 'none';"
+        : "default-src 'self' chrome-extension:; script-src 'self' chrome-extension:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:5000; img-src 'self' data: https:; font-src 'self'; object-src 'none'; frame-src 'none'; upgrade-insecure-requests";
       
       headers["content-security-policy"] = [cspPolicy];
       
@@ -483,12 +489,6 @@ function setupTerminalIPC() {
 }
 
 // ================== IPC HANDLERS - PDF GENERATOR ==================
-function setupPdfIPC() {
-  // Register PDF generation handlers
-  PdfGeneratorService.registerHandlers();
-  console.log("✅ PDF Generator IPC handlers setup complete");
-}
-
 // ================== IPC HANDLERS - PRINTER API ==================
 function setupPrinterIPC() {
   // Get list of available printers
@@ -516,161 +516,341 @@ function setupPrinterIPC() {
     };
   });
 
-  // Print HTML
-  ipcMain.handle("printer:print-html", async (event, html, printerName) => {
-    try {
-      if (!mainWindow) return { success: false, message: "Window not available" };
-
-      mainWindow.webContents.print(
-        {
-          silent: true,
-          deviceName: printerName || undefined,
-        },
-        (success) => {
-          if (!success) console.error("❌ Print failed");
-        }
-      );
-
-      return { success: true, message: "Print job sent to printer" };
-    } catch (error) {
-      console.error("❌ Print error:", error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  // Print PDF
-  ipcMain.handle("printer:print-pdf", async (event, filePath, printerName) => {
-    try {
-      if (!fs.existsSync(filePath)) {
-        return { success: false, message: "File not found" };
-      }
-
-      mainWindow.webContents.print(
-        {
-          silent: true,
-          deviceName: printerName || undefined,
-        },
-        (success) => {
-          if (!success) console.error("❌ Print failed");
-        }
-      );
-
-      return { success: true, message: "PDF print job sent to printer" };
-    } catch (error) {
-      console.error("❌ PDF print error:", error);
-      return { success: false, message: error.message };
-    }
-  });
-
-  // Test print
-  ipcMain.handle("printer:test-print", async (event, printerName) => {
-    try {
-      console.log(`🖨️ Sending test print`);
-      
-      // In real implementation, you would print a test page
-      return { success: true, message: "Test print job sent" };
-    } catch (error) {
-      console.error("❌ Test print error:", error);
-      return { success: false, message: error.message };
-    }
-  });
+  // [DEPRECATED] Old printer handlers - replaced by new print-pdf IPC event listener
+  // These are kept commented for reference only, use the IPC event handler instead
+  // OLD: ipcMain.handle("printer:print-html", ...) - REMOVED
+  // OLD: ipcMain.handle("printer:print-pdf", ...) - REMOVED
+  // OLD: ipcMain.handle("printer:test-print", ...) - REMOVED
 }
 
 // ================== IPC HANDLERS - PDF API (Printing) ==================
-function setupPdfIPC() {
-  // A4 Silent Print - Generic handler for all document types
-  ipcMain.handle("pdf:print-document-a4", async (event, documentType, documentId, templateId, terminalId, printerName, apiUrl) => {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log('\n📥 [IPC] pdf:print-document-a4 handler called');
-        console.log(`   documentType: ${documentType}`);
-        console.log(`   documentId: ${documentId}`);
-        console.log(`   templateId: ${templateId}`);
-        console.log(`   terminalId: ${terminalId}`);
-        console.log(`   printerName: ${printerName}`);
+// ================== IPC HANDLERS - DUAL PRINTING SYSTEM ==================
+/**
+ * NEW PRINT HANDLERS for Dual A4 PDF + Thermal Receipt System
+ */
+function setupDualPrintingIPC() {
+  // ============================================
+  // 1. PRINT A4 INVOICE (PDF FROM BLOB)
+  // ============================================
+  ipcMain.on("print-a4-invoice", async (event, data) => {
+    try {
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log('📥 [IPC] print-a4-invoice - A4 Invoice PDF Printing');
+      console.log(`${'═'.repeat(60)}`);
+      console.log(`  invoiceId: ${data.invoiceId}`);
+      console.log(`  terminalId: ${data.terminalId}`);
 
-        const { BrowserWindow } = require('electron');
+      const { BrowserWindow } = require('electron');
 
-        // Create hidden window for printing
-        const printWindow = new BrowserWindow({
-          show: false,
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            enableRemoteModule: false
-          }
-        });
+      // Create hidden window for PDF printing
+      const printWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          enableRemoteModule: false,
+          sandbox: true,
+        },
+      });
 
-        console.log('📄 Created hidden print window');
+      // Handle PDF blob
+      const pdfBuffer = Buffer.from(data.pdfBlob);
 
-        // Map document type to endpoint
-        const endpointMap = {
-          'INVOICE': '/invoices',
-          'QUOTATION': '/quotations',
-          'SALES_ORDER': '/sales-orders',
-          'DELIVERY_NOTE': '/delivery-notes',
-          'SALES_RETURN': '/sales-returns'
-        };
+      // Write PDF to temp file
+      const tempPdfPath = path.join(os.tmpdir(), `invoice-${Date.now()}.pdf`);
+      fs.writeFileSync(tempPdfPath, pdfBuffer);
+      console.log(`✅ PDF written to temp: ${tempPdfPath}`);
 
-        const endpoint = endpointMap[documentType] || '/documents';
+      // Load PDF file
+      await printWindow.webContents.loadFile(tempPdfPath);
 
-        // Build print URL with store data
-        const printUrl = `${apiUrl}${endpoint}/${documentId}/html?templateId=${templateId}&terminalId=${terminalId}&print=true`;
-        console.log(`   Print URL: ${printUrl}`);
+      // Wait for content to load, then print
+      printWindow.webContents.on('did-finish-load', () => {
+        console.log('🖨️ Printing A4 invoice...');
+        
+        const printerName = data.printerName || 'default';
+        const timeout = data.timeout || 5000;
 
-        // Load the document HTML
-        printWindow.loadURL(printUrl);
-
-        // When HTML loads, send to printer
-        printWindow.webContents.on('did-finish-load', () => {
-          console.log(`✅ ${documentType} HTML loaded`);
-          console.log('🖨️ Sending to printer with A4 settings...');
-
-          // Build print options
-          const printOptions = {
-            silent: true,              // No print dialog
-            printBackground: true,     // Print background colors/images
-            pageSize: 'A4',            // A4 paper
-            margins: { marginType: 'none' }  // Use CSS margins
-          };
-
-          // Only add deviceName if a specific printer is provided
-          if (printerName) {
-            printOptions.deviceName = printerName;
-          }
-
-          printWindow.webContents.print(printOptions, (success) => {
-            if (success) {
-              console.log('✅ Print job queued successfully');
-            } else {
-              console.error('❌ Print command failed, attempting fallback...');
-              // Fallback without printer name
-              const fallbackOptions = {
-                silent: true,
-                printBackground: true,
-                pageSize: 'A4',
-                margins: { marginType: 'none' }
-              };
-              printWindow.webContents.print(fallbackOptions, () => {
-                printWindow.close();
-              });
-              resolve({ success: true, message: 'Print job sent (fallback)' });
-              return;
-            }
+        printWindow.webContents.print({
+          silent: true,
+          deviceName: printerName,
+          pageSize: 'A4',
+          margins: { marginType: 'none' },
+          color: true,
+        }, (success) => {
+          console.log(success ? '✅ A4 Print job sent successfully' : '⚠️ Print job may have failed');
+          
+          // Cleanup
+          setTimeout(() => {
             printWindow.close();
-            resolve({ success: true, message: 'Print job sent' });
+            try {
+              fs.unlinkSync(tempPdfPath);
+              console.log('🗑️ Temp PDF cleaned up');
+            } catch (err) {
+              console.warn('⚠️ Could not delete temp PDF:', err.message);
+            }
+          }, 1000);
+
+          // Send response back to renderer
+          event.sender.send('print-a4-invoice-response', {
+            success: success,
+            message: success ? 'Print job sent to A4 printer' : 'Print job failed',
+            printerName: printerName,
           });
         });
+      });
 
-        printWindow.webContents.on('crashed', () => {
-          reject(new Error('Print window crashed'));
+      printWindow.webContents.on('crashed', () => {
+        console.error('❌ Print window crashed');
+        event.sender.send('print-a4-invoice-response', {
+          success: false,
+          message: 'Print window crashed',
         });
+      });
 
-      } catch (error) {
-        console.error('❌ Print error:', error);
-        reject(error);
+    } catch (error) {
+      console.error('❌ A4 Print error:', error);
+      event.sender.send('print-a4-invoice-response', {
+        success: false,
+        message: error.message,
+      });
+    }
+  });
+
+  // ============================================
+  // 2. PRINT THERMAL RECEIPT (HTML DIRECT)
+  // ============================================
+  ipcMain.on("print-thermal-receipt", async (event, data) => {
+    try {
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log('📥 [IPC] print-thermal-receipt - Thermal Receipt Printing');
+      console.log(`${'═'.repeat(60)}`);
+      console.log(`  format: ${data.format}`);
+      console.log(`  language: ${data.language}`);
+      console.log(`  templateName: ${data.templateName}`);
+      console.log(`  invoiceId: ${data.invoiceId}`);
+      console.log(`  terminalId: ${data.terminalId}`);
+
+      const { BrowserWindow } = require('electron');
+
+      // Create hidden window for thermal receipt printing
+      const printWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          enableRemoteModule: false,
+          sandbox: true,
+        },
+      });
+
+      // Create HTML with CSS
+      const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>${data.templateName || 'Thermal Receipt'}</title>
+            <style>
+              ${data.css || ''}
+              @media print {
+                body { margin: 0; padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            ${data.html}
+          </body>
+        </html>
+      `;
+
+      // Write HTML to temp file
+      const tempHtmlPath = path.join(os.tmpdir(), `receipt-${Date.now()}.html`);
+      fs.writeFileSync(tempHtmlPath, fullHtml, 'utf-8');
+      console.log(`✅ Thermal HTML written to temp: ${tempHtmlPath}`);
+
+      // Load HTML file
+      await printWindow.webContents.loadFile(tempHtmlPath);
+
+      // Wait for content to load, then print
+      printWindow.webContents.on('did-finish-load', () => {
+        console.log('🖨️ Printing thermal receipt...');
+        
+        const printerName = data.printerName || 'default';
+        const timeout = data.timeout || 3000;
+        const format = data.format || '58mm';
+
+        // Thermal printer options
+        printWindow.webContents.print({
+          silent: true,
+          deviceName: printerName,
+          pageSize: 'A5', // Thermal receipts use small page size
+          margins: { marginType: 'none' },
+          color: false, // Thermal usually black & white
+          landscape: false,
+        }, (success) => {
+          console.log(success ? '✅ Thermal print job sent successfully' : '⚠️ Print job may have failed');
+          
+          // Cleanup
+          setTimeout(() => {
+            printWindow.close();
+            try {
+              fs.unlinkSync(tempHtmlPath);
+              console.log('🗑️ Temp HTML cleaned up');
+            } catch (err) {
+              console.warn('⚠️ Could not delete temp HTML:', err.message);
+            }
+          }, 500);
+
+          // Send response back to renderer
+          event.sender.send('print-thermal-receipt-response', {
+            success: success,
+            message: success ? `Thermal receipt (${format}) sent to printer` : 'Thermal print job failed',
+            format: format,
+            printerName: printerName,
+          });
+        });
+      });
+
+      printWindow.webContents.on('crashed', () => {
+        console.error('❌ Print window crashed');
+        event.sender.send('print-thermal-receipt-response', {
+          success: false,
+          message: 'Print window crashed',
+        });
+      });
+
+    } catch (error) {
+      console.error('❌ Thermal print error:', error);
+      event.sender.send('print-thermal-receipt-response', {
+        success: false,
+        message: error.message,
+      });
+    }
+  });
+
+  // ============================================
+  // 3. PRINT PDF BUFFER (LOCAL CLIENT PRINTER)
+  // ============================================
+  /**
+   * Handle print-pdf from renderer process
+   * Client receives PDF from server and prints to local printer
+   * 
+   * Flow:
+   * 1. Client requests PDF from server
+   * 2. Server generates PDF and sends blob
+   * 3. Client sends PDF buffer via IPC to main process
+   * 4. Main process prints to local configured printer
+   */
+  ipcMain.on('print-pdf', async (event, data) => {
+    try {
+      const { pdfBuffer, printerName, documentName } = data;
+
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log('📥 [IPC] print-pdf - Local Client Printer');
+      console.log(`${'═'.repeat(60)}`);
+      console.log(`  Document: ${documentName}`);
+      console.log(`  Printer: ${printerName}`);
+      console.log(`  Buffer size: ${pdfBuffer.byteLength} bytes`);
+
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        console.error('❌ Main window not available');
+        return;
       }
-    });
+
+      if (!pdfBuffer || pdfBuffer.byteLength === 0) {
+        console.error('❌ Invalid PDF buffer');
+        return;
+      }
+
+      // Step 1: Save PDF buffer to temp file
+      console.log(`📄 Step 1: Saving PDF to temp file...`);
+      const tempDir = require('os').tmpdir();
+      const tempFileName = `${documentName || 'document'}-${Date.now()}.pdf`;
+      const tempFilePath = require('path').join(tempDir, tempFileName);
+      
+      // Handle both ArrayBuffer and Buffer inputs
+      let buffer;
+      if (pdfBuffer instanceof ArrayBuffer) {
+        buffer = Buffer.from(pdfBuffer);
+      } else if (Buffer.isBuffer(pdfBuffer)) {
+        buffer = pdfBuffer;
+      } else {
+        buffer = Buffer.from(new Uint8Array(pdfBuffer));
+      }
+      
+      require('fs').writeFileSync(tempFilePath, buffer);
+      console.log(`✅ PDF saved: ${tempFilePath}`);
+      console.log(`   File size: ${buffer.length} bytes`);
+      
+      // Verify file was written
+      const stats = require('fs').statSync(tempFilePath);
+      console.log(`✅ Verified file exists: ${stats.size} bytes`);
+
+      // Step 2: Create hidden window for printing
+      console.log(`📄 Step 2: Creating print window...`);
+      const { BrowserWindow } = require('electron');
+      const printWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          enableRemoteModule: false,
+          sandbox: true,
+          plugins: false,  // IMPORTANT: Disable PDF viewer extension
+        },
+      });
+
+      // BEST FIX: Use loadFile() instead of loadURL()
+      // loadFile() bypasses extension loading and uses native Chromium handling
+      console.log(`📄 Step 3: Loading PDF file (bypassing extension pipeline)...`);
+      await printWindow.loadFile(tempFilePath);
+      console.log(`✅ PDF file loaded successfully`);
+
+      // Important render delay - ensures content is fully rendered before printing
+      console.log(`📄 Step 4: Waiting for full render (500ms)...`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log(`📄 Step 5: Sending to printer: ${printerName || 'DEFAULT'}`);
+      
+      // Print with proper settings
+      printWindow.webContents.print(
+        {
+          silent: true,
+          deviceName: printerName || undefined,
+          printBackground: true,
+          margins: {
+            marginType: 'none',
+          },
+        },
+        (success, errorType) => {
+          if (success) {
+            console.log(`✅ Print job sent to printer: ${printerName}`);
+          } else {
+            console.error(`❌ Print job failed: ${errorType}`);
+          }
+          
+          // Clean up: Close window after printing
+          setTimeout(() => {
+            if (!printWindow.isDestroyed()) {
+              printWindow.close();
+            }
+            
+            // Clean up temp file
+            try {
+              require('fs').unlinkSync(tempFilePath);
+              console.log(`🧹 Cleaned up temp file`);
+            } catch (err) {
+              console.warn(`⚠️ Failed to delete temp file: ${err.message}`);
+            }
+          }, 500);
+        }
+      );
+
+    } catch (error) {
+      console.error('❌ PDF print error:', error);
+      console.error('   Stack:', error.stack);
+    }
   });
 }
 
@@ -1165,7 +1345,8 @@ async function setupDeviceFingerprintIPC() {
 async function setupIPC() {
   console.log("📡 Setting up IPC handlers...");
   setupTerminalIPC();
-  setupPdfIPC(); // ✅ PDF Generator handlers
+  // ✅ NEW DUAL PRINTING SYSTEM: A4 PDF + Thermal Receipts
+  setupDualPrintingIPC();
   setupPrinterIPC();
   setupHardwareIPC();
   setupScannerIPC();
@@ -1174,7 +1355,7 @@ async function setupIPC() {
   setupStorageIPC();
   setupAppIPC();
   await setupDeviceFingerprintIPC();
-  console.log("✅ IPC handlers ready");
+  console.log("✅ IPC handlers ready (NEW DUAL PRINTING SYSTEM ACTIVE)");
 }
 
 // ================== APPLICATION MENU ==================

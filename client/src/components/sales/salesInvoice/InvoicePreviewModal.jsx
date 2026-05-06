@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
-import { X, Printer, Download } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { X, Printer, Download, AlertCircle, CheckCircle } from 'lucide-react';
 import { useTerminalPrinter, useTerminal } from '../../../context/TerminalContext';
 import * as SmartPrintService from '../../../services/SmartPrintService';
+import usePrint from '../../../hooks/usePrint';
 
 /**
  * Invoice Preview Modal
@@ -18,6 +19,8 @@ export default function InvoicePreviewModal({
 }) {
   const printRef = useRef(null);
   const terminalPrinter = useTerminalPrinter('invoicePrinter');
+  const { printA4Invoice, loading: printLoading, error: printError, successMessage } = usePrint();
+  const [showPrintStatus, setShowPrintStatus] = useState(false);
 
   if (!isOpen || !invoiceData) return null;
 
@@ -59,6 +62,42 @@ export default function InvoicePreviewModal({
   };
 
   const totals = calculateTotals();
+
+  // ========================================
+  // HANDLE A4 PDF PRINT (NEW DUAL PRINTING)
+  // ========================================
+  const handleA4Print = async () => {
+    try {
+      setShowPrintStatus(true);
+      
+      // Check if invoice is saved
+      if (!invoiceData._id) {
+        console.error('❌ Invoice not saved yet');
+        return;
+      }
+
+      const templateId = terminalPrinter?.formatMapping?.invoice?.templateId;
+      if (!templateId) {
+        console.warn('⚠️ No A4 template configured for this terminal');
+        // Fallback to browser print
+        handleBrowserPrint();
+        return;
+      }
+
+      const terminalId = terminalPrinter?._id;
+      console.log('📄 Starting A4 PDF print...');
+      console.log(`   Invoice: ${invoiceData._id}`);
+      console.log(`   Template: ${templateId}`);
+      console.log(`   Terminal: ${terminalId}`);
+
+      // Call the new A4 print endpoint
+      await printA4Invoice(invoiceData._id, templateId, 'SALES_INVOICE', terminalId);
+      
+      console.log('✅ A4 print job sent to printer');
+    } catch (error) {
+      console.error('❌ Error printing A4 invoice:', error);
+    }
+  };
 
   // ========================================
   // HANDLE BROWSER PRINT
@@ -274,42 +313,66 @@ export default function InvoicePreviewModal({
 
         {/* Action Buttons */}
         <div className="flex gap-3 px-6 py-4 border-t bg-gray-50">
-          {terminalPrinter?.enabled ? (
-            <>
-              <button
-                onClick={handleTerminalPrint}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-              >
-                <Printer size={18} />
-                Print to Terminal
-              </button>
-              <button
-                onClick={handleBrowserPrint}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500 transition-colors"
-              >
-                <Printer size={18} />
-                Browser Print
-              </button>
-            </>
-          ) : (
+          {/* Print Status Messages */}
+          {showPrintStatus && successMessage && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+              <CheckCircle size={16} />
+              <span>{successMessage}</span>
+            </div>
+          )}
+          
+          {showPrintStatus && printError && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle size={16} />
+              <span>{printError}</span>
+            </div>
+          )}
+
+          {/* A4 Print Button (NEW) */}
+          {terminalPrinter?.enabled && terminalPrinter?.formatMapping?.invoice?.templateId ? (
+            <button
+              onClick={handleA4Print}
+              disabled={printLoading || !invoiceData._id}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              {printLoading ? (
+                <>
+                  <Printer size={18} className="animate-spin" />
+                  Printing...
+                </>
+              ) : (
+                <>
+                  <Printer size={18} />
+                  Print INVOICE
+                </>
+              )}
+            </button>
+          ) : null}
+
+          {/* Fallback Browser Print */}
+          {!terminalPrinter?.enabled && (
             <button
               onClick={handleBrowserPrint}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
             >
               <Printer size={18} />
               Print
             </button>
           )}
+
+          {/* Download PDF Button */}
           <button
             onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium"
           >
             <Download size={18} />
             Download PDF
           </button>
+
+          {/* Close Button */}
           <button
             onClick={onClose}
-            className="ml-auto px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400 transition-colors"
+            className="ml-auto px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400 transition-colors font-medium"
           >
             Close
           </button>

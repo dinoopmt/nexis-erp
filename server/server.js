@@ -37,6 +37,7 @@ import grnTemplateRoutes from './modules/templates/routes/grnTemplateRoutes.js';
 import rtvTemplateRoutes from './modules/templates/routes/rtvTemplateRoutes.js';
 import inventoryTemplateRoutes from './routes/inventoryTemplateRoutes.js';
 import printerRoutes from './routes/printerRoutes.js';
+import printingRoutes from './routes/printingRoutes.js';
 import { validateTerminalIdRoute } from './routes/terminalValidationRoute.js';
 import { seedInvoiceTemplates } from './seedInvoiceTemplates.js';
 import { seedDocumentTemplates } from './seeders/seedDocumentTemplates.js';
@@ -317,6 +318,9 @@ app.use(`${apiV1}/invoice-templates`, invoiceTemplateRoutes);
 app.use(`${apiV1}/barcode-templates`, barcodeTemplateRoutes);
 app.use(`${apiV1}`, invoicePdfRoutes);
 app.use(`${apiV1}`, documentPdfRoutes);
+
+// ✅ PRINTING SYSTEM - A4 Invoice PDF & Thermal Receipt HTML Generation
+app.use(`${apiV1}/print`, printingRoutes);
 
 // Unified Inventory Template Management (LPO, GRN, RTV)
 app.use(`${apiV1}/inventory-templates`, inventoryTemplateRoutes);

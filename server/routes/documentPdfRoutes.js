@@ -8,6 +8,7 @@ import Company from '../Models/Company.js';
 import TerminalManagement from '../Models/TerminalManagement.js';
 import StoreSettings from '../Models/StoreSettings.js';
 import PdfGenerationService from '../services/PdfGenerationService.js';
+import * as PrinterService from '../services/PrinterService.js';
 
 const router = express.Router();
 
@@ -660,6 +661,315 @@ router.post('/sales-returns/:returnId/generate-pdf', async (req, res) => {
     res.status(500).json({
       success: false,
       message: `Failed to generate PDF: ${err.message}`
+    });
+  }
+});
+
+// ============ PRINT TO TERMINAL - QUOTATION ============
+
+/**
+ * POST /api/quotations/:quotationId/print-to-terminal
+ * Submits quotation to terminal printer for silent printing
+ * Body: { printerName, templateId, terminalId }
+ */
+router.post('/quotations/:quotationId/print-to-terminal', async (req, res) => {
+  try {
+    const { quotationId } = req.params;
+    const { printerName, templateId, terminalId } = req.body;
+
+    console.log(`\n🖨️ Print Quotation to Terminal: ${quotationId}`);
+    console.log(`   Printer: ${printerName}, Template: ${templateId}, Terminal: ${terminalId}`);
+
+    if (!quotationId || !printerName || !templateId) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const quotation = await Quotation.findById(quotationId).populate('customerId');
+    if (!quotation) {
+      return res.status(404).json({ success: false, message: 'Quotation not found' });
+    }
+
+    const template = await InvoiceTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    const company = await Company.findOne({ id: 1 });
+    const terminal = await TerminalManagement.findOne({ terminalId });
+    const store = terminal?.storeId ? await StoreSettings.findById(terminal.storeId) : null;
+
+    const quotationData = {
+      company: {
+        companyName: store?.storeName || company?.companyName || '',
+        logoUrl: store?.logoUrl || '',
+        address: `${store?.address1 || ''} ${store?.address2 || ''}`.trim(),
+        decimalPlaces: company?.decimalPlaces || 2,
+        currency: company?.currency || 'AED'
+      },
+      quotation: {
+        number: quotation.quotationNumber,
+        date: quotation.date,
+        customerName: quotation.customerName,
+        items: quotation.items || []
+      }
+    };
+
+    const htmlContent = PdfGenerationService.renderTemplate(
+      template.htmlContent,
+      template.cssContent,
+      quotationData,
+      `${req.protocol}://${req.get('host')}`
+    );
+
+    const printJob = await PrinterService.submitPrintJob({
+      html: htmlContent,
+      printerName: printerName,
+      orientation: template.pageOrientation || 'portrait'
+    });
+
+    return res.status(200).json({
+      success: true,
+      jobId: printJob.jobId,
+      message: `Quotation sent to printer: ${printerName}`,
+      status: 'submitted'
+    });
+  } catch (error) {
+    console.error('❌ Print quotation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit print job',
+      error: error.message
+    });
+  }
+});
+
+// ============ PRINT TO TERMINAL - SALES ORDER ============
+
+/**
+ * POST /api/sales-orders/:orderId/print-to-terminal
+ * Submits sales order to terminal printer for silent printing
+ */
+router.post('/sales-orders/:orderId/print-to-terminal', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { printerName, templateId, terminalId } = req.body;
+
+    console.log(`\n🖨️ Print Sales Order to Terminal: ${orderId}`);
+    console.log(`   Printer: ${printerName}, Template: ${templateId}, Terminal: ${terminalId}`);
+
+    if (!orderId || !printerName || !templateId) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const order = await SalesOrder.findById(orderId).populate('customerId');
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Sales Order not found' });
+    }
+
+    const template = await InvoiceTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    const company = await Company.findOne({ id: 1 });
+    const terminal = await TerminalManagement.findOne({ terminalId });
+    const store = terminal?.storeId ? await StoreSettings.findById(terminal.storeId) : null;
+
+    const orderData = {
+      company: {
+        companyName: store?.storeName || company?.companyName || '',
+        logoUrl: store?.logoUrl || '',
+        address: `${store?.address1 || ''} ${store?.address2 || ''}`.trim(),
+        decimalPlaces: company?.decimalPlaces || 2,
+        currency: company?.currency || 'AED'
+      },
+      order: {
+        number: order.orderNumber,
+        date: order.date,
+        customerName: order.customerName,
+        items: order.items || []
+      }
+    };
+
+    const htmlContent = PdfGenerationService.renderTemplate(
+      template.htmlContent,
+      template.cssContent,
+      orderData,
+      `${req.protocol}://${req.get('host')}`
+    );
+
+    const printJob = await PrinterService.submitPrintJob({
+      html: htmlContent,
+      printerName: printerName,
+      orientation: template.pageOrientation || 'portrait'
+    });
+
+    return res.status(200).json({
+      success: true,
+      jobId: printJob.jobId,
+      message: `Sales Order sent to printer: ${printerName}`,
+      status: 'submitted'
+    });
+  } catch (error) {
+    console.error('❌ Print sales order error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit print job',
+      error: error.message
+    });
+  }
+});
+
+// ============ PRINT TO TERMINAL - DELIVERY NOTE ============
+
+/**
+ * POST /api/delivery-notes/:noteId/print-to-terminal
+ * Submits delivery note to terminal printer for silent printing
+ */
+router.post('/delivery-notes/:noteId/print-to-terminal', async (req, res) => {
+  try {
+    const { noteId } = req.params;
+    const { printerName, templateId, terminalId } = req.body;
+
+    console.log(`\n🖨️ Print Delivery Note to Terminal: ${noteId}`);
+    console.log(`   Printer: ${printerName}, Template: ${templateId}, Terminal: ${terminalId}`);
+
+    if (!noteId || !printerName || !templateId) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const note = await DeliveryNote.findById(noteId).populate('customerId');
+    if (!note) {
+      return res.status(404).json({ success: false, message: 'Delivery Note not found' });
+    }
+
+    const template = await InvoiceTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    const company = await Company.findOne({ id: 1 });
+    const terminal = await TerminalManagement.findOne({ terminalId });
+    const store = terminal?.storeId ? await StoreSettings.findById(terminal.storeId) : null;
+
+    const noteData = {
+      company: {
+        companyName: store?.storeName || company?.companyName || '',
+        logoUrl: store?.logoUrl || '',
+        address: `${store?.address1 || ''} ${store?.address2 || ''}`.trim(),
+        decimalPlaces: company?.decimalPlaces || 2,
+        currency: company?.currency || 'AED'
+      },
+      note: {
+        number: note.noteNumber,
+        date: note.date,
+        customerName: note.customerName,
+        items: note.items || []
+      }
+    };
+
+    const htmlContent = PdfGenerationService.renderTemplate(
+      template.htmlContent,
+      template.cssContent,
+      noteData,
+      `${req.protocol}://${req.get('host')}`
+    );
+
+    const printJob = await PrinterService.submitPrintJob({
+      html: htmlContent,
+      printerName: printerName,
+      orientation: template.pageOrientation || 'portrait'
+    });
+
+    return res.status(200).json({
+      success: true,
+      jobId: printJob.jobId,
+      message: `Delivery Note sent to printer: ${printerName}`,
+      status: 'submitted'
+    });
+  } catch (error) {
+    console.error('❌ Print delivery note error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit print job',
+      error: error.message
+    });
+  }
+});
+
+// ============ PRINT TO TERMINAL - SALES RETURN ============
+
+/**
+ * POST /api/sales-returns/:returnId/print-to-terminal
+ * Submits sales return to terminal printer for silent printing
+ */
+router.post('/sales-returns/:returnId/print-to-terminal', async (req, res) => {
+  try {
+    const { returnId } = req.params;
+    const { printerName, templateId, terminalId } = req.body;
+
+    console.log(`\n🖨️ Print Sales Return to Terminal: ${returnId}`);
+    console.log(`   Printer: ${printerName}, Template: ${templateId}, Terminal: ${terminalId}`);
+
+    if (!returnId || !printerName || !templateId) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const salesReturn = await SalesReturn.findById(returnId).populate('customerId');
+    if (!salesReturn) {
+      return res.status(404).json({ success: false, message: 'Sales Return not found' });
+    }
+
+    const template = await InvoiceTemplate.findById(templateId);
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    const company = await Company.findOne({ id: 1 });
+    const terminal = await TerminalManagement.findOne({ terminalId });
+    const store = terminal?.storeId ? await StoreSettings.findById(terminal.storeId) : null;
+
+    const returnData = {
+      company: {
+        companyName: store?.storeName || company?.companyName || '',
+        logoUrl: store?.logoUrl || '',
+        address: `${store?.address1 || ''} ${store?.address2 || ''}`.trim(),
+        decimalPlaces: company?.decimalPlaces || 2,
+        currency: company?.currency || 'AED'
+      },
+      return: {
+        number: salesReturn.returnNumber,
+        date: salesReturn.date,
+        customerName: salesReturn.customerName,
+        items: salesReturn.items || []
+      }
+    };
+
+    const htmlContent = PdfGenerationService.renderTemplate(
+      template.htmlContent,
+      template.cssContent,
+      returnData,
+      `${req.protocol}://${req.get('host')}`
+    );
+
+    const printJob = await PrinterService.submitPrintJob({
+      html: htmlContent,
+      printerName: printerName,
+      orientation: template.pageOrientation || 'portrait'
+    });
+
+    return res.status(200).json({
+      success: true,
+      jobId: printJob.jobId,
+      message: `Sales Return sent to printer: ${printerName}`,
+      status: 'submitted'
+    });
+  } catch (error) {
+    console.error('❌ Print sales return error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit print job',
+      error: error.message
     });
   }
 });

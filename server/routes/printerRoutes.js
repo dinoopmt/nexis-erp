@@ -4,7 +4,7 @@
  */
 
 import express from 'express';
-import { getPrinterList, submitPrintJob } from '../services/PrinterService.js';
+import { getPrinterList } from '../services/PrinterService.js';
 import pdfGenerationService from '../services/PdfGenerationService.js';
 
 const router = express.Router();
@@ -118,46 +118,16 @@ router.post('/generate-pdf', async (req, res) => {
 
 /**
  * POST /printer/submit
- * Submit print job to printer
+ * [DEPRECATED] Print job submission endpoint
+ * Use /api/invoices/:id/print-to-terminal or similar endpoints instead
+ * This endpoint is no longer supported - server-side printing moved to client
  */
 router.post('/submit', async (req, res) => {
-  try {
-    const {
-      html,
-      printerName,
-      orientation = 'portrait',
-      grayscale = false,
-      margins = { marginType: 1 }
-    } = req.body;
-
-    if (!html || !printerName) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: html, printerName'
-      });
-    }
-
-    const result = await submitPrintJob({
-      html,
-      printerName,
-      orientation,
-      grayscale,
-      margins
-    });
-
-    res.json({
-      success: result.success,
-      jobId: result.jobId,
-      message: result.message
-    });
-  } catch (error) {
-    console.error('Error submitting print job:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to submit print job',
-      message: error.message
-    });
-  }
+  return res.status(410).json({
+    success: false,
+    error: 'Gone',
+    message: 'Server-side printing is deprecated. Use /api/invoices/:id/print-to-terminal endpoint for client-side local printing.'
+  });
 });
 
 export default router;
