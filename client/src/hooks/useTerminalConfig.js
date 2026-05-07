@@ -145,6 +145,11 @@ export function useTerminalConfig() {
             printerName: '',
             timeout: 5000,
           },
+          shelfLabelPrinter: {
+            enabled: false,
+            printerName: '',
+            timeout: 5000,
+          },
           customerDisplay: {
             enabled: false,
           },

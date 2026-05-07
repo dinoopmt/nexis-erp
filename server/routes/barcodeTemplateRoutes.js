@@ -5,15 +5,14 @@ const router = express.Router();
 
 // ============ GET TEMPLATES ============
 
-// Get all active barcode templates
+// Get all barcode templates (including inactive)
 router.get('/', async (req, res) => {
   try {
     const templates = await BarcodeTemplate.find({ 
       $or: [
         { deleted: false },
         { deleted: { $exists: false } }
-      ],
-      isActive: true 
+      ]
     })
       .sort({ isDefault: -1, createdDate: -1 });
     
@@ -100,11 +99,10 @@ router.post('/', async (req, res) => {
   try {
     const { 
       templateName, 
-      configTxt, 
-      customDesign, 
-      description,
-      name,
-      legends
+      templateType,
+      configTxt,
+      isActive,
+      isDefault
     } = req.body;
     
     // Check if template name already exists
@@ -121,17 +119,15 @@ router.post('/', async (req, res) => {
     
     const template = new BarcodeTemplate({
       templateName,
-      name: name || templateName,
-      legends: legends || templateName,
+      templateType: templateType || 'barcode_label',
       configTxt,
-      customDesign,
-      description,
+      isActive: isActive !== undefined ? isActive : true,
+      isDefault: isDefault || false,
       createdBy: 'system',
       updatedBy: 'system',
       createdDate: new Date(),
       updateDate: new Date(),
-      deleted: false,
-      isActive: true
+      deleted: false
     });
     
     await template.save();
@@ -152,29 +148,24 @@ router.put('/:id', async (req, res) => {
   try {
     const { 
       templateName,
+      templateType,
       configTxt, 
-      customDesign, 
-      description, 
       isActive, 
-      isDefault,
-      name,
-      legends
+      isDefault
     } = req.body;
+    
+    const updateData = {};
+    if (templateName !== undefined) updateData.templateName = templateName;
+    if (templateType !== undefined) updateData.templateType = templateType;
+    if (configTxt !== undefined) updateData.configTxt = configTxt;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (isDefault !== undefined) updateData.isDefault = isDefault;
+    updateData.updatedBy = 'system';
+    updateData.updateDate = new Date();
     
     const template = await BarcodeTemplate.findByIdAndUpdate(
       req.params.id,
-      {
-        templateName: templateName || undefined,
-        name: name || undefined,
-        legends: legends || undefined,
-        configTxt: configTxt || undefined,
-        customDesign: customDesign || undefined,
-        description,
-        isActive,
-        isDefault,
-        updatedBy: 'system',
-        updateDate: new Date()
-      },
+      updateData,
       { returnDocument: 'after' }
     );
     

@@ -19,8 +19,7 @@ export const seedBarcodeTemplates = async () => {
     console.log('📝 Creating BARCODE_DEFAULT_WITHOUT_PRICE template...');
     const sampleTemplate = new BarcodeTemplate({
       templateName: 'BARCODE_DEFAULT_WITHOUT_PRICE',
-      name: 'BARCODE_DEFAULT_WITHOUT_PRICE',
-      legends: 'BARCODE_DEFAULT_WITHOUT_PRICE',
+      templateType: 'barcode_label',
       
       configTxt: `SIZE 38 mm, 25 mm
 DIRECTION 1
@@ -33,20 +32,17 @@ CLS
 CODEBARCODE 50,120,"128",50,2,0,2,2,"{BARCODE}"
 PRINT 1,{LABEL_QUANTITY}`,
       
-      description: 'Default barcode template without price - 38x25 mm label with product name and barcode',
-      
       isActive: true,
       isDefault: true,
       deleted: false,
       
-      createdBy: 'dinu',
-      updatedBy: 'dinu',
-      createdDate: new Date('2025-09-16T11:05:54.832Z'),
-      updateDate: new Date('2025-09-16T11:05:54.832Z'),
+      createdBy: 'system',
+      updatedBy: 'system',
+      createdDate: new Date(),
+      updateDate: new Date(),
       
       intVersion: 0,
-      classVersion: 0,
-      hash: '1bebe1ce2583a6a69144de3523dfc14c'
+      classVersion: 0
     });
 
     await sampleTemplate.save();
@@ -66,7 +62,7 @@ export const seedAdditionalBarcodeTemplates = async () => {
     const additionalTemplates = [
       {
         templateName: 'BARCODE_WITH_PRICE',
-        legends: 'BARCODE_WITH_PRICE',
+        templateType: 'barcode_label',
         configTxt: `SIZE 38 mm, 25 mm
 DIRECTION 1
 REFERENCE 0,0
@@ -79,13 +75,12 @@ TEXT 10,69,\"1\",0,1,1,\"{ITEM_NAME}\"
 TEXT 10,90,\"1\",0,1,1,\"Price: {PRICE}\"
 BARCODE 50,120,\"128\",50,2,0,2,2,\"{BARCODE}\"
 PRINT 1,{LABEL_QUANTITY}`,
-        description: 'Barcode template with price information',
         isActive: true,
         isDefault: false
       },
       {
         templateName: 'BARCODE_SMALL_30x20',
-        legends: 'BARCODE_SMALL_30x20',
+        templateType: 'barcode_label',
         configTxt: `SIZE 30 mm, 20 mm
 DIRECTION 1
 REFERENCE 0,0
@@ -95,13 +90,12 @@ SET TEAR ON
 CLS
 BARCODE 40,80,\"128\",40,1,0,2,2,\"{BARCODE}\"
 PRINT 1,{LABEL_QUANTITY}`,
-        description: 'Small barcode label 30x20 mm',
         isActive: true,
         isDefault: false
       },
       {
         templateName: 'BARCODE_LARGE_50x40',
-        legends: 'BARCODE_LARGE_50x40',
+        templateType: 'barcode_label',
         configTxt: `SIZE 50 mm, 40 mm
 DIRECTION 1
 REFERENCE 0,0
@@ -113,7 +107,19 @@ TEXT 20,50,\"2\",0,1,1,\"{ITEM_NAME}\"
 BARCODE 80,150,\"128\",60,2,0,2,2,\"{BARCODE}\"
 TEXT 20,240,\"1\",0,1,1,\"SKU: {SKU}\"
 PRINT 1,{LABEL_QUANTITY}`,
-        description: 'Large barcode label 50x40 mm with product details',
+        isActive: true,
+        isDefault: false
+      },
+      {
+        templateName: 'SHELF_LABEL_STANDARD',
+        templateType: 'shelf_label',
+        configTxt: `SIZE 100 mm, 70 mm
+DIRECTION 1
+CLS
+TEXT 20,50,\"0\",0,2,2,\"{ITEM_NAME}\"
+TEXT 20,120,\"0\",0,1,1,\"Price: {PRICE}\"
+TEXT 20,150,\"0\",0,1,1,\"SKU: {SKU}\"
+PRINT 1,{LABEL_QUANTITY}`,
         isActive: true,
         isDefault: false
       }

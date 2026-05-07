@@ -95,6 +95,7 @@ export const createTerminal = async (req, res) => {
       hardwareMapping: hardwareMapping || {
         invoicePrinter: { enabled: true, printerName: "", timeout: 5000 },
         barcodePrinter: { enabled: false, printerName: "", timeout: 5000 },
+        shelfLabelPrinter: { enabled: false, printerName: "", timeout: 5000 },
         thermalPrinter: { enabled: false, printerName: "", timeout: 5000 },
         customerDisplay: {
           enabled: false,

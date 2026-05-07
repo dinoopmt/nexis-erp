@@ -10,15 +10,13 @@ const BarcodeTemplateSchema = new mongoose.Schema(
       example: 'BARCODE_DEFAULT_WITHOUT_PRICE'
     },
     
-    // Legacy compatibility
-    name: {
+    // Template Type - Distinguishes between barcode labels and shelf labels
+    templateType: {
       type: String,
-      example: 'BARCODE_DEFAULT_WITHOUT_PRICE'
-    },
-    
-    legends: {
-      type: String,
-      example: 'BARCODE_DEFAULT_WITHOUT_PRICE'
+      enum: ['barcode_label', 'shelf_label'],
+      default: 'barcode_label',
+      required: true,
+      example: 'barcode_label'
     },
     
     // Barcode Configuration - ZPLII/CPCL printer commands
@@ -35,12 +33,6 @@ SET TEAR ON
 CLS
 CODEBARCODE 50,120,"128",50,2,0,2,2,"{BARCODE}"
 PRINT 1,{LABEL_QUANTITY}`
-    },
-    
-    // Description
-    description: {
-      type: String,
-      default: ''
     },
     
     // Company & Metadata

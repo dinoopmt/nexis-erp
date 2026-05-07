@@ -10,6 +10,7 @@ import { API_URL } from '../../../config/config';
 import toast from 'react-hot-toast';
 import FloatingInput from '../../ui/FloatingInput';
 import FloatingTextarea from '../../ui/FloatingTextarea';
+import FloatingSelect from '../../ui/FloatingSelect';
 
 const BarcodeTemplateForm = ({ template, onClose, onSave }) => {
   const [activeTab, setActiveTab] = useState('basic');
@@ -24,9 +25,7 @@ const BarcodeTemplateForm = ({ template, onClose, onSave }) => {
   });
   const [formData, setFormData] = useState({
     templateName: '',
-    name: '',
-    legends: '',
-    description: '',
+    templateType: 'barcode_label',
     configTxt: '',
     isActive: true,
     isDefault: false,
@@ -36,9 +35,7 @@ const BarcodeTemplateForm = ({ template, onClose, onSave }) => {
     if (template) {
       setFormData({
         templateName: template.templateName || '',
-        name: template.name || '',
-        legends: template.legends || '',
-        description: template.description || '',
+        templateType: template.templateType || 'barcode_label',
         configTxt: template.configTxt || '',
         isActive: template.isActive !== undefined ? template.isActive : true,
         isDefault: template.isDefault || false,
@@ -178,31 +175,18 @@ PRINT 1,{LABEL_QUANTITY}`;
                   placeholder="e.g., BARCODE_STANDARD_38x25"
                   required
                 />
-                <FloatingInput
-                  label="Display Name (Optional)"
-                  name="name"
-                  value={formData.name}
+                <FloatingSelect
+                  label="Template Type"
+                  name="templateType"
+                  value={formData.templateType}
                   onChange={handleInputChange}
-                  placeholder="e.g., Standard Barcode Label"
+                  options={[
+                    { value: 'barcode_label', label: 'Barcode Label' },
+                    { value: 'shelf_label', label: 'Shelf Label' }
+                  ]}
+                  required
                 />
               </div>
-
-              <FloatingInput
-                label="Label (Legend)"
-                name="legends"
-                value={formData.legends}
-                onChange={handleInputChange}
-                placeholder="e.g., BARCODE_STANDARD_38x25"
-              />
-
-              <FloatingTextarea
-                label="Description"
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                placeholder="Describe this barcode template"
-                rows="3"
-              />
             </div>
           )}
 

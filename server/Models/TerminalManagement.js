@@ -150,6 +150,24 @@ const terminalManagementSchema = new mongoose.Schema(
           description: "Printer timeout in milliseconds"
         }
       },
+      shelfLabelPrinter: {
+        enabled: {
+          type: Boolean,
+          default: false,
+          description: "Enable shelf label printer at this terminal"
+        },
+        printerName: {
+          type: String,
+          default: "",
+          description: "Shelf label printer name or network IP"
+        },
+        timeout: {
+          type: Number,
+          default: 5000,
+          min: 1000,
+          description: "Printer timeout in milliseconds"
+        }
+      },
       thermalPrinter: {
         enabled: {
           type: Boolean,
