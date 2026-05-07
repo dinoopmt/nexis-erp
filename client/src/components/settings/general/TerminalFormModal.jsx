@@ -71,6 +71,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
         printerName: '',
         timeout: 5000,
       },
+      shelfLabelPrinter: {
+        enabled: false,
+        printerName: '',
+        timeout: 5000,
+      },
       thermalPrinter: {
         enabled: false,
         printerName: '',
@@ -233,9 +238,14 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
           updated.hardwareMapping.barcodePrinter.printerName = installedPrinters[1].name
         }
         
-        // Auto-set thermal printer if empty and we have a third printer
-        if (!updated.hardwareMapping.thermalPrinter.printerName && installedPrinters.length > 2) {
-          updated.hardwareMapping.thermalPrinter.printerName = installedPrinters[2].name
+        // Auto-set shelf label printer if empty and we have a third printer
+        if (!updated.hardwareMapping.shelfLabelPrinter.printerName && installedPrinters.length > 2) {
+          updated.hardwareMapping.shelfLabelPrinter.printerName = installedPrinters[2].name
+        }
+        
+        // Auto-set thermal printer if empty and we have a fourth printer
+        if (!updated.hardwareMapping.thermalPrinter.printerName && installedPrinters.length > 3) {
+          updated.hardwareMapping.thermalPrinter.printerName = installedPrinters[3].name
         }
         
         // Auto-set COM port if empty
@@ -377,6 +387,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
             printerName: installedPrinters[1]?.name || '',
             timeout: 5000,
           },
+          shelfLabelPrinter: {
+            enabled: false,
+            printerName: installedPrinters[2]?.name || '',
+            timeout: 5000,
+          },
           thermalPrinter: {
             enabled: false,
             printerName: '',
@@ -398,6 +413,11 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
           barcodePrinter: {
             enabled: false,
             printerName: installedPrinters[1]?.name || '',
+            timeout: 5000,
+          },
+          shelfLabelPrinter: {
+            enabled: false,
+            printerName: installedPrinters[2]?.name || '',
             timeout: 5000,
           },
           thermalPrinter: {
@@ -431,6 +451,15 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
       // Ensure barcodePrinter exists
       if (!hardwareMapping.barcodePrinter) {
         hardwareMapping.barcodePrinter = {
+          enabled: false,
+          printerName: '',
+          timeout: 5000,
+        }
+      }
+      
+      // Ensure shelfLabelPrinter exists
+      if (!hardwareMapping.shelfLabelPrinter) {
+        hardwareMapping.shelfLabelPrinter = {
           enabled: false,
           printerName: '',
           timeout: 5000,
@@ -1040,6 +1069,76 @@ const TerminalFormModal = ({ terminal, existingTerminals = [], onSave, onCancel 
                           step="1000"
                           value={formData.hardwareMapping.barcodePrinter.timeout}
                           onChange={(e) => handleDeepNestedChange('hardwareMapping', 'barcodePrinter', 'timeout', parseInt(e.target.value))}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Shelf Label Printer Configuration */}
+                <div className="bg-orange-50 rounded p-2 border border-orange-200">
+                  <div className="flex items-center gap-1 mb-2">
+                    <Printer size={14} className="text-orange-600" />
+                    <h4 className="font-semibold text-xs text-gray-900">Shelf Label Printer</h4>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-2">For printing shelf labels and price tags</p>
+                  
+                  <label className="flex items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.hardwareMapping.shelfLabelPrinter.enabled}
+                      onChange={(e) => handleDeepNestedChange('hardwareMapping', 'shelfLabelPrinter', 'enabled', e.target.checked)}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span className="text-xs text-gray-700">Enable shelf label printer</span>
+                  </label>
+
+                  {formData.hardwareMapping.shelfLabelPrinter.enabled && (
+                    <div className="ml-4 space-y-2 p-2 bg-white rounded border border-orange-100">
+                      {/* Installed Printers Dropdown */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-xs font-medium text-gray-700">Select Installed Printer</label>
+                          <button
+                            type="button"
+                            onClick={fetchHardwareDevices}
+                            disabled={loadingHardware}
+                            className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                          >
+                            {loadingHardware ? '🔄 Detecting...' : '🔍 Detect'}
+                          </button>
+                        </div>
+                        <select
+                          value={formData.hardwareMapping.shelfLabelPrinter.printerName}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'shelfLabelPrinter', 'printerName', e.target.value)}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        >
+                          <option value="">-- Select from installed printers --</option>
+                          {installedPrinters.length > 0 ? (
+                            installedPrinters.map((printer, idx) => (
+                              <option key={idx} value={typeof printer === 'string' ? printer : printer.name}>
+                                {typeof printer === 'string' ? printer : (printer.displayName || printer.name)}
+                              </option>
+                            ))
+                          ) : (
+                            <option disabled>No printers detected</option>
+                          )}
+                        </select>
+                        {loadingHardware && <p className="text-xs text-gray-500 mt-1">🔄 Detecting printers...</p>}
+                        {!loadingHardware && installedPrinters.length > 0 && (
+                          <p className="text-xs text-green-600 mt-1">✅ {installedPrinters.length} printer(s) detected</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Timeout (ms)</label>
+                        <input
+                          type="number"
+                          min="1000"
+                          step="1000"
+                          value={formData.hardwareMapping.shelfLabelPrinter.timeout}
+                          onChange={(e) => handleDeepNestedChange('hardwareMapping', 'shelfLabelPrinter', 'timeout', parseInt(e.target.value))}
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                         />
                       </div>

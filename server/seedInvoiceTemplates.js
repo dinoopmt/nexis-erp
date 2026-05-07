@@ -86,17 +86,19 @@ export async function seedInvoiceTemplates() {
     // Upsert each template (update if exists, create if not)
     let createdCount = 0;
     for (const template of templates) {
-      const result = await InvoiceTemplate.findOneAndUpdate(
-        { templateName: template.templateName },
-        template,
-        { upsert: true, returnDocument: 'after', runValidators: true }
-      );
+      // Explicitly exclude createdBy to avoid ObjectId validation issues
+      const { createdBy, ...templateData } = template;
       
-      if (result.isNew) {
-        console.log(`✓ Created: ${template.templateName}`);
+      try {
+        const result = await InvoiceTemplate.findOneAndUpdate(
+          { templateName: template.templateName },
+          templateData,
+          { upsert: true, returnDocument: 'after' }
+        );
+        console.log(`✓ Seeded: ${template.templateName}`);
         createdCount++;
-      } else {
-        console.log(`✓ Updated: ${template.templateName}`);
+      } catch (err) {
+        console.error(`✗ Error seeding ${template.templateName}:`, err.message);
       }
     }
 

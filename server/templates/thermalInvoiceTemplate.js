@@ -343,8 +343,7 @@ export const THERMAL_INVOICE_TEMPLATE_EN_58MM = {
   `,
   description: 'Thermal receipt template optimized for 58mm supermarket POS thermal printers. Single-page narrow format.',
   isActive: true,
-  isDefault: false,
-  createdBy: 'SYSTEM',
+  isDefault: false
 };
 
 export const THERMAL_INVOICE_TEMPLATE_AR_58MM = {
@@ -562,8 +561,7 @@ export const THERMAL_INVOICE_TEMPLATE_AR_58MM = {
   `,
   description: 'قالب إيصال حراري مُحسّن لطابعات POS الحرارية الخاصة بالمتاجر الكبرى (58 ملم). صيغة ضيقة لورقة حرارية.',
   isActive: true,
-  isDefault: false,
-  createdBy: 'SYSTEM',
+  isDefault: false
 };
 
 // ============================================
@@ -863,8 +861,7 @@ export const THERMAL_INVOICE_TEMPLATE_EN_80MM = {
   `,
   description: 'Thermal receipt template optimized for 80mm supermarket POS thermal printers. Single-page wider format.',
   isActive: true,
-  isDefault: false,
-  createdBy: 'SYSTEM',
+  isDefault: false
 };
 
 export const THERMAL_INVOICE_TEMPLATE_AR_80MM = {
@@ -1082,6 +1079,5 @@ export const THERMAL_INVOICE_TEMPLATE_AR_80MM = {
   `,
   description: 'قالب إيصال حراري مُحسّن لطابعات POS الحرارية الخاصة بالمتاجر الكبرى (80 ملم). صيغة أوسع لورقة حرارية.',
   isActive: true,
-  isDefault: false,
-  createdBy: 'SYSTEM',
+  isDefault: false
 }

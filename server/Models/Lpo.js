@@ -125,12 +125,10 @@ const lpoSchema = new mongoose.Schema(
   }
 );
 
-// ✅ Indexes for performance
-lpoSchema.index({ lpoNumber: 1 });
+// ✅ Indexes for performance (note: lpoNumber and branchId are already indexed inline)
 lpoSchema.index({ vendorId: 1 });
 lpoSchema.index({ lpoDate: -1 });
 lpoSchema.index({ status: 1 });
-lpoSchema.index({ branchId: 1 });
 
 // ✅ Explicitly set collection name to "lpos"
 const Lpo = mongoose.model("Lpo", lpoSchema, "lpos");

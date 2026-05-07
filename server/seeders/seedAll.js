@@ -17,15 +17,22 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const seedAll = async () => {
+const seedAll = async (options = {}) => {
+  const { 
+    closeConnection = true,  // Set to false when called from server.js
+    skipDatabase = false      // Set to true if DB already connected
+  } = options;
+  
   let startTime = Date.now();
   
   try {
     console.log("🌱 Starting complete seed process...\n");
 
-    // Connect to database once
-    await connectDB();
-    console.log("✅ Database connected\n");
+    // Connect to database once (skip if already connected from server.js)
+    if (!skipDatabase) {
+      await connectDB();
+      console.log("✅ Database connected\n");
+    }
 
     // Run Chart of Accounts seeder first (foundation for accounting)
     console.log("📊 Seeding Chart of Accounts...");
@@ -109,14 +116,27 @@ const seedAll = async () => {
 
   } catch (error) {
     console.error("❌ Seeding failed:", error.message);
-    process.exit(1);
+    if (closeConnection) {
+      process.exit(1);
+    } else {
+      throw error;  // Re-throw for server to handle
+    }
   } finally {
-    try {
-      await mongoose.connection.close();
-    } catch (e) {
-      // Connection already closed
+    // Only close connection if this is standalone execution
+    if (closeConnection) {
+      try {
+        await mongoose.connection.close();
+      } catch (e) {
+        // Connection already closed
+      }
     }
   }
 };
 
-seedAll();
+export { seedAll };
+
+// Run if called directly
+const isStandaloneScript = import.meta.url === `file://${process.argv[1]}`;
+if (isStandaloneScript) {
+  seedAll({ closeConnection: true, skipDatabase: false });
+}

@@ -71,7 +71,7 @@ export async function seedInventoryTemplates(closeConnection = false) {
         const result = await InventoryTemplate.findOneAndUpdate(
           { templateName: template.templateName },
           template,
-          { upsert: true, new: true, runValidators: true }
+          { upsert: true, returnDocument: 'after', runValidators: true }
         );
         
         if (result.isNew) {

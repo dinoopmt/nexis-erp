@@ -44,6 +44,7 @@ import { seedDocumentTemplates } from './seeders/seedDocumentTemplates.js';
 import { seedBarcodeTemplates, seedAdditionalBarcodeTemplates } from './Seeders/barcodeSeed.js';
 import { seedDefaultTerminals } from './seeders/seedDefaultTerminals.js';
 import { seedInventoryTemplates } from './seedInventoryTemplates.js';
+import { seedAll } from './seeders/seedAll.js';
 import { globalLimiter, authLimiter, apiLimiter } from './middleware/rateLimiter.js';
 import { requestLogger } from './middleware/structuredLogger.js';
 
@@ -117,6 +118,17 @@ try {
   }
 } catch (syncErr) {
   console.warn('⚠️  Auto-sync skipped on startup (will work on first search):', syncErr.message);
+}
+
+// ✅ STEP 2B: Run comprehensive seed all (master data, users, sequences, etc)
+console.log('🌱 Seeding all master data and system data...');
+try {
+  await seedAll({ 
+    closeConnection: false,  // Keep connection open (server manages it)
+    skipDatabase: true        // Database already connected
+  });
+} catch (seedErr) {
+  console.warn('⚠️  Master data seeding skipped or completed:', seedErr.message);
 }
 
 // ✅ STEP 3: Seed invoice templates on startup
