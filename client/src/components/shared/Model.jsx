@@ -48,8 +48,8 @@ const Modal = ({ isOpen, onClose, children, title, width = "max-w-md lg:max-w-lg
   // Draggable parent modals
   if (!draggable) {
     return (
-      <div className="fixed inset-0 flex items-start justify-center p-4 pt-20 bg-black bg-opacity-50 overflow-y-auto" style={{ zIndex }}>
-        <div className={`bg-white rounded-lg ${width} p-6 relative shadow-2xl my-auto`}>
+      <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50 overflow-y-auto" style={{ zIndex }}>
+        <div className={`bg-white rounded-lg ${width} p-6 relative shadow-2xl`}>
           <button
             className="absolute top-4 right-4 bg-gray-600 hover:bg-gray-700 text-white w-8 h-8 flex items-center justify-center rounded transition-colors text-sm z-10"
             onClick={onClose}

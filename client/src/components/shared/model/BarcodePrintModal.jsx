@@ -109,7 +109,6 @@ const BarcodePrintModal = ({
       isOpen={isOpen}
       onClose={onClose}
       width="max-w-4xl"
-      draggable={true}
     >
       <div className="p-4 flex flex-col gap-3">
         <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">

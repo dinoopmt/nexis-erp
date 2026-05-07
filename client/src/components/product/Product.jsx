@@ -7,7 +7,6 @@ import {
   Plus,
   AlertCircle,
   Download,
-  Printer,
   Filter,
   X,
   Edit,
@@ -29,7 +28,6 @@ import { useProductSearch } from "../../hooks/useProductSearch";
 import { useProductCreateUpdate } from "../../hooks/useProductCreateUpdate";
 
 // ✅ Extracted Modal Components (from shared folder - not local)
-import GlobalBarcodePrintModal from "../modals/GlobalBarcodePrintModal";
 import VendorForm from "../forms/VendorForm";
 import GroupingModal from "../shared/model/GroupingModal";
 
@@ -85,8 +83,6 @@ const Product = () => {
     setAdvancedFilters,
     showAdvancedSearch,
     setShowAdvancedSearch,
-    selectedForPrint,
-    setSelectedForPrint,
   } = productFilters;
 
   // Get company info to determine region and apply region-specific tax/decimal rules
@@ -171,7 +167,7 @@ const Product = () => {
   const [selectedVendor, setSelectedVendor] = useState(null);
 
   // Barcode print dialog state
-  const [showBarcodePrintPopup, setShowBarcodePrintPopup] = useState(false);
+
 
   // ✅ Product Search Hook - Centralized search logic with Meilisearch + fallback
   const {
@@ -379,14 +375,7 @@ const Product = () => {
     [newProduct, departments, pricingLines, productAPI],
   );
 
-  // ✅ Open Barcode Print Modal
-  const handleBarcodePrint = useCallback(() => {
-    if (!newProduct.barcode) {
-      showToast('error', "Please enter or generate a barcode first");
-      return;
-    }
-    setShowBarcodePrintPopup(true);
-  }, [newProduct.barcode]);
+
 
   // ✅ Update Price Line
   const updatePriceLine = (index, field, value) => {
@@ -2139,6 +2128,76 @@ const Product = () => {
 
 
 
+  const printBarcodeLabels = () => {
+    const productsToPrint = filteredProducts;
+
+    if (productsToPrint.length === 0) {
+      showToast('error', "No products to print");
+      return;
+    }
+
+    const printWindow = window.open("", "", "width=800,height=600");
+    const barcodeHTML = `
+      <html>
+        <head>
+          <title>Barcode Labels</title>
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 10px; }
+            .barcode-label { 
+              display: inline-block; 
+              margin: 10px; 
+              padding: 10px; 
+              border: 1px solid #ccc;
+              width: 280px;
+              text-align: center;
+              page-break-inside: avoid;
+            }
+            .label-name { font-weight: bold; font-size: 12px; margin: 5px 0; }
+            .label-code { font-size: 10px; color: #666; margin: 5px 0; }
+            .label-price { font-weight: bold; font-size: 14px; margin: 5px 0; }
+            svg { max-width: 100%; }
+            @media print {
+              body { margin: 0; }
+              .barcode-label { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          ${productsToPrint
+            .map(
+              (prod) => `
+            <div class="barcode-label">
+              <div class="label-name">${prod.name}<\/div>
+              <div class="label-code">${prod.itemcode}<\/div>
+              <svg id="barcode-${prod._id}"><\/svg>
+              <div class="label-price">PKR ${round(parseFloat(prod.price))}<\/div>
+            </div>
+          `,
+            )
+            .join("")}
+          <script>
+            ${productsToPrint
+              .map(
+                (prod) => `
+              JsBarcode("#barcode-${prod._id}", "${prod.barcode || prod.itemcode}", {
+                format: "CODE128",
+                width: 2,
+                height: 50,
+                displayValue: true
+              });
+            `,
+              )
+              .join("")}
+            window.print();
+          <\/script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(barcodeHTML);
+    printWindow.document.close();
+  };
+
   // ✅ Export Products to CSV
   const exportToCSV = () => {
     const baseData = search.trim() ? enrichedApiSearchResults : infiniteProductsArray;
@@ -2193,107 +2252,7 @@ const Product = () => {
   };
 
   // ✅ Print Barcode Labels - Batch printing implementation
-  const printBarcodeLabels = () => {
-    const productsToPrint =
-      selectedForPrint.length > 0
-        ? infiniteProductsArray.filter((p) => selectedForPrint.includes(p._id))
-        : filteredProducts;
 
-    if (productsToPrint.length === 0) {
-      showToast('error', "No products selected for printing");
-      return;
-    }
-
-    const printWindow = window.open("", "", "width=800,height=600");
-    const barcodeHTML = `
-      <html>
-        <head>
-          <title>Barcode Labels</title>
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 10px; }
-            .barcode-label { 
-              display: inline-block; 
-              margin: 10px; 
-              padding: 10px; 
-              border: 1px solid #ccc;
-              width: 280px;
-              text-align: center;
-              page-break-inside: avoid;
-            }
-            .label-name { font-weight: bold; font-size: 12px; margin: 5px 0; }
-            .label-code { font-size: 10px; color: #666; margin: 5px 0; }
-            .label-price { font-weight: bold; font-size: 14px; margin: 5px 0; }
-            svg { max-width: 100%; }
-            @media print {
-              body { margin: 0; }
-              .barcode-label { page-break-inside: avoid; }
-            }
-          </style>
-        </head>
-        <body>
-          ${productsToPrint
-            .map(
-              (prod) => `
-            <div class="barcode-label">
-              <div class="label-name">${prod.name}</div>
-              <div class="label-code">${prod.itemcode}</div>
-              <svg id="barcode-${prod._id}"></svg>
-              <div class="label-price">PKR ${round(parseFloat(prod.price))}</div>
-            </div>
-          `,
-            )
-            .join("")}
-          <script>
-            ${productsToPrint
-              .map(
-                (prod) => `
-              JsBarcode("#barcode-${prod._id}", "${prod.barcode || prod.itemcode}", {
-                format: "CODE128",
-                width: 2,
-                height: 50,
-                displayValue: true
-              });
-            `,
-              )
-              .join("")}
-            window.print();
-          </script>
-        </body>
-      </html>
-    `;
-    printWindow.document.write(barcodeHTML);
-    printWindow.document.close();
-  };
-
-  // ✅ Print Barcodes - Global Barcode Print Modal
-  // Opens the barcode print modal with enhanced formatting options
-  const printBarcodesGlobal = () => {
-    const productsToPrint =
-      selectedForPrint.length > 0
-        ? infiniteProductsArray.filter((p) => selectedForPrint.includes(p._id))
-        : filteredProducts;
-
-    if (productsToPrint.length === 0) {
-      showToast('error', "No products selected for printing");
-      return;
-    }
-
-    // If single product, open modal with that product
-    if (productsToPrint.length === 1) {
-      const product = productsToPrint[0];
-      setNewProduct({
-        ...newProduct,
-        barcode: product.barcode || product.itemcode,
-        name: product.name,
-      });
-      setShowBarcodePrintPopup(true);
-    } else {
-      // Multiple products - use batch print
-      console.log(`🖨️ Opening barcode print for ${productsToPrint.length} product(s)`);
-      printBarcodeLabels();
-    }
-  };
 
   // ✅ Reset Advanced filters
   const resetAdvancedFilters = () => {
@@ -2337,17 +2296,6 @@ const Product = () => {
               {Object.values(advancedFilters).some((v) => v) && (
                 <span className="ml-2 bg-blue-800 px-1.5 py-0.5 rounded text-xs font-semibold">
                   {Object.values(advancedFilters).filter((v) => v).length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setShowBarcodePrintPopup(true)}
-              className="flex items-center gap-1 bg-purple-600 text-white px-2 py-1 rounded-lg hover:bg-purple-700 transition text-xs"
-            >
-              <Printer size={14} /> Print Barcodes
-              {selectedForPrint.length > 0 && (
-                <span className="ml-1 bg-purple-800 px-1.5 py-0.5 rounded text-xs font-semibold">
-                  {selectedForPrint.length} selected
                 </span>
               )}
             </button>
@@ -2855,16 +2803,6 @@ const Product = () => {
             <div className="flex gap-2 flex-wrap justify-end">
               {/* ✅ SUB-MODAL TRIGGER BUTTONS (Examples) */}
 
-              {/* Barocde Print Button - Visible only when editing existing product */}
-
-              <button
-                onClick={handleBarcodePrint}
-                className="flex items-center gap-1 bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700 transition font-medium flex-shrink-0"
-                title="Print barcode labels in various formats"
-              >
-                🖨️ Print Barcode
-              </button>
-
               <button
                 onClick={() => {}} // ✅ Deprecated - Save handled by GlobalProductFormModal
                 disabled={true}
@@ -3305,12 +3243,6 @@ const Product = () => {
       </Modal>
 
       {/* ✅ EXTRACTED MODAL COMPONENTS */}
-      <GlobalBarcodePrintModal
-        isOpen={showBarcodePrintPopup}
-        onClose={() => setShowBarcodePrintPopup(false)}
-        products={newProduct.id ? [newProduct] : []}
-      />
-
       <VendorForm
         isOpen={isVendorModalOpen}
         onClose={closeVendorModal}
