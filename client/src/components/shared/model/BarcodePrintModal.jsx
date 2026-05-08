@@ -297,7 +297,8 @@ const BarcodePrintModal = ({
               {(selectedBarcodeTemplate || selectedShelfTemplate) && selectedBarcode && (() => {
                 const itemName = productName || 'N/A';
                 const barcode = selectedBarcode?.barcode || selectedBarcode_value || 'N/A';
-                const price = selectedBarcode?.price || 'N/A';
+                const priceValue = selectedBarcode?.price;
+                const price = (priceValue !== undefined && priceValue !== null && priceValue !== '') ? priceValue : 'N/A';
                 const unitSymbol = selectedUnit?.unitSymbol || 'PC';
 
                 return (
@@ -314,7 +315,7 @@ const BarcodePrintModal = ({
                         <div>{unitSymbol}</div>
                         <div>{barcode}</div>
                         <div className="flex justify-center gap-3">
-                          <span>Price: {formatNumber(price)}</span>
+                          <span>Price: {price === 'N/A' ? 'N/A' : formatNumber(price)}</span>
                           
                         </div>
                       </div>
