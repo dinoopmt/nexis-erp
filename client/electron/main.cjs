@@ -542,7 +542,7 @@ function setupRawPrinterIPC() {
     const { printerName, rawData, quantity = 1 } = data;
     
     console.log(`\n${'═'.repeat(60)}`);
-    console.log(`🖨️  [IPC] print:raw-thermal - Direct Printer Communication`);
+    console.log(`🖨️  [IPC] print:raw-thermal - WinSpool RAW API`);
     console.log(`${'═'.repeat(60)}`);
     console.log(`  Printer: ${printerName}`);
     console.log(`  Quantity: ${quantity}`);
@@ -552,74 +552,176 @@ function setupRawPrinterIPC() {
       const path = require('path');
       const os = require('os');
       const fs = require('fs');
-      const { exec } = require('child_process');
+      const { execFile } = require('child_process');
 
-      // Create temp directory if not exists
+      // Create temp directory
       const tempDir = path.join(os.tmpdir(), 'nexis-printer');
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
 
-      // Create temp file
-      const tempFile = path.join(tempDir, `print-${Date.now()}.txt`);
-      fs.writeFileSync(tempFile, rawData, 'utf8');
+      // Write raw binary data to temp file
+      const tempFile = path.join(tempDir, `print-${Date.now()}.bin`);
+      const buffer = Buffer.from(rawData);
+      fs.writeFileSync(tempFile, buffer);
       console.log(`  📄 Temp file: ${tempFile}`);
 
-      // Try PowerShell Out-Printer (most reliable for local printers)
-      return new Promise((resolve) => {
-        // Escape file path for PowerShell
-        const escapedFile = tempFile.replace(/\\/g, '\\\\');
-        const psCmd = `powershell -NoProfile -Command "Get-Content -Path '${escapedFile}' -Raw | Out-Printer -Name '${printerName}'"`;
-        console.log(`  🚀 Executing PowerShell Out-Printer command...`);
+      // Create PowerShell script with proper WinSpool.drv P/Invoke
+      const scriptFile = path.join(tempDir, `print-${Date.now()}.ps1`);
+      const psScript = `
+$ErrorActionPreference = 'Stop'
 
-        exec(psCmd, { shell: 'cmd.exe' }, (error, stdout, stderr) => {
-          // Cleanup temp file after 2 seconds
+# Define WinSpool API via P/Invoke (no native compilation needed)
+\$winspool = @"
+using System;
+using System.Runtime.InteropServices;
+
+public class Winspool {
+    [DllImport("winspool.drv", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern bool OpenPrinter(string printerName, out IntPtr hPrinter, IntPtr pDefault);
+    
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool StartDocPrinter(IntPtr hPrinter, uint level, ref DOC_INFO_1 pDocInfo);
+    
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBuf, uint cbBuf, out uint pcWritten);
+    
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+    
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool ClosePrinter(IntPtr hPrinter);
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+public struct DOC_INFO_1 {
+    [MarshalAs(UnmanagedType.LPStr)]
+    public string pDocName;
+    
+    [MarshalAs(UnmanagedType.LPStr)]
+    public string pOutputFile;
+    
+    [MarshalAs(UnmanagedType.LPStr)]
+    public string pDatatype;
+}
+"@
+
+if (-not ([System.Management.Automation.PSTypeName]'Winspool').Type) {
+    Add-Type -TypeDefinition \$winspool
+    Write-Host "✅ WinSpool API loaded"
+}
+
+try {
+    # Step 1: Open printer handle
+    \$printerName = "${printerName}"
+    \$hPrinter = [IntPtr]::Zero
+    Write-Host "1️⃣  Opening printer: \$printerName"
+    
+    \$opened = [Winspool]::OpenPrinter(\$printerName, [ref]\$hPrinter, [IntPtr]::Zero)
+    if (-not \$opened) {
+        throw "Failed to open printer: \$printerName"
+    }
+    Write-Host "✅ Printer handle opened"
+
+    # Step 2: Start document with RAW datatype
+    \$docInfo = New-Object 'DOC_INFO_1'
+    \$docInfo.pDocName = "NEXIS Barcode"
+    \$docInfo.pOutputFile = \$null
+    \$docInfo.pDatatype = "RAW"
+    
+    Write-Host "2️⃣  Starting RAW document"
+    \$started = [Winspool]::StartDocPrinter(\$hPrinter, 1, [ref]\$docInfo)
+    if (-not \$started) {
+        throw "Failed to start document"
+    }
+    Write-Host "✅ RAW document started"
+
+    # Step 3: Write data to printer
+    \$fileBytes = [System.IO.File]::ReadAllBytes("${tempFile}")
+    Write-Host "3️⃣  Writing \$(\$fileBytes.Length) bytes..."
+    
+    \$hBuffer = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(\$fileBytes.Length)
+    [System.Runtime.InteropServices.Marshal]::Copy(\$fileBytes, 0, \$hBuffer, \$fileBytes.Length)
+    
+    \$bytesWritten = 0
+    \$written = [Winspool]::WritePrinter(\$hPrinter, \$hBuffer, [uint32]\$fileBytes.Length, [ref]\$bytesWritten)
+    if (-not \$written) {
+        [System.Runtime.InteropServices.Marshal]::FreeHGlobal(\$hBuffer)
+        throw "Failed to write data"
+    }
+    Write-Host "✅ Wrote \$bytesWritten bytes to printer"
+    [System.Runtime.InteropServices.Marshal]::FreeHGlobal(\$hBuffer)
+
+    # Step 4: End document
+    Write-Host "4️⃣  Closing document"
+    \$ended = [Winspool]::EndDocPrinter(\$hPrinter)
+    if (-not \$ended) {
+        throw "Failed to end document"
+    }
+    Write-Host "✅ Document closed"
+
+    # Step 5: Close printer handle
+    \$closed = [Winspool]::ClosePrinter(\$hPrinter)
+    Write-Host "✅ Printer handle closed"
+    
+    Write-Host "SUCCESS: Print job sent to \$printerName"
+    exit 0
+
+} catch {
+    Write-Error "FAILED: \$(\$_.Exception.Message)"
+    exit 1
+} finally {
+    if (\$hPrinter -ne [IntPtr]::Zero) {
+        [Winspool]::ClosePrinter(\$hPrinter) | Out-Null
+    }
+}
+`;
+
+      fs.writeFileSync(scriptFile, psScript);
+      console.log(`  📜 Script: ${scriptFile}`);
+
+      return new Promise((resolve) => {
+        console.log(`  🚀 Executing WinSpool RAW API...`);
+        
+        // Execute PowerShell script with proper error handling
+        execFile('powershell.exe', [
+          '-NoProfile',
+          '-ExecutionPolicy', 'Bypass',
+          '-File', scriptFile
+        ], { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+          
+          // Log output for debugging
+          if (stdout) console.log(`  📋 Output:\n${stdout}`);
+          if (stderr) console.log(`  ⚠️  Messages: ${stderr}`);
+
+          // Cleanup files after 3 seconds
           setTimeout(() => {
             try {
               fs.unlinkSync(tempFile);
-              console.log(`  🗑️  Temp file cleaned up`);
+              fs.unlinkSync(scriptFile);
+              console.log(`  🗑️  Temp files cleaned up`);
             } catch (e) {
-              console.warn(`  ⚠️  Failed to cleanup: ${e.message}`);
+              console.warn(`  ⚠️  Cleanup failed: ${e.message}`);
             }
-          }, 2000);
+          }, 3000);
 
-          if (!error) {
-            console.log(`  ✅ PowerShell Out-Printer successful`);
+          // Check for success - exit code 0 is definitive
+          if (!error && stdout.includes('SUCCESS')) {
+            console.log(`  ✅ WinSpool RAW print job queued successfully`);
             console.log(`${'═'.repeat(60)}\n`);
             resolve({
               success: true,
-              method: 'POWERSHELL_OUT_PRINTER',
+              method: 'WINSPOOL_RAW_API',
               message: `Sent ${quantity} label(s) to ${printerName}`,
             });
           } else {
-            // Fallback to direct copy to printer port (legacy method)
-            console.log(`  ⚠️  PowerShell failed, trying direct COPY command fallback...`);
-            console.log(`    Error: ${error.message}`);
+            console.error(`  ❌ WinSpool RAW API call failed`);
+            console.log(`${'═'.repeat(60)}\n`);
             
-            // Escape the file path for DOS copy command
-            const dosCmd = `copy /b "${tempFile}" lpt1:`;
-            console.log(`  🚀 Executing direct COPY to LPT1 fallback...`);
-            
-            exec(dosCmd, { shell: 'cmd.exe' }, (copyError) => {
-              if (!copyError) {
-                console.log(`  ✅ Direct COPY to LPT1 successful`);
-                console.log(`${'═'.repeat(60)}\n`);
-                resolve({
-                  success: true,
-                  method: 'COPY_LPT1',
-                  message: `Sent ${quantity} label(s) to printer (LPT1 method)`,
-                });
-              } else {
-                console.error(`  ❌ All methods failed`);
-                console.error(`    PowerShell error: ${error.message}`);
-                console.error(`    COPY LPT1 error: ${copyError.message}`);
-                console.log(`${'═'.repeat(60)}\n`);
-                resolve({
-                  success: false,
-                  method: 'NONE',
-                  message: `Failed to send to printer. Try: 1) Install printer locally, 2) Enable printer sharing, 3) Use USB/Network direct connection`,
-                });
-              }
+            resolve({
+              success: false,
+              method: 'WINSPOOL_RAW_FAILED',
+              message: `Failed to queue print job. Check printer name and connection.`,
             });
           }
         });
