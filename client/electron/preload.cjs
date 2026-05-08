@@ -10,6 +10,45 @@ const { contextBridge, ipcRenderer } = require("electron");
  * Security: contextIsolation: true prevents direct access to Node.js APIs
  */
 
+// ================== GENERIC IPC API ==================
+// Direct IPC communication channel for custom handlers
+const ipcAPI = {
+  /**
+   * Invoke an IPC handler on the main process and wait for response
+   * @param {string} channel - IPC channel name (e.g., 'print:raw-thermal')
+   * @param {any} data - Data to send to the handler
+   * Returns: Promise<any> - Response from handler
+   * 
+   * Usage:
+   *   const result = await window.electronAPI.ipc.invoke('print:raw-thermal', {
+   *     printerName: 'ZEBRA_TC25',
+   *     rawData: '..EPL commands..',
+   *     quantity: 1
+   *   })
+   */
+  invoke: (channel, data) => ipcRenderer.invoke(channel, data),
+  
+  /**
+   * Send an IPC message without waiting for response
+   * @param {string} channel - IPC channel name
+   * @param {any} data - Data to send
+   */
+  send: (channel, data) => ipcRenderer.send(channel, data),
+  
+  /**
+   * Listen for IPC messages from main process
+   * @param {string} channel - IPC channel name
+   * @param {Function} callback - Handler function(data)
+   */
+  on: (channel, callback) => ipcRenderer.on(channel, (_, data) => callback(data)),
+  
+  /**
+   * Remove listener for IPC messages
+   * @param {string} channel - IPC channel name
+   */
+  off: (channel) => ipcRenderer.removeAllListeners(channel),
+};
+
 // ================== TERMINAL API ==================
 // Exposes terminal configuration and identification
 const terminalAPI = {
@@ -360,6 +399,7 @@ const pdfAPI = {
 // ================== EXPOSE API TO RENDERER ==================
 // All communication is sandboxed and secure
 contextBridge.exposeInMainWorld("electronAPI", {
+  ipc: ipcAPI,
   terminal: terminalAPI,
   printer: printerAPI,
   scanner: scannerAPI,

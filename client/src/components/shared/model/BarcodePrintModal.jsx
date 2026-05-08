@@ -136,50 +136,124 @@ const BarcodePrintModal = ({
     }
   };
 
-  const handlePrint = () => {
+  // Replace handlebars variables: {{BARCODE}}, {{ITEM_NAME}}, {{PRICE}}, {{LABEL_QUANTITY}}
+  const replaceHandlebars = (rawTemplate, variables) => {
+    let processed = rawTemplate;
+    processed = processed.replace(/\{\{BARCODE\}\}/g, variables.barcode);
+    processed = processed.replace(/\{\{ITEM_NAME\}\}/g, variables.itemName);
+    processed = processed.replace(/\{\{PRICE\}\}/g, variables.price);
+    processed = processed.replace(/\{\{LABEL_QUANTITY\}\}/g, variables.quantity);
+    return processed;
+  };
+
+  const handlePrint = async (labelType) => {
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`🖨️  PRINT CLICKED: ${labelType.toUpperCase()}`);
+    console.log(`${'═'.repeat(60)}`);
+
+    // Validate barcode selected
     if (!selectedBarcode_value) {
       showToast('error', "Please select a barcode to print");
       return;
     }
 
-    // Get the appropriate terminal-mapped printer based on format
+    // Determine template and printer based on label type
+    let selectedTemplate = null;
     let selectedPrinterName = "";
-    let selectedPrinterType = "";
+    let templateId = null;
 
-    if (settings.format === "shelf-edge" && shelfPrinter?.enabled) {
-      selectedPrinterName = shelfPrinter.printerName;
-      selectedPrinterType = "shelf";
-    } else if (barcodePrinter?.enabled) {
+    if (labelType === "barcode") {
+      if (!selectedBarcodeTemplate) {
+        showToast('error', "Please select a barcode template");
+        return;
+      }
+      templateId = selectedBarcodeTemplate;
+      selectedTemplate = getSelectedBarcodeTemplate();
+      if (!barcodePrinter?.enabled || !barcodePrinter?.printerName) {
+        showToast('error', "Barcode printer not configured");
+        return;
+      }
       selectedPrinterName = barcodePrinter.printerName;
-      selectedPrinterType = "barcode";
-    }
-
-    if (!selectedPrinterName) {
-      showToast('error', "No terminal-mapped printer configured for this operation");
+      console.log(`📦 Label Type: BARCODE`);
+      console.log(`🖨️  Printer: ${selectedPrinterName}`);
+    } else if (labelType === "shelf") {
+      if (!selectedShelfTemplate) {
+        showToast('error', "Please select a shelf template");
+        return;
+      }
+      templateId = selectedShelfTemplate;
+      selectedTemplate = getSelectedShelfTemplate();
+      if (!shelfPrinter?.enabled || !shelfPrinter?.printerName) {
+        showToast('error', "Shelf printer not configured");
+        return;
+      }
+      selectedPrinterName = shelfPrinter.printerName;
+      console.log(`🏷️  Label Type: SHELF`);
+      console.log(`🖨️  Printer: ${selectedPrinterName}`);
+    } else {
+      showToast('error', "Invalid label type");
       return;
     }
 
-    const printData = {
-      barcode: selectedBarcode_value,
-      format: settings.format,
-      quantity: settings.quantity,
-      size: settings.size,
-      columns: settings.columns,
-      rows: settings.rows,
-      printer: selectedPrinterName,
-      printerType: selectedPrinterType,
-      unitVariant: selectedUnit?.unitName || "Base Unit",
-      productName: productName,
-      inclusion: {
-        price: settings.showPrice,
-        productName: settings.showProductName,
-      },
-    };
+    if (!selectedTemplate) {
+      showToast('error', "Template not found");
+      return;
+    }
 
-    console.log("🖨️ Printing barcode labels:", printData);
-    
-    showToast('success', `🖨️ Sending ${settings.quantity} labels to ${selectedPrinterName}`);
-    onClose();
+    try {
+      // Get raw template command from the template object (already loaded)
+      const rawTemplate = selectedTemplate?.configTxt;
+      if (!rawTemplate) {
+        showToast('error', "Template has no command data");
+        return;
+      }
+
+      console.log(`📝 Template: ${selectedTemplate?.templateName}`);
+      console.log(`📊 Raw template size: ${rawTemplate.length} bytes`);
+
+      // Prepare variables for handlebars replacement
+      const variables = {
+        barcode: selectedBarcode_value,
+        itemName: productName || 'N/A',
+        price: selectedBarcode?.price !== undefined ? formatNumber(selectedBarcode.price) : 'N/A',
+        quantity: settings.quantity,
+      };
+
+      console.log(`\n📋 Variables:`);
+      console.log(`  {{BARCODE}}: ${variables.barcode}`);
+      console.log(`  {{ITEM_NAME}}: ${variables.itemName}`);
+      console.log(`  {{PRICE}}: ${variables.price}`);
+      console.log(`  {{LABEL_QUANTITY}}: ${variables.quantity}`);
+
+      // Replace handlebars in template
+      const processedRawData = replaceHandlebars(rawTemplate, variables);
+
+      console.log(`\n✅ Processed raw data: ${processedRawData.length} bytes`);
+      console.log(`\n📄 FINAL RAW DATA TO PRINTER:`);
+      console.log(`${'─'.repeat(60)}`);
+      console.log(processedRawData);
+      console.log(`${'─'.repeat(60)}\n`);
+
+      // Send to Electron IPC
+      console.log(`📱 Sending to Electron IPC: print:raw-thermal`);
+      const result = await window.electronAPI.ipc.invoke('print:raw-thermal', {
+        printerName: selectedPrinterName,
+        rawData: processedRawData,
+        quantity: settings.quantity,
+      });
+
+      if (result?.success) {
+        console.log(`✅ Print successful: ${result.message}`);
+        showToast('success', `✅ Sent ${settings.quantity} ${labelType} label(s) to printer`);
+        onClose();
+      } else {
+        console.error(`❌ Print failed: ${result?.message}`);
+        showToast('error', result?.message || "Print failed");
+      }
+    } catch (error) {
+      console.error(`❌ Error: ${error.message}`);
+      showToast('error', `Print error: ${error.message}`);
+    }
   };
 
   return (
@@ -425,7 +499,7 @@ const BarcodePrintModal = ({
         {/* Action Buttons */}
         <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-gray-200">
           <button
-            onClick={handlePrint}
+            onClick={() => handlePrint('barcode')}
             disabled={!selectedBarcodeTemplate}
             className="px-4 py-2 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition font-medium flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
@@ -433,7 +507,7 @@ const BarcodePrintModal = ({
             Barcode Labels
           </button>
           <button
-            onClick={handlePrint}
+            onClick={() => handlePrint('shelf')}
             disabled={!selectedShelfTemplate}
             className="px-4 py-2 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 transition font-medium flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >

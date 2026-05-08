@@ -523,6 +523,120 @@ function setupPrinterIPC() {
   // OLD: ipcMain.handle("printer:test-print", ...) - REMOVED
 }
 
+// ================== IPC HANDLERS - RAW THERMAL PRINTER ==================
+/**
+ * Send raw thermal/barcode printer commands (EPL, ZPL, TSPL, etc)
+ * Channel: print:raw-thermal
+ * Input: { printerName, rawData, quantity }
+ * Output: { success, method, message }
+ * 
+ * Usage:
+ *   const result = await window.electronAPI.ipc.invoke('print:raw-thermal', {
+ *     printerName: 'ZEBRA_TC25',
+ *     rawData: '..EPL commands..',
+ *     quantity: 1
+ *   })
+ */
+function setupRawPrinterIPC() {
+  ipcMain.handle('print:raw-thermal', async (event, data) => {
+    const { printerName, rawData, quantity = 1 } = data;
+    
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`🖨️  [IPC] print:raw-thermal - Direct Printer Communication`);
+    console.log(`${'═'.repeat(60)}`);
+    console.log(`  Printer: ${printerName}`);
+    console.log(`  Quantity: ${quantity}`);
+    console.log(`  Data size: ${rawData.length} bytes`);
+
+    try {
+      const path = require('path');
+      const os = require('os');
+      const fs = require('fs');
+      const { exec } = require('child_process');
+
+      // Create temp directory if not exists
+      const tempDir = path.join(os.tmpdir(), 'nexis-printer');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      // Create temp file
+      const tempFile = path.join(tempDir, `print-${Date.now()}.txt`);
+      fs.writeFileSync(tempFile, rawData, 'utf8');
+      console.log(`  📄 Temp file: ${tempFile}`);
+
+      // Try PowerShell Out-Printer (most reliable for local printers)
+      return new Promise((resolve) => {
+        // Escape file path for PowerShell
+        const escapedFile = tempFile.replace(/\\/g, '\\\\');
+        const psCmd = `powershell -NoProfile -Command "Get-Content -Path '${escapedFile}' -Raw | Out-Printer -Name '${printerName}'"`;
+        console.log(`  🚀 Executing PowerShell Out-Printer command...`);
+
+        exec(psCmd, { shell: 'cmd.exe' }, (error, stdout, stderr) => {
+          // Cleanup temp file after 2 seconds
+          setTimeout(() => {
+            try {
+              fs.unlinkSync(tempFile);
+              console.log(`  🗑️  Temp file cleaned up`);
+            } catch (e) {
+              console.warn(`  ⚠️  Failed to cleanup: ${e.message}`);
+            }
+          }, 2000);
+
+          if (!error) {
+            console.log(`  ✅ PowerShell Out-Printer successful`);
+            console.log(`${'═'.repeat(60)}\n`);
+            resolve({
+              success: true,
+              method: 'POWERSHELL_OUT_PRINTER',
+              message: `Sent ${quantity} label(s) to ${printerName}`,
+            });
+          } else {
+            // Fallback to direct copy to printer port (legacy method)
+            console.log(`  ⚠️  PowerShell failed, trying direct COPY command fallback...`);
+            console.log(`    Error: ${error.message}`);
+            
+            // Escape the file path for DOS copy command
+            const dosCmd = `copy /b "${tempFile}" lpt1:`;
+            console.log(`  🚀 Executing direct COPY to LPT1 fallback...`);
+            
+            exec(dosCmd, { shell: 'cmd.exe' }, (copyError) => {
+              if (!copyError) {
+                console.log(`  ✅ Direct COPY to LPT1 successful`);
+                console.log(`${'═'.repeat(60)}\n`);
+                resolve({
+                  success: true,
+                  method: 'COPY_LPT1',
+                  message: `Sent ${quantity} label(s) to printer (LPT1 method)`,
+                });
+              } else {
+                console.error(`  ❌ All methods failed`);
+                console.error(`    PowerShell error: ${error.message}`);
+                console.error(`    COPY LPT1 error: ${copyError.message}`);
+                console.log(`${'═'.repeat(60)}\n`);
+                resolve({
+                  success: false,
+                  method: 'NONE',
+                  message: `Failed to send to printer. Try: 1) Install printer locally, 2) Enable printer sharing, 3) Use USB/Network direct connection`,
+                });
+              }
+            });
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error(`  ❌ Exception: ${error.message}`);
+      console.log(`${'═'.repeat(60)}\n`);
+      return {
+        success: false,
+        method: 'ERROR',
+        message: `Exception: ${error.message}`,
+      };
+    }
+  });
+}
+
 // ================== IPC HANDLERS - PDF API (Printing) ==================
 // ================== IPC HANDLERS - DUAL PRINTING SYSTEM ==================
 /**
@@ -1348,6 +1462,7 @@ async function setupIPC() {
   // ✅ NEW DUAL PRINTING SYSTEM: A4 PDF + Thermal Receipts
   setupDualPrintingIPC();
   setupPrinterIPC();
+  setupRawPrinterIPC();
   setupHardwareIPC();
   setupScannerIPC();
   setupFileIPC();
