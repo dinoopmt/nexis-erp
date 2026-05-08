@@ -4,6 +4,7 @@ import Modal from "../../shared/Model";
 import { showToast } from "../AnimatedCenteredToast.jsx";
 import { Printer } from "lucide-react";
 import { useTerminal } from "../../../context/TerminalContext";
+import useDecimalFormat from "../../../hooks/useDecimalFormat";
 import { API_URL } from "../../../config/config";
 
 /**
@@ -23,6 +24,7 @@ const BarcodePrintModal = ({
   units = [],
 }) => {
   const { terminalConfig } = useTerminal();
+  const { formatNumber } = useDecimalFormat();
 
   const [settings, setSettings] = useState({
     format: "price-tag",
@@ -291,120 +293,47 @@ const BarcodePrintModal = ({
               Label Preview
             </label>
             <div className="bg-gray-100 border-2 border-dashed border-gray-400 rounded-lg p-4 flex flex-col items-center justify-center flex-1 min-h-96">
-              {/* Barcode Label Preview */}
-              {selectedBarcodeTemplate && (() => {
-                const template = getSelectedBarcodeTemplate();
-                const labelSize = extractLabelSize(template?.configTxt);
-                const variables = extractVariables(template?.configTxt);
-                
+              {/* Show only values */}
+              {(selectedBarcodeTemplate || selectedShelfTemplate) && selectedBarcode && (() => {
+                const itemName = productName || 'N/A';
+                const barcode = selectedBarcode?.barcode || selectedBarcode_value || 'N/A';
+                const price = selectedBarcode?.price || 'N/A';
+                const unitSymbol = selectedUnit?.unitSymbol || 'PC';
+
                 return (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-                    {/* Label Box */}
-                    <div className="bg-white border-2 border-blue-300 rounded-lg p-4 w-full max-w-sm" style={{aspectRatio: '3/2'}}>
-                      <div className="h-full flex flex-col items-center justify-center gap-2">
-                        <div className="text-xs font-bold text-blue-800">{template?.templateName}</div>
-                        <div className="text-xs text-gray-600">Label Size: {labelSize}</div>
-                        <div className="text-xs text-gray-700 font-semibold">Variables:</div>
-                        <div className="flex flex-wrap gap-1 justify-center">
-                          {variables.map(v => (
-                            <span key={v} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-mono">
-                              {v}
-                            </span>
-                          ))}
+                  <div className="bg-white border-2 border-blue-300 rounded-lg p-6 w-full max-w-sm">
+                    <div className="flex flex-col items-center justify-center gap-4">
+                      {/* Item Name */}
+                      <div className="text-base text-sm font-bold text-gray-800 text-center break-words">
+                        {itemName}
+                      </div>
+                      
+                      {/* Barcode / Price / Unit in one line */}
+                      <div className="text-sm font-bold text-blue-700 text-center space-y-1">
+                        
+                        <div>{unitSymbol}</div>
+                        <div>{barcode}</div>
+                        <div className="flex justify-center gap-3">
+                          <span>Price: {formatNumber(price)}</span>
+                          
                         </div>
                       </div>
                     </div>
                   </div>
                 );
               })()}
-
-              {/* Shelf Label Preview */}
-              {selectedShelfTemplate && !selectedBarcodeTemplate && (() => {
-                const template = getSelectedShelfTemplate();
-                const labelSize = extractLabelSize(template?.configTxt);
-                const variables = extractVariables(template?.configTxt);
-                
-                return (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-                    {/* Label Box */}
-                    <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4 w-full max-w-sm" style={{aspectRatio: '4/3'}}>
-                      <div className="h-full flex flex-col items-center justify-center gap-2">
-                        <div className="text-xs font-bold text-yellow-800">{template?.templateName}</div>
-                        <div className="text-xs text-gray-600">Label Size: {labelSize}</div>
-                        <div className="text-xs text-gray-700 font-semibold">Variables:</div>
-                        <div className="flex flex-wrap gap-1 justify-center">
-                          {variables.map(v => (
-                            <span key={v} className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-mono">
-                              {v}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-                {/* Variable Values Table */}
-              {(selectedBarcodeTemplate || selectedShelfTemplate) && selectedBarcode && (
-                <div className="w-full max-w-sm bg-white rounded-lg p-3 border border-gray-200 mt-2">
-                  <div className="text-xs font-semibold text-gray-700 mb-2">Variable Values:</div>
-                  <table className="w-full text-xs">
-                    <tbody className="space-y-1">
-                      {selectedBarcodeTemplate && (() => {
-                        const template = getSelectedBarcodeTemplate();
-                        const variables = extractVariables(template?.configTxt);
-                        
-                        const variableMap = {
-                          BARCODE: selectedBarcode_value,
-                          ITEM_NAME: selectedBarcode?.productName || selectedBarcode?.itemName || 'N/A',
-                          PRICE: selectedBarcode?.price || 'N/A',
-                          SKU: selectedBarcode?.sku || selectedBarcode?.shortCode || 'N/A',
-                          LABEL_QUANTITY: settings.quantity || 1,
-                          LABEL_SIZE: extractLabelSize(template?.configTxt),
-                          VARIANT_NAME: selectedBarcode?.variantName || selectedBarcode?.variantCode || 'N/A',
-                          UOM: selectedBarcode?.unit || selectedBarcode?.uom || 'N/A'
-                        };
-
-                        return variables.map(v => (
-                          <tr key={v} className="border-b border-gray-200">
-                            <td className="text-gray-600 font-mono py-1">{v}:</td>
-                            <td className="text-gray-800 font-semibold text-right py-1">{variableMap[v] || '-'}</td>
-                          </tr>
-                        ));
-                      })()}
-
-                      {selectedShelfTemplate && !selectedBarcodeTemplate && (() => {
-                        const template = getSelectedShelfTemplate();
-                        const variables = extractVariables(template?.configTxt);
-                        
-                        const variableMap = {
-                          BARCODE: selectedBarcode_value,
-                          ITEM_NAME: selectedBarcode?.productName || selectedBarcode?.itemName || 'N/A',
-                          PRICE: selectedBarcode?.price || 'N/A',
-                          SKU: selectedBarcode?.sku || selectedBarcode?.shortCode || 'N/A',
-                          LABEL_QUANTITY: settings.quantity || 1,
-                          LABEL_SIZE: extractLabelSize(template?.configTxt),
-                          VARIANT_NAME: selectedBarcode?.variantName || selectedBarcode?.variantCode || 'N/A',
-                          UOM: selectedBarcode?.unit || selectedBarcode?.uom || 'N/A'
-                        };
-
-                        return variables.map(v => (
-                          <tr key={v} className="border-b border-gray-200">
-                            <td className="text-gray-600 font-mono py-1">{v}:</td>
-                            <td className="text-gray-800 font-semibold text-right py-1">{variableMap[v] || '-'}</td>
-                          </tr>
-                        ));
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              )}
 
               {/* No Template Selected */}
               {!selectedBarcodeTemplate && !selectedShelfTemplate && (
                 <div className="text-center text-gray-500 text-xs">
                   Select a template above to preview label
+                </div>
+              )}
+
+              {/* No Barcode Selected */}
+              {(selectedBarcodeTemplate || selectedShelfTemplate) && !selectedBarcode && (
+                <div className="text-center text-gray-500 text-xs">
+                  Select a barcode above to see preview
                 </div>
               )}
             </div>
