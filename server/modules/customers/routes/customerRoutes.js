@@ -5,6 +5,98 @@ import AccountGroup from "../../../Models/AccountGroup.js";
 
 const router = express.Router();
 
+// ================= HELPER FUNCTIONS =================
+
+/**
+ * Helper: Create ledger account for credit customer
+ * @param {string} customerCode - Customer code (e.g., C001)
+ * @param {string} customerName - Customer name
+ * @param {string} description - Account description
+ * @returns {Promise<Object>} - Created ledger account
+ */
+async function createCustomerLedger(customerCode, customerName, description = "") {
+  try {
+    console.log(`Creating ledger account for customer ${customerCode}`);
+    
+    // Find "RECEIVABLES" Level 2 sub-group (under ASSETS)
+    // This is the proper accounting group for customer receivables
+    let receivablesGroup = await AccountGroup.findOne({
+      name: "RECEIVABLES",
+      level: 2,
+      code: "130000",
+      isDeleted: false
+    });
+
+    if (!receivablesGroup) {
+      console.log("⚠️  RECEIVABLES group (Level 2) not found, checking for SUNDRY DEBTORS...");
+      
+      // Fallback: Try to find SUNDRY DEBTORS at Level 2
+      receivablesGroup = await AccountGroup.findOne({
+        name: "SUNDRY DEBTORS",
+        level: 2,
+        isDeleted: false
+      });
+
+      if (!receivablesGroup) {
+        console.log("❌ No suitable group found, creating SUNDRY DEBTORS at Level 2...");
+        
+        // Find main ASSETS group (Level 1)
+        const assetsGroup = await AccountGroup.findOne({
+          name: "ASSETS",
+          level: 1,
+          code: "100000",
+          isDeleted: false
+        });
+
+        if (!assetsGroup) {
+          throw new Error("ASSETS main group not found. Please seed chart of accounts first.");
+        }
+
+        // Create SUNDRY DEBTORS as Level 2 sub-group
+        receivablesGroup = new AccountGroup({
+          name: "SUNDRY DEBTORS",
+          code: "130100",
+          description: "Customer Receivables and Debtors",
+          level: 2,
+          parentGroupId: assetsGroup._id,
+          type: "ASSET",
+          accountCategory: "BALANCE_SHEET",
+          nature: "DEBIT",
+          allowPosting: false,
+          isActive: true
+        });
+        await receivablesGroup.save();
+        console.log("✓ SUNDRY DEBTORS Level 2 group created:", receivablesGroup._id);
+      }
+    } else {
+      console.log("✓ RECEIVABLES group found:", receivablesGroup._id);
+    }
+
+    const newAccountNumber = `${receivablesGroup.code}-${customerCode}`;
+    
+    // Create ledger account for the customer
+    const customerLedger = new ChartOfAccounts({
+      accountNumber: newAccountNumber,
+      accountName: `${customerName} (${customerCode})`,
+      accountGroupId: receivablesGroup._id,
+      description: description || `Customer Receivable Account - ${customerName}`,
+      openingBalance: 0,
+      currentBalance: 0,
+      accountCategory: "BALANCE_SHEET",
+      allowPosting: true,
+      isActive: true
+    });
+
+    await customerLedger.save();
+    console.log("✓ Customer ledger account created:", customerLedger._id);
+    
+    return customerLedger;
+  } catch (error) {
+    console.error("❌ Error creating customer ledger:", error);
+    throw error;
+  }
+}
+
 // ================= ADD CUSTOMER =================
 router.post("/addcustomer", async (req, res) => {
   try {
@@ -35,62 +127,21 @@ router.post("/addcustomer", async (req, res) => {
 
     await customer.save();
 
-    // If payment type is "Credit Sale", create a ledger account
+    // Accounting Rule 1: If payment type is "Credit Sale", create a ledger account
     if (req.body.paymentType === "Credit Sale") {
       try {
-        console.log(`Creating ledger account for customer ${newCode} with payment type: ${req.body.paymentType}`);
+        const customerLedger = await createCustomerLedger(
+          newCode,
+          customer.name,
+          `Customer Receivable Account - ${customer.name}`
+        );
         
-        // Find or create "Sundry Debtors" account group
-        let sundryDebtorsGroup = await AccountGroup.findOne({
-          name: "SUNDRY DEBTORS",
-          isDeleted: false
-        });
-
-        if (!sundryDebtorsGroup) {
-          console.log("Sundry Debtors group not found, creating new one...");
-          // Create Sundry Debtors group if it doesn't exist
-          sundryDebtorsGroup = new AccountGroup({
-            name: "SUNDRY DEBTORS",
-            code: "SD",
-            description: "Customer Receivables",
-            level: 1,
-            type: "ASSET",
-            accountCategory: "BALANCE_SHEET",
-            nature: "DEBIT",
-            allowPosting: true,
-            isActive: true
-          });
-          await sundryDebtorsGroup.save();
-          console.log("Sundry Debtors group created:", sundryDebtorsGroup._id);
-        } else {
-          console.log("Sundry Debtors group found:", sundryDebtorsGroup._id);
-        }
-
-        let newAccountNumber = `SD-${newCode}`;
-        
-        // Create ledger account for the customer
-        const customerLedger = new ChartOfAccounts({
-          accountNumber: newAccountNumber,
-          accountName: `${customer.name} (${newCode})`,
-          accountGroupId: sundryDebtorsGroup._id,
-          description: `Customer Receivable Account - ${customer.name}`,
-          openingBalance: 0,
-          currentBalance: 0,
-          accountCategory: "BALANCE_SHEET",
-          allowPosting: true,
-          isActive: true
-        });
-
-        await customerLedger.save();
-        console.log("Customer ledger account created:", customerLedger._id);
-
         // Update customer with ledger account reference
         customer.ledgerAccountId = customerLedger._id;
         await customer.save();
         console.log("Customer updated with ledgerAccountId:", customerLedger._id);
       } catch (ledgerError) {
         console.error("Error creating ledger account for Credit Sale customer:", ledgerError);
-        console.error("Stack trace:", ledgerError.stack);
         // Don't fail the customer creation if ledger creation fails, just log the error
       }
     } else {
@@ -208,26 +259,69 @@ router.put("/updatecustomer/:id", async (req, res) => {
       updateData.isSupplier = req.body.isSupplier === true;
     }
 
-    // Check if name has changed and customer has a ledger account
+    // ========== ACCOUNTING RULE 2: Customer name changed -> Update ledger name ==========
     if (
       req.body.name && 
       req.body.name !== currentCustomer.name && 
       currentCustomer.ledgerAccountId
     ) {
       try {
-        // Update the ledger account name
         const ledgerAccountName = `${req.body.name} (${currentCustomer.customerCode})`;
         await ChartOfAccounts.findByIdAndUpdate(
           currentCustomer.ledgerAccountId,
           {
             accountName: ledgerAccountName,
+            description: `Customer Receivable Account - ${req.body.name}`,
             updatedDate: new Date(),
           },
           { returnDocument: 'after' }
         );
+        console.log("Ledger account name updated for customer:", currentCustomer.customerCode);
       } catch (ledgerError) {
         console.error("Error updating ledger account name:", ledgerError);
         // Don't fail the customer update if ledger update fails
+      }
+    }
+
+    // ========== ACCOUNTING RULE 3: Payment type changed to Credit -> Create ledger if not exists ==========
+    const currentPaymentType = currentCustomer.paymentType;
+    const newPaymentType = req.body.paymentType;
+    
+    if (newPaymentType === "Credit Sale" && currentPaymentType !== "Credit Sale") {
+      // Customer changed from non-credit to credit
+      if (!currentCustomer.ledgerAccountId) {
+        try {
+          console.log(`Creating ledger for customer changing to Credit Sale: ${currentCustomer.customerCode}`);
+          const customerLedger = await createCustomerLedger(
+            currentCustomer.customerCode,
+            req.body.name || currentCustomer.name,
+            `Customer Receivable Account - ${req.body.name || currentCustomer.name}`
+          );
+          updateData.ledgerAccountId = customerLedger._id;
+          console.log("Ledger created and customer updated for payment type change");
+        } catch (ledgerError) {
+          console.error("Error creating ledger when changing to Credit Sale:", ledgerError);
+        }
+      }
+    }
+
+    // ========== ACCOUNTING RULE 4: Credit customer with no ledger -> Create ledger ==========
+    if (
+      newPaymentType === "Credit Sale" && 
+      !currentCustomer.ledgerAccountId && 
+      !updateData.ledgerAccountId // If not already created above
+    ) {
+      try {
+        console.log(`Creating missing ledger for existing credit customer: ${currentCustomer.customerCode}`);
+        const customerLedger = await createCustomerLedger(
+          currentCustomer.customerCode,
+          req.body.name || currentCustomer.name,
+          `Customer Receivable Account - ${req.body.name || currentCustomer.name}`
+        );
+        updateData.ledgerAccountId = customerLedger._id;
+        console.log("Missing ledger created for credit customer");
+      } catch (ledgerError) {
+        console.error("Error creating missing ledger for credit customer:", ledgerError);
       }
     }
 
