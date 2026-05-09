@@ -27,14 +27,8 @@ const BarcodePrintModal = ({
   const { formatNumber } = useDecimalFormat();
 
   const [settings, setSettings] = useState({
-    format: "price-tag",
     quantity: 1,
-    size: "standard",
-    columns: 2,
-    rows: 4,
     selectedBarcodeIndex: 0,
-    showPrice: true,
-    showProductName: true,
   });
 
   const [templates, setTemplates] = useState([]);
@@ -43,6 +37,27 @@ const BarcodePrintModal = ({
   const [selectedBarcodeTemplate, setSelectedBarcodeTemplate] = useState(null);
   const [selectedShelfTemplate, setSelectedShelfTemplate] = useState(null);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+
+  // Reset settings to default when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSettings({
+        quantity: 1,
+        selectedBarcodeIndex: 0,
+      });
+      // Set to first/default templates
+      if (barcodeTemplates.length > 0) {
+        const defaultBarcode =
+          barcodeTemplates.find((t) => t.isDefault) || barcodeTemplates[0];
+        setSelectedBarcodeTemplate(defaultBarcode._id);
+      }
+      if (shelfTemplates.length > 0) {
+        const defaultShelf =
+          shelfTemplates.find((t) => t.isDefault) || shelfTemplates[0];
+        setSelectedShelfTemplate(defaultShelf._id);
+      }
+    }
+  }, [isOpen, barcodeTemplates, shelfTemplates]);
 
   // Fetch barcode templates on mount
   useEffect(() => {
@@ -54,8 +69,12 @@ const BarcodePrintModal = ({
         setTemplates(allTemplates);
 
         // Filter by template type
-        const barcode = allTemplates.filter(t => t.templateType === 'barcode_label');
-        const shelf = allTemplates.filter(t => t.templateType === 'shelf_label');
+        const barcode = allTemplates.filter(
+          (t) => t.templateType === "barcode_label",
+        );
+        const shelf = allTemplates.filter(
+          (t) => t.templateType === "shelf_label",
+        );
         setBarcodeTemplates(barcode);
         setShelfTemplates(shelf);
 
@@ -63,7 +82,7 @@ const BarcodePrintModal = ({
         if (barcode.length > 0) setSelectedBarcodeTemplate(barcode[0]._id);
         if (shelf.length > 0) setSelectedShelfTemplate(shelf[0]._id);
       } catch (err) {
-        console.warn('Failed to fetch barcode templates:', err);
+        console.warn("Failed to fetch barcode templates:", err);
       } finally {
         setLoadingTemplates(false);
       }
@@ -78,22 +97,24 @@ const BarcodePrintModal = ({
   // Get selected barcode and unit info
   const selectedBarcode = pricingLines[settings.selectedBarcodeIndex];
   const selectedBarcode_value = selectedBarcode?.barcode || barcode;
-  const selectedUnit = selectedBarcode?.unit 
-    ? units.find(u => String(u._id) === String(selectedBarcode.unit))
+  const selectedUnit = selectedBarcode?.unit
+    ? units.find((u) => String(u._id) === String(selectedBarcode.unit))
     : null;
 
   // Get selected template data
   const getSelectedBarcodeTemplate = () => {
-    return barcodeTemplates.find(t => t._id === selectedBarcodeTemplate);
+    return barcodeTemplates.find((t) => t._id === selectedBarcodeTemplate);
   };
 
   const getSelectedShelfTemplate = () => {
-    return shelfTemplates.find(t => t._id === selectedShelfTemplate);
+    return shelfTemplates.find((t) => t._id === selectedShelfTemplate);
   };
 
   // Extract label size from template config (e.g., "SIZE 38 mm, 25 mm")
   const extractLabelSize = (configTxt) => {
-    const sizeMatch = configTxt?.match(/SIZE\s+([\d.]+)\s*(\w+),\s*([\d.]+)\s*(\w+)/i);
+    const sizeMatch = configTxt?.match(
+      /SIZE\s+([\d.]+)\s*(\w+),\s*([\d.]+)\s*(\w+)/i,
+    );
     if (sizeMatch) {
       return `${sizeMatch[1]} ${sizeMatch[2]} × ${sizeMatch[3]} ${sizeMatch[4]}`;
     }
@@ -111,49 +132,27 @@ const BarcodePrintModal = ({
     return Array.from(matches).sort();
   };
 
-  const getFormatDescription = () => {
-    const descriptions = {
-      "price-tag": "Price Tag Label (includes product name, barcode & price)",
-      "shelf-edge": "Shelf Edge Label (compact, high-visibility format)",
-      "barcode-only": "Barcode Only (minimal, code 128 format)",
-      "sticker": "Small Sticker (small format for packaging)",
-    };
-    return descriptions[settings.format] || descriptions["price-tag"];
-  };
-
-  const getPreviewHeight = () => {
-    switch (settings.size) {
-      case "small":
-        return "h-16";
-      case "standard":
-        return "h-20";
-      case "large":
-        return "h-24";
-      case "xl":
-        return "h-32";
-      default:
-        return "h-20";
-    }
-  };
-
   // Replace handlebars variables: {{BARCODE}}, {{ITEM_NAME}}, {{PRICE}}, {{LABEL_QUANTITY}}
   const replaceHandlebars = (rawTemplate, variables) => {
     let processed = rawTemplate;
     processed = processed.replace(/\{\{BARCODE\}\}/g, variables.barcode);
     processed = processed.replace(/\{\{ITEM_NAME\}\}/g, variables.itemName);
     processed = processed.replace(/\{\{PRICE\}\}/g, variables.price);
-    processed = processed.replace(/\{\{LABEL_QUANTITY\}\}/g, variables.quantity);
+    processed = processed.replace(
+      /\{\{LABEL_QUANTITY\}\}/g,
+      variables.quantity,
+    );
     return processed;
   };
 
   const handlePrint = async (labelType) => {
-    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`\n${"═".repeat(60)}`);
     console.log(`🖨️  PRINT CLICKED: ${labelType.toUpperCase()}`);
-    console.log(`${'═'.repeat(60)}`);
+    console.log(`${"═".repeat(60)}`);
 
     // Validate barcode selected
     if (!selectedBarcode_value) {
-      showToast('error', "Please select a barcode to print");
+      showToast("error", "Please select a barcode to print");
       return;
     }
 
@@ -164,13 +163,13 @@ const BarcodePrintModal = ({
 
     if (labelType === "barcode") {
       if (!selectedBarcodeTemplate) {
-        showToast('error', "Please select a barcode template");
+        showToast("error", "Please select a barcode template");
         return;
       }
       templateId = selectedBarcodeTemplate;
       selectedTemplate = getSelectedBarcodeTemplate();
       if (!barcodePrinter?.enabled || !barcodePrinter?.printerName) {
-        showToast('error', "Barcode printer not configured");
+        showToast("error", "Barcode printer not configured");
         return;
       }
       selectedPrinterName = barcodePrinter.printerName;
@@ -178,25 +177,25 @@ const BarcodePrintModal = ({
       console.log(`🖨️  Printer: ${selectedPrinterName}`);
     } else if (labelType === "shelf") {
       if (!selectedShelfTemplate) {
-        showToast('error', "Please select a shelf template");
+        showToast("error", "Please select a shelf template");
         return;
       }
       templateId = selectedShelfTemplate;
       selectedTemplate = getSelectedShelfTemplate();
       if (!shelfPrinter?.enabled || !shelfPrinter?.printerName) {
-        showToast('error', "Shelf printer not configured");
+        showToast("error", "Shelf printer not configured");
         return;
       }
       selectedPrinterName = shelfPrinter.printerName;
       console.log(`🏷️  Label Type: SHELF`);
       console.log(`🖨️  Printer: ${selectedPrinterName}`);
     } else {
-      showToast('error', "Invalid label type");
+      showToast("error", "Invalid label type");
       return;
     }
 
     if (!selectedTemplate) {
-      showToast('error', "Template not found");
+      showToast("error", "Template not found");
       return;
     }
 
@@ -204,7 +203,7 @@ const BarcodePrintModal = ({
       // Get raw template command from the template object (already loaded)
       const rawTemplate = selectedTemplate?.configTxt;
       if (!rawTemplate) {
-        showToast('error', "Template has no command data");
+        showToast("error", "Template has no command data");
         return;
       }
 
@@ -214,8 +213,11 @@ const BarcodePrintModal = ({
       // Prepare variables for handlebars replacement
       const variables = {
         barcode: selectedBarcode_value,
-        itemName: productName || 'N/A',
-        price: selectedBarcode?.price !== undefined ? formatNumber(selectedBarcode.price) : 'N/A',
+        itemName: productName || "N/A",
+        price:
+          selectedBarcode?.price !== undefined
+            ? formatNumber(selectedBarcode.price)
+            : "N/A",
         quantity: settings.quantity,
       };
 
@@ -230,13 +232,13 @@ const BarcodePrintModal = ({
 
       console.log(`\n✅ Processed raw data: ${processedRawData.length} bytes`);
       console.log(`\n📄 FINAL RAW DATA TO PRINTER:`);
-      console.log(`${'─'.repeat(60)}`);
+      console.log(`${"─".repeat(60)}`);
       console.log(processedRawData);
-      console.log(`${'─'.repeat(60)}\n`);
+      console.log(`${"─".repeat(60)}\n`);
 
       // Send to Electron IPC
       console.log(`📱 Sending to Electron IPC: print:raw-thermal`);
-      const result = await window.electronAPI.ipc.invoke('print:raw-thermal', {
+      const result = await window.electronAPI.ipc.invoke("print:raw-thermal", {
         printerName: selectedPrinterName,
         rawData: processedRawData,
         quantity: settings.quantity,
@@ -244,24 +246,22 @@ const BarcodePrintModal = ({
 
       if (result?.success) {
         console.log(`✅ Print successful: ${result.message}`);
-        showToast('success', `✅ Sent ${settings.quantity} ${labelType} label(s) to printer`);
-        onClose();
+        showToast(
+          "success",
+          `✅ Sent ${settings.quantity} ${labelType} label(s) to printer`,
+        );
       } else {
         console.error(`❌ Print failed: ${result?.message}`);
-        showToast('error', result?.message || "Print failed");
+        showToast("error", result?.message || "Print failed");
       }
     } catch (error) {
       console.error(`❌ Error: ${error.message}`);
-      showToast('error', `Print error: ${error.message}`);
+      showToast("error", `Print error: ${error.message}`);
     }
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      width="max-w-4xl"
-    >
+    <Modal isOpen={isOpen} onClose={onClose} width="max-w-4xl">
       <div className="p-4 flex flex-col gap-3">
         <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
           <Printer size={20} />
@@ -288,13 +288,14 @@ const BarcodePrintModal = ({
               >
                 {pricingLines.map((line, idx) => {
                   const unit = line.unit
-                    ? units.find(u => String(u._id) === String(line.unit))
+                    ? units.find((u) => String(u._id) === String(line.unit))
                     : null;
                   const unitName = unit?.unitName || `Unit ${idx}`;
                   const unitSymbol = unit?.unitSymbol || "";
                   return (
                     <option key={idx} value={idx}>
-                      {idx === 0 ? "📦 Base Unit" : `📦 ${unitName}`} ({unitSymbol})
+                      {idx === 0 ? "📦 Base Unit" : `📦 ${unitName}`} (
+                      {unitSymbol})
                     </option>
                   );
                 })}
@@ -312,12 +313,14 @@ const BarcodePrintModal = ({
               <label className="text-xs font-bold text-gray-700 uppercase">
                 Terminal-Mapped Printers
               </label>
-              
+
               <div className="space-y-2">
                 {/* Barcode Printer */}
                 <div className="p-2 bg-white border border-green-300 rounded">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className={`w-3 h-3 rounded-full ${barcodePrinter?.enabled ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                    <div
+                      className={`w-3 h-3 rounded-full ${barcodePrinter?.enabled ? "bg-green-500" : "bg-gray-300"}`}
+                    ></div>
                     <div className="text-xs font-semibold text-gray-700">
                       🖨️ Barcode Printer
                     </div>
@@ -325,8 +328,12 @@ const BarcodePrintModal = ({
                   <div className="text-xs text-gray-600 ml-5">
                     {barcodePrinter?.enabled && barcodePrinter?.printerName ? (
                       <>
-                        <div className="font-mono text-green-700">{barcodePrinter.printerName}</div>
-                        <div className="text-gray-500 text-xs mt-1">Status: Ready</div>
+                        <div className="font-mono text-green-700">
+                          {barcodePrinter.printerName}
+                        </div>
+                        <div className="text-gray-500 text-xs mt-1">
+                          Status: Ready
+                        </div>
                       </>
                     ) : (
                       <div className="text-red-600">Not Configured</div>
@@ -337,7 +344,9 @@ const BarcodePrintModal = ({
                 {/* Shelf Label Printer */}
                 <div className="p-2 bg-white border border-green-300 rounded">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className={`w-3 h-3 rounded-full ${shelfPrinter?.enabled ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                    <div
+                      className={`w-3 h-3 rounded-full ${shelfPrinter?.enabled ? "bg-green-500" : "bg-gray-300"}`}
+                    ></div>
                     <div className="text-xs font-semibold text-gray-700">
                       🏷️ Shelf Label Printer
                     </div>
@@ -345,20 +354,20 @@ const BarcodePrintModal = ({
                   <div className="text-xs text-gray-600 ml-5">
                     {shelfPrinter?.enabled && shelfPrinter?.printerName ? (
                       <>
-                        <div className="font-mono text-green-700">{shelfPrinter.printerName}</div>
-                        <div className="text-gray-500 text-xs mt-1">Status: Ready</div>
+                        <div className="font-mono text-green-700">
+                          {shelfPrinter.printerName}
+                        </div>
+                        <div className="text-gray-500 text-xs mt-1">
+                          Status: Ready
+                        </div>
                       </>
                     ) : (
                       <div className="text-orange-600">Not Configured</div>
                     )}
                   </div>
                 </div>
-
-                
               </div>
             </div>
-
-          
           </div>
 
           {/* Center Column: Template Preview */}
@@ -368,35 +377,44 @@ const BarcodePrintModal = ({
             </label>
             <div className="bg-gray-100 border-2 border-dashed border-gray-400 rounded-lg p-4 flex flex-col items-center justify-center flex-1 min-h-96">
               {/* Show only values */}
-              {(selectedBarcodeTemplate || selectedShelfTemplate) && selectedBarcode && (() => {
-                const itemName = productName || 'N/A';
-                const barcode = selectedBarcode?.barcode || selectedBarcode_value || 'N/A';
-                const priceValue = selectedBarcode?.price;
-                const price = (priceValue !== undefined && priceValue !== null && priceValue !== '') ? priceValue : 'N/A';
-                const unitSymbol = selectedUnit?.unitSymbol || 'PC';
+              {(selectedBarcodeTemplate || selectedShelfTemplate) &&
+                selectedBarcode &&
+                (() => {
+                  const itemName = productName || "N/A";
+                  const barcode =
+                    selectedBarcode?.barcode || selectedBarcode_value || "N/A";
+                  const priceValue = selectedBarcode?.price;
+                  const price =
+                    priceValue !== undefined &&
+                    priceValue !== null &&
+                    priceValue !== ""
+                      ? priceValue
+                      : "N/A";
+                  const unitSymbol = selectedUnit?.unitSymbol || "PC";
 
-                return (
-                  <div className="bg-white border-2 border-blue-300 rounded-lg p-6 w-full max-w-sm">
-                    <div className="flex flex-col items-center justify-center gap-4">
-                      {/* Item Name */}
-                      <div className="text-base text-sm font-bold text-gray-800 text-center break-words">
-                        {itemName}
-                      </div>
-                      
-                      {/* Barcode / Price / Unit in one line */}
-                      <div className="text-sm font-bold text-blue-700 text-center space-y-1">
-                        
-                        <div>{unitSymbol}</div>
-                        <div>{barcode}</div>
-                        <div className="flex justify-center gap-3">
-                          <span>Price: {price === 'N/A' ? 'N/A' : formatNumber(price)}</span>
-                          
+                  return (
+                    <div className="bg-white border-2 border-blue-300 rounded-lg p-6 w-full max-w-sm">
+                      <div className="flex flex-col items-center justify-center gap-4">
+                        {/* Item Name */}
+                        <div className="text-base text-sm font-bold text-gray-800 text-center break-words">
+                          {itemName}
+                        </div>
+
+                        {/* Barcode / Price / Unit in one line */}
+                        <div className="text-sm font-bold text-blue-700 text-center space-y-1">
+                          <div>{unitSymbol}</div>
+                          <div>{barcode}</div>
+                          <div className="flex justify-center gap-3">
+                            <span>
+                              Price:{" "}
+                              {price === "N/A" ? "N/A" : formatNumber(price)}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
               {/* No Template Selected */}
               {!selectedBarcodeTemplate && !selectedShelfTemplate && (
@@ -406,24 +424,24 @@ const BarcodePrintModal = ({
               )}
 
               {/* No Barcode Selected */}
-              {(selectedBarcodeTemplate || selectedShelfTemplate) && !selectedBarcode && (
-                <div className="text-center text-gray-500 text-xs">
-                  Select a barcode above to see preview
-                </div>
-              )}
+              {(selectedBarcodeTemplate || selectedShelfTemplate) &&
+                !selectedBarcode && (
+                  <div className="text-center text-gray-500 text-xs">
+                    Select a barcode above to see preview
+                  </div>
+                )}
             </div>
           </div>
 
           {/* Right Column: Settings */}
           <div className="col-span-1 flex flex-col gap-3">
-
             {/* Barcode Label Template Selection */}
             <div className="flex flex-col gap-1.5 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <label className="text-xs font-bold text-gray-700 uppercase">
                 📦 Barcode Label Template
               </label>
               <select
-                value={selectedBarcodeTemplate || ''}
+                value={selectedBarcodeTemplate || ""}
                 onChange={(e) => setSelectedBarcodeTemplate(e.target.value)}
                 disabled={loadingTemplates || barcodeTemplates.length === 0}
                 className="border border-blue-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100"
@@ -431,12 +449,14 @@ const BarcodePrintModal = ({
                 <option value="">Select Template...</option>
                 {barcodeTemplates.map((template) => (
                   <option key={template._id} value={template._id}>
-                    {template.templateName} {template.isDefault ? '⭐' : ''}
+                    {template.templateName} {template.isDefault ? "⭐" : ""}
                   </option>
                 ))}
               </select>
               {barcodeTemplates.length === 0 && (
-                <div className="text-xs text-gray-600 mt-1">No barcode templates found</div>
+                <div className="text-xs text-gray-600 mt-1">
+                  No barcode templates found
+                </div>
               )}
             </div>
 
@@ -446,7 +466,7 @@ const BarcodePrintModal = ({
                 📋 Shelf Label Template
               </label>
               <select
-                value={selectedShelfTemplate || ''}
+                value={selectedShelfTemplate || ""}
                 onChange={(e) => setSelectedShelfTemplate(e.target.value)}
                 disabled={loadingTemplates || shelfTemplates.length === 0}
                 className="border border-yellow-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-yellow-500 bg-white disabled:bg-gray-100"
@@ -454,52 +474,64 @@ const BarcodePrintModal = ({
                 <option value="">Select Template...</option>
                 {shelfTemplates.map((template) => (
                   <option key={template._id} value={template._id}>
-                    {template.templateName} {template.isDefault ? '⭐' : ''}
+                    {template.templateName} {template.isDefault ? "⭐" : ""}
                   </option>
                 ))}
               </select>
               {shelfTemplates.length === 0 && (
-                <div className="text-xs text-gray-600 mt-1">No shelf templates found</div>
+                <div className="text-xs text-gray-600 mt-1">
+                  No shelf templates found
+                </div>
               )}
             </div>
 
-
-            {/* Print Quantity & Size */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-gray-700">
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="1000"
-                  value={settings.quantity}
-                  onChange={(e) =>
+            {/* Print Quantity */}
+            <div className="grid grid-cols-2 gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <label className="text-xs font-semibold text-gray-700">
+                 Label Quantity
+              </label>
+              <input
+                type="number"
+                max="1000"
+                value={settings.quantity}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "") {
                     setSettings({
                       ...settings,
-                      quantity: parseInt(e.target.value) || 1,
-                    })
+                      quantity: "",
+                    });
+                  } else {
+                    const num = parseInt(val);
+                    if (!isNaN(num) && num > 0) {
+                      setSettings({
+                        ...settings,
+                        quantity: num,
+                      });
+                    }
                   }
-                  className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              
+                }}
+                onBlur={(e) => {
+                  if (
+                    e.target.value === "" ||
+                    parseInt(e.target.value) < 1
+                  ) {
+                    setSettings({
+                      ...settings,
+                      quantity: 1,
+                    });
+                  }
+                }}
+                className="border border-red-500 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
-
-           
-
-            
-
-           
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex gap-2 justify-end mt-3 pt-3 border-t border-gray-200">
           <button
-            onClick={() => handlePrint('barcode')}
+            onClick={() => handlePrint("barcode")}
             disabled={!selectedBarcodeTemplate}
             className="px-4 py-2 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition font-medium flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
@@ -507,7 +539,7 @@ const BarcodePrintModal = ({
             Barcode Labels
           </button>
           <button
-            onClick={() => handlePrint('shelf')}
+            onClick={() => handlePrint("shelf")}
             disabled={!selectedShelfTemplate}
             className="px-4 py-2 bg-yellow-600 text-white rounded text-xs hover:bg-yellow-700 transition font-medium flex items-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
@@ -527,5 +559,3 @@ const BarcodePrintModal = ({
 };
 
 export default BarcodePrintModal;
-
-
