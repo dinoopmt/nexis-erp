@@ -373,8 +373,10 @@ const SalesInvoice = () => {
   const fetchInvoices = async () => {
     setLoading(true);
     try {
+      const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
       const res = await axios.get(
         `${API_URL}/sales-invoices/getSalesInvoices`,
+        { headers }
       );
       setInvoices(res.data);
       setError(null);
@@ -1449,10 +1451,12 @@ const SalesInvoice = () => {
       };
       console.log("Saving invoice with payload:", payload);
       let savedInvoiceId;
+      const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
       if (editId) {
         await axios.put(
           `${API_URL}/sales-invoices/updateSalesInvoice/${editId}`,
           payload,
+          { headers }
         );
         savedInvoiceId = editId;
         console.log('✅ Invoice updated:', savedInvoiceId);
@@ -1460,6 +1464,7 @@ const SalesInvoice = () => {
         const response = await axios.post(
           `${API_URL}/sales-invoices/createSalesInvoice`,
           payload,
+          { headers }
         );
         console.log('📡 API Response:', response.data);
         // Try multiple paths to get the ID - handle both wrapped and unwrapped responses

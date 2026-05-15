@@ -25,9 +25,6 @@ export const getNextQuotationNumber = async (req, res) => {
 // Create Quotation
 export const createQuotation = async (req, res) => {
   try {
-    console.log("Creating Quotation:", req.body);
-    console.log("Items details:", JSON.stringify(req.body.items, null, 2));
-
     const { quotationNumber, customerName, date, items, financialYear } = req.body;
     
     if (!quotationNumber || !customerName || !date || !financialYear) {
@@ -52,8 +49,6 @@ export const createQuotation = async (req, res) => {
     const quotation = new Quotation(req.body);
     await quotation.save();
 
-    console.log("Quotation created successfully:", quotation._id);
-    console.log("✅ Saved quotation items:", JSON.stringify(quotation.items, null, 2));
     res.status(201).json(quotation);
   } catch (err) {
     res.status(400).json({ error: err.message });

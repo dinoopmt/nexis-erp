@@ -4,6 +4,7 @@ import salesReturnRoutes from './salesReturnRoutes.js';
 import deliveryNoteRoutes from './deliveryNoteRoutes.js';
 import creditSaleReceiptRoutes from './creditSaleReceiptRoutes.js';
 import quotationRoutes from './quotationRoutes.js';
+import creditCustomerCashflowRoutes from './creditCustomerCashflowRoutes.js';
 
 export default {
   salesInvoiceRoutes,
@@ -11,5 +12,6 @@ export default {
   salesReturnRoutes,
   deliveryNoteRoutes,
   creditSaleReceiptRoutes,
-  quotationRoutes
+  quotationRoutes,
+  creditCustomerCashflowRoutes
 };

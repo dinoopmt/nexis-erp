@@ -250,6 +250,7 @@ app.use(`${apiV1}/sales-returns`, salesRoutes.salesReturnRoutes);
 app.use(`${apiV1}/quotations`, salesRoutes.quotationRoutes);
 app.use(`${apiV1}/delivery-notes`, salesRoutes.deliveryNoteRoutes);
 app.use(`${apiV1}/credit-sale-receipts`, salesRoutes.creditSaleReceiptRoutes);
+app.use(`${apiV1}/credit-customer-cashflows`, salesRoutes.creditCustomerCashflowRoutes);
 
 // Inventory module
 app.use(`${apiV1}/products`, inventoryRoutes.productRoutes);

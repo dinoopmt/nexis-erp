@@ -6,6 +6,7 @@ import ChartOfAccounts from "../../../Models/ChartOfAccounts.js";
 import AccountGroup from "../../../Models/AccountGroup.js";
 import JournalEntry from "../../../Models/JournalEntry.js";
 import FinancialYear from "../../../Models/FinancialYear.js";
+import { updateCashflowOnPaymentReceipt, updateCashflowOnAdvanceApplication } from "../../../services/creditCustomerCashflowService.js";
 
 const router = express.Router();
 
@@ -424,6 +425,38 @@ router.post("/addcustomer-receipt", async (req, res) => {
 
           console.log(`On Account: Invoice ${allocation.invoiceNumber} updated - Status: ${newPaymentStatus}, Received: ${newTotalReceived}`);
         }
+      }
+    }
+
+    // ✅ Update Credit Customer Cashflow
+    try {
+      await updateCashflowOnPaymentReceipt(customerId, financialYear, {
+        receiptNumber: newReceiptNumber,
+        receiptId: customerReceipt._id,
+        amountPaid,
+        paymentMode,
+        receiptType,
+        invoiceAllocations,
+        advanceAmount: advanceAmountApplied || 0
+      });
+      console.log(`✅ Cashflow updated for receipt ${newReceiptNumber}`);
+    } catch (cashflowError) {
+      console.error(`⚠️ Error updating cashflow for receipt ${newReceiptNumber}:`, cashflowError.message);
+      // Don't fail receipt creation if cashflow update fails
+    }
+
+    // Handle advance application with cashflow update
+    if (appliedAdvanceId && advanceAmountApplied > 0) {
+      try {
+        await updateCashflowOnAdvanceApplication(
+          customerId,
+          financialYear,
+          newReceiptNumber,
+          advanceAmountApplied
+        );
+        console.log(`✅ Cashflow updated for advance application: ${advanceAmountApplied}`);
+      } catch (advanceCashflowError) {
+        console.error(`⚠️ Error updating cashflow for advance application:`, advanceCashflowError.message);
       }
     }
 

@@ -7,8 +7,11 @@
 // TODO: Replace with alternative solution or fix express-rate-limit v8.3.1 issue
 // import rateLimit from 'express-rate-limit';
 
-// Dummy middleware that passes through requests
-const dummyMiddleware = (req, res, next) => next();
+// Pass-through middleware that allows all requests (no rate limiting)
+const dummyMiddleware = (req, res, next) => {
+  // Explicitly allow the request to proceed without rate limiting
+  next();
+};
 
 /**
  * General API rate limiter

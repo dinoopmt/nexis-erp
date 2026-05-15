@@ -216,25 +216,23 @@ const SalesInvoiceSchema = new mongoose.Schema(
       }
     ],
 
-    // Payment Tracking
-    paymentStatus: {
-      type: String,
-      enum: ['Unpaid', 'Partial', 'Paid', 'Overdue'],
-      default: 'Unpaid'
-    },
-    totalReceived: {
-      type: Number,
-      default: 0
-    },
-    lastPaymentDate: {
-      type: Date
-    },
-
     // Status
     status: { 
       type: String, 
       enum: ['Draft', 'Saved', 'Paid', 'Unpaid', 'Cancelled'], 
       default: 'Saved' 
+    },
+
+    // Audit Trail
+    createdBy: {
+      type: String,
+      default: 'System',
+      description: 'User name who created the invoice'
+    },
+    updatedBy: {
+      type: String,
+      default: 'System',
+      description: 'User name who last updated the invoice'
     },
 
     // Soft Delete
@@ -248,7 +246,7 @@ const SalesInvoiceSchema = new mongoose.Schema(
     }
   },
   { 
-    timestamps: false 
+    timestamps: true
   }
 );
 

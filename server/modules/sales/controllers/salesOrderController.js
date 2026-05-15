@@ -24,7 +24,6 @@ export const getNextOrderNumber = async (req, res) => {
 // Create sales order
 export const createSalesOrder = async (req, res) => {
   try {
-    console.log("📝 Creating SalesOrder with payload:", JSON.stringify(req.body, null, 2));
     const order = new SalesOrder(req.body);
     await order.save();
     
@@ -32,11 +31,8 @@ export const createSalesOrder = async (req, res) => {
     await order.populate('customerId');
     await order.populate('items.productId');
     
-    console.log("✅ SalesOrder created successfully:", order._id);
     res.status(201).json(order);
   } catch (err) {
-    console.error("❌ SalesOrder creation error:", err.message);
-    console.error("Error details:", err);
     res.status(400).json({ error: err.message });
   }
 };

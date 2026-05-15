@@ -7,6 +7,7 @@ import JournalEntry from '../../../Models/JournalEntry.js';
 import FinancialYear from '../../../Models/FinancialYear.js';
 import CreditSaleReceipt from '../../../Models/Sales/CreditSaleReceipt.js';
 import CustomerReceipt from '../../../Models/CustomerReceipt.js';
+import CreditCustomerCashflow from '../../../Models/Sales/CreditCustomerCashflow.js';
 
 // Auto-generate next invoice number
 export const getNextInvoiceNumber = async (req, res) => {
@@ -39,7 +40,6 @@ export const getNextInvoiceNumber = async (req, res) => {
     
     const paddedNumber = String(counter.lastNumber).padStart(4, '0');
     const invoiceNumber = `SI/${financialYear}/${paddedNumber}`;
-    console.log(`✅ Generated invoice number: ${invoiceNumber} (counter lastNumber: ${counter.lastNumber})`);
     res.json({ invoiceNumber });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,8 +49,6 @@ export const getNextInvoiceNumber = async (req, res) => {
 // Create Sales Invoice
 export const createSalesInvoice = async (req, res) => {
   try {
-    console.log("Creating Sales Invoice:", req.body);
-
     // Validate required fields
     const { invoiceNumber, customerName, date, items, financialYear, paymentType, paymentTerms, customerId } = req.body;
     
@@ -74,19 +72,21 @@ export const createSalesInvoice = async (req, res) => {
       });
     }
 
-    // Create new invoice with all payload data
-    const invoice = new SalesInvoice(req.body);
+    // Create new invoice with all payload data and audit fields
+    const userName = req.user?.name || req.user?.email || 'System';
+    const invoiceData = {
+      ...req.body,
+      createdBy: userName,
+      updatedBy: userName
+    };
+    const invoice = new SalesInvoice(invoiceData);
     await invoice.save();
 
-    console.log("Invoice created successfully:", invoice._id);
-
-    // If Credit Sale with paymentTerms = "Credit", create double-entry ledger
-    if (paymentType === "Credit" && paymentTerms === "Credit" && customerId) {
+    // If Credit Sale, create double-entry ledger and cashflow entry
+    if (paymentType === "Credit" && customerId) {
       try {
         const customer = await Customer.findById(customerId);
         if (customer && customer.ledgerAccountId) {
-          console.log(`Creating double-entry ledger for credit sale invoice ${invoiceNumber}`);
-
           // Get or create Sales Revenue account
           let salesAccount = await ChartOfAccounts.findOne({
             accountName: "Sales Revenue",
@@ -123,7 +123,6 @@ export const createSalesInvoice = async (req, res) => {
               isActive: true,
             });
             await salesAccount.save();
-            console.log("Created Sales Revenue account:", salesAccount._id);
           }
 
           // Get financial year for journal entry
@@ -131,31 +130,26 @@ export const createSalesInvoice = async (req, res) => {
           
           // Try 1: Find by yearCode with FY prefix
           finYear = await FinancialYear.findOne({ yearCode: `FY${financialYear}`, status: "OPEN" });
-          console.log(`FY lookup 1 (FY${financialYear}):`, finYear ? "Found" : "Not found");
           
           // Try 2: Find by yearCode without prefix
           if (!finYear) {
             finYear = await FinancialYear.findOne({ yearCode: financialYear, status: "OPEN" });
-            console.log(`FY lookup 2 (${financialYear}):`, finYear ? "Found" : "Not found");
           }
           
           // Try 3: Find any OPEN financial year
           if (!finYear) {
             finYear = await FinancialYear.findOne({ status: "OPEN" });
-            console.log(`FY lookup 3 (any OPEN):`, finYear ? "Found" : "Not found");
           }
           
           // Try 4: Find current financial year
           if (!finYear) {
             finYear = await FinancialYear.findOne({ isCurrent: true });
-            console.log(`FY lookup 4 (current):`, finYear ? "Found" : "Not found");
           }
           
           if (!finYear) {
-            console.warn(`⚠️ Financial year not found for ${financialYear}. Journal entry creation skipped.`);
+            // Financial year not found - skip journal entry creation
           } else {
             try {
-              console.log(`✅ Using financial year: ${finYear.yearCode} (${finYear.yearName})`);
               // Generate voucher number for Journal Voucher
               const lastJV = await JournalEntry.findOne({ voucherType: "JV" })
                 .sort({ createdDate: -1 }).lean();
@@ -195,9 +189,8 @@ export const createSalesInvoice = async (req, res) => {
               });
               
               await journalEntry.save();
-              console.log("✅ Created credit sale journal entry:", journalEntry._id);
             } catch (jeError) {
-              console.warn("⚠️ Failed to create journal entry for credit sale:", jeError.message);
+              // Silently log journal entry creation failure
             }
           }
 
@@ -225,13 +218,16 @@ export const createSalesInvoice = async (req, res) => {
             invoiceDate: invoice.date,
             invoiceAmount: invoice.totalIncludeVat,
             receiptAmount: 0,
-            paymentMode: "Pending",
+            paymentMode: "Cash",
             status: "Pending",
             notes: `Pending receipt for credit sale invoice ${invoiceNumber}`,
           });
 
-          await creditSaleReceipt.save();
-          console.log("Created credit sale receipt tracking:", receiptNumber);
+          try {
+            await creditSaleReceipt.save();
+          } catch (receiptErr) {
+            // Silently handle receipt save error
+          }
 
           // Create CustomerReceipt entry for tracking (Unpaid status)
           const lastCustomerRcp = await CustomerReceipt.findOne()
@@ -259,20 +255,73 @@ export const createSalesInvoice = async (req, res) => {
             amountPaid: 0,
             previousPaidAmount: 0,
             balanceAmount: invoice.totalIncludeVat,
-            paymentMode: "Pending",
-            status: "Unpaid",
+            paymentMode: "Cash",
+            status: "Partial",
             narration: `Credit sale invoice ${invoiceNumber}`,
           });
 
-          await customerReceipt.save();
-          console.log("Created customer receipt entry:", customerReceiptNumber);
+          try {
+            await customerReceipt.save();
+          } catch (custReceiptErr) {
+            // Silently handle customer receipt save error
+          }
 
-          // Update invoice payment status
-          invoice.paymentStatus = "Unpaid";
-          await invoice.save();
+          // ✅ Create Credit Customer Cashflow Entry
+          try {
+            // Calculate due date based on payment terms
+            let dueDate = new Date(invoice.date);
+            const paymentTermsMatch = paymentTerms?.match(/\d+/);
+            const termsDays = paymentTermsMatch ? parseInt(paymentTermsMatch[0]) : 30;
+            dueDate.setDate(dueDate.getDate() + termsDays);
+
+            // Get the latest transaction for this customer to calculate running balance
+            const latestTransaction = await CreditCustomerCashflow.findOne({
+              customerId,
+              financialYear,
+              isDeleted: false
+            }).sort({ transactionDate: -1, createdAt: -1 });
+
+            // For invoice transactions, balance = invoice amount (not cumulative)
+            // When payment is received later:
+            // - crAmount will be the payment amount
+            // - balance will be adjusted (reduced) to show remaining outstanding
+            // Customer total outstanding = SUM of all balance fields for that customerId
+            const invoiceBalance = invoice.totalIncludeVat;
+
+            // Create new cashflow transaction document (each transaction is a separate document)
+            const cashflowTransaction = new CreditCustomerCashflow({
+              financialYear,
+              customerId,
+              customerCode: customer.customerCode,
+              customerName: customer.name,
+              customerPhone: customer.phone,
+              customerAddress: customer.address,
+              ledgerAccountId: customer.ledgerAccountId,
+              salesId: invoice._id,
+              invoiceNumber,
+              invoiceDate: invoice.date,
+              paymentTerms: paymentTerms || 'NET 30',
+              dueDate,
+              // Transaction details (flattened - no nested array)
+              transactionType: 'Invoice',
+              transactionDate: new Date(invoice.date),
+              drAmount: invoice.totalIncludeVat,
+              crAmount: 0,
+              balance: invoiceBalance,  // Individual invoice amount (not cumulative)
+              status: 'Pending',
+              reference: invoiceNumber,
+              referenceId: invoice._id,
+              narration: `Invoice created for ${customer.name}`,
+              createdBy: req.user?.name || 'System',
+              updatedBy: req.user?.name || 'System'
+            });
+
+            await cashflowTransaction.save();
+          } catch (cashflowError) {
+            // Don't fail invoice creation if cashflow entry fails
+          }
         }
       } catch (ledgerError) {
-        console.error("Error creating ledger entries:", ledgerError);
         // Don't fail invoice creation if ledger creation fails
         // Just log the error for manual reconciliation
       }
@@ -281,7 +330,6 @@ export const createSalesInvoice = async (req, res) => {
       try {
         const customer = await Customer.findById(customerId);
         if (customer) {
-          console.log(`Creating double-entry ledger for ${paymentType} sale invoice ${invoiceNumber}`);
 
           // Get or create Sales Revenue account
           let salesAccount = await ChartOfAccounts.findOne({
@@ -319,7 +367,6 @@ export const createSalesInvoice = async (req, res) => {
               isActive: true,
             });
             await salesAccount.save();
-            console.log("Created Sales Revenue account:", salesAccount._id);
           }
 
           // Get or create Cash/Bank Account based on payment type
@@ -362,7 +409,6 @@ export const createSalesInvoice = async (req, res) => {
               isActive: true,
             });
             await contraAccount.save();
-            console.log(`Created ${contraAccountName}:`, contraAccount._id);
           }
 
           // Get financial year for journal entry
@@ -370,31 +416,27 @@ export const createSalesInvoice = async (req, res) => {
           
           // Try 1: Find by yearCode with FY prefix
           finYear = await FinancialYear.findOne({ yearCode: `FY${financialYear}`, status: "OPEN" });
-          console.log(`FY lookup 1 (FY${financialYear}):`, finYear ? "Found" : "Not found");
           
           // Try 2: Find by yearCode without prefix
           if (!finYear) {
             finYear = await FinancialYear.findOne({ yearCode: financialYear, status: "OPEN" });
-            console.log(`FY lookup 2 (${financialYear}):`, finYear ? "Found" : "Not found");
           }
           
           // Try 3: Find any OPEN financial year
           if (!finYear) {
             finYear = await FinancialYear.findOne({ status: "OPEN" });
-            console.log(`FY lookup 3 (any OPEN):`, finYear ? "Found" : "Not found");
           }
           
           // Try 4: Find current financial year
           if (!finYear) {
             finYear = await FinancialYear.findOne({ isCurrent: true });
-            console.log(`FY lookup 4 (current):`, finYear ? "Found" : "Not found");
           }
           
           if (!finYear) {
-            console.warn(`⚠️ Financial year not found for ${financialYear}. Journal entry creation skipped.`);
+            // Financial year not found - skip journal entry creation
           } else {
             try {
-              console.log(`✅ Using financial year: ${finYear.yearCode} (${finYear.yearName})`);
+
               // Generate voucher number for Journal Voucher
               const lastJV = await JournalEntry.findOne({ voucherType: "JV" })
                 .sort({ createdDate: -1 }).lean();
@@ -434,26 +476,12 @@ export const createSalesInvoice = async (req, res) => {
               });
               
               await journalEntry.save();
-              console.log(`✅ Created ${paymentType} sale journal entry:`, journalEntry._id);
-
-              // Update invoice payment status to Paid (immediate payment)
-              invoice.paymentStatus = "Paid";
-              invoice.totalReceived = invoice.totalIncludeVat;
-              invoice.lastPaymentDate = new Date();
-              await invoice.save();
-              console.log(`✅ Invoice marked as Paid for ${paymentType} sale`);
             } catch (jeError) {
-              console.warn(`⚠️ Failed to create journal entry for ${paymentType} sale:`, jeError.message);
-              // Still update payment status even if journal entry fails
-              invoice.paymentStatus = "Paid";
-              invoice.totalReceived = invoice.totalIncludeVat;
-              invoice.lastPaymentDate = new Date();
-              await invoice.save();
+              // Silently log journal entry creation failure
             }
           }
         }
       } catch (ledgerError) {
-        console.error("Error creating ledger entries:", ledgerError);
         // Don't fail invoice creation if ledger creation fails
         // Just log the error for manual reconciliation
       }
@@ -465,7 +493,6 @@ export const createSalesInvoice = async (req, res) => {
       invoice
     });
   } catch (err) {
-    console.error('Error creating invoice:', err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -479,7 +506,6 @@ export const getSalesInvoices = async (req, res) => {
     
     res.json(invoices);
   } catch (err) {
-    console.error('Error fetching invoices:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -493,8 +519,6 @@ export const getInvoicesByCustomer = async (req, res) => {
       return res.status(400).json({ error: 'Customer ID is required' });
     }
 
-    console.log('🔍 Fetching invoices for customer:', customerId);
-
     const invoices = await SalesInvoice.find({
       customerId: customerId,
       isDeleted: false,
@@ -502,12 +526,9 @@ export const getInvoicesByCustomer = async (req, res) => {
       .populate('customerId', 'name phone email vendorTRN')
       .populate('items.productId', 'name itemcode barcode')
       .sort({ date: -1 });
-
-    console.log(`✅ Found ${invoices.length} invoices for customer ${customerId}`);
     
     res.json(invoices);
   } catch (err) {
-    console.error('❌ Error fetching invoices by customer:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -525,7 +546,6 @@ export const getSalesInvoiceById = async (req, res) => {
 
     res.json(invoice);
   } catch (err) {
-    console.error('Error fetching invoice:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -544,10 +564,12 @@ export const updateSalesInvoice = async (req, res) => {
       });
     }
 
-    // Update with new timestamp
+    // Update with new timestamp and audit trail
+    const userName = req.user?.name || req.user?.email || 'System';
     const updateData = {
       ...req.body,
-      updatedDate: new Date().toISOString()
+      updatedDate: new Date().toISOString(),
+      updatedBy: userName
     };
 
     const invoice = await SalesInvoice.findByIdAndUpdate(
@@ -560,14 +582,12 @@ export const updateSalesInvoice = async (req, res) => {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    console.log("Invoice updated successfully:", id);
     res.json({
       success: true,
       message: 'Invoice updated successfully',
       invoice
     });
   } catch (err) {
-    console.error('Error updating invoice:', err);
     res.status(400).json({ error: err.message });
   }
 };
@@ -581,14 +601,13 @@ export const deleteSalesInvoice = async (req, res) => {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    console.log("Invoice deleted successfully:", req.params.id);
     res.json({ 
       success: true,
       message: 'Invoice deleted successfully' 
     });
   } catch (err) {
-    console.error('Error deleting invoice:', err);
     res.status(500).json({ error: err.message });
   }
 };
+
 

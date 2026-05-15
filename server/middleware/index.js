@@ -86,12 +86,16 @@ const authenticateToken = (req, res, next) => {
     
     // Attach user info to request
     req.user = {
+      id: decoded.userId,
       _id: decoded.userId,
+      name: decoded.fullName,           // ← Use fullName (e.g., "System Administrator")
       username: decoded.username,
+      fullName: decoded.fullName,
+      email: decoded.email,
       role: decoded.role,
     };
     
-    console.log(`✅ Auth successful: User ${decoded.username} (${decoded.userId})`);
+    console.log(`✅ Auth successful: User ${decoded.fullName} (${decoded.userId})`);
     next();
   } catch (err) {
     console.error('❌ JWT verification failed:', err.message);
