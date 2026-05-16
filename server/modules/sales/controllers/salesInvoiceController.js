@@ -6,7 +6,6 @@ import AccountGroup from '../../../Models/AccountGroup.js';
 import JournalEntry from '../../../Models/JournalEntry.js';
 import FinancialYear from '../../../Models/FinancialYear.js';
 import CreditSaleReceipt from '../../../Models/Sales/CreditSaleReceipt.js';
-import CustomerReceipt from '../../../Models/CustomerReceipt.js';
 import CreditCustomerCashflow from '../../../Models/Sales/CreditCustomerCashflow.js';
 
 // Auto-generate next invoice number
@@ -229,44 +228,7 @@ export const createSalesInvoice = async (req, res) => {
             // Silently handle receipt save error
           }
 
-          // Create CustomerReceipt entry for tracking (Unpaid status)
-          const lastCustomerRcp = await CustomerReceipt.findOne()
-            .sort({ receiptNumber: -1 });
-
-          let customerReceiptNumber = "RCP001";
-          if (lastCustomerRcp?.receiptNumber) {
-            const num = parseInt(lastCustomerRcp.receiptNumber.replace(/\D/g, ""), 10);
-            customerReceiptNumber = `RCP${String(num + 1).padStart(3, "0")}`;
-          }
-
-          const customerReceipt = new CustomerReceipt({
-            receiptNumber: customerReceiptNumber,
-            financialYear,
-            receiptDate: new Date(date),
-            customerId,
-            customerName: customer.name,
-            customerCode: customer.customerCode,
-            ledgerAccountId: customer.ledgerAccountId,
-            receiptType: "Against Invoice",
-            invoiceId: invoice._id,
-            invoiceNumber,
-            invoiceDate: invoice.date,
-            invoiceNetAmount: invoice.totalIncludeVat,
-            amountPaid: 0,
-            previousPaidAmount: 0,
-            balanceAmount: invoice.totalIncludeVat,
-            paymentMode: "Cash",
-            status: "Partial",
-            narration: `Credit sale invoice ${invoiceNumber}`,
-          });
-
-          try {
-            await customerReceipt.save();
-          } catch (custReceiptErr) {
-            // Silently handle customer receipt save error
-          }
-
-          // ✅ Create Credit Customer Cashflow Entry
+          // ✅ Create Credit Customer Cashflow Entry (replaces CustomerReceipt for tracking)
           try {
             // Calculate due date based on payment terms
             let dueDate = new Date(invoice.date);
