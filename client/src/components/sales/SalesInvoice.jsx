@@ -1320,13 +1320,16 @@ const SalesInvoice = () => {
               (grossProfit / parseFloat(totals.subtotal)) * 100
             )
           : 0;
+      // ✅ CORRECTED: Net Profit excludes VAT per accounting standards
+      // Net Profit = Sales - Cost (after discounts, but BEFORE VAT)
+      // VAT is a liability to government, NOT company income
       const netProfit = round(
-        parseFloat(totals.total) - totalCost
+        parseFloat(totals.subtotal) - totalCost
       );
       const netProfitMargin =
-        parseFloat(totals.total) > 0
+        parseFloat(totals.subtotal) > 0
           ? round(
-              (netProfit / parseFloat(totals.total)) * 100
+              (netProfit / parseFloat(totals.subtotal)) * 100
             )
           : 0;
 
@@ -1372,6 +1375,8 @@ const SalesInvoice = () => {
 
         // Cost and Profitability Analysis (All with dynamic decimal precision)
         totalCost: totalCost,
+        // ✅ Total cost including VAT (for full accounting view)
+        totalCostWithVat: round(totalCost * (1 + customerTaxRateForInvoice / 100)),
         grossProfit: grossProfit,
         grossProfitMargin: grossProfitMargin,
         netProfit: netProfit,
@@ -1403,10 +1408,12 @@ const SalesInvoice = () => {
             itemAmount > 0
               ? round((itemGrossProfit / itemAmount) * 100)
               : 0;
-          const itemNetProfit = round(itemTotal - itemTotalCost);
+          // ✅ CORRECTED: Item Net Profit excludes VAT
+          // Using itemAmount (before VAT) instead of itemTotal (after VAT)
+          const itemNetProfit = round(itemAmount - itemTotalCost);
           const itemNetProfitMargin =
-            itemTotal > 0
-              ? round((itemNetProfit / itemTotal) * 100)
+            itemAmount > 0
+              ? round((itemNetProfit / itemAmount) * 100)
               : 0;
 
           return {
@@ -1422,7 +1429,11 @@ const SalesInvoice = () => {
 
             // Cost Information
             unitCost: round(item.cost),
+            // ✅ Unit cost including VAT (for full accounting view)
+            unitCostWithVat: round(item.cost * (1 + customerTaxRate / 100)),
             lineCost: itemTotalCost,
+            // ✅ Line cost including VAT (for full accounting view)
+            lineCostWithVat: round(itemTotalCost * (1 + customerTaxRate / 100)),
 
             // Discount Details
             discountPercentage: round(item.itemDiscount ?? 0),

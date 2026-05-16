@@ -702,6 +702,7 @@ const SalesOrder = () => {
       totalItemQty,
       totalItems: items.length,
       vatAmount: totalVat, // ✅ Set the header-level VAT amount
+      totalCost, // ✅ Add totalCost to state for use in payload
     }));
   };
 
@@ -768,6 +769,9 @@ const SalesOrder = () => {
         vatPercentage: avgTaxPercent,
         vatAmount: orderData.vatAmount || 0,
         totalIncludeVat: orderData.totalIncludeVat,
+        // ✅ Total cost including VAT (for full accounting view)
+        totalCost: orderData.totalCost || 0,
+        totalCostWithVat: (orderData.totalCost || 0) * (1 + avgTaxPercent / 100),
         totalItems: orderData.totalItems,
         totalItemQty: orderData.totalItemQty,
         notes: orderData.notes,
@@ -781,7 +785,11 @@ const SalesOrder = () => {
           unitPrice: item.unitPrice,
           lineAmount: item.lineAmount,
           unitCost: item.unitCost,
+          // ✅ Unit cost including VAT (for full accounting view)
+          unitCostWithVat: (item.unitCost || 0) * (1 + (item.taxPercent || 0) / 100),
           lineCost: item.lineCost,
+          // ✅ Line cost including VAT (for full accounting view)
+          lineCostWithVat: (item.lineCost || 0) * (1 + (item.taxPercent || 0) / 100),
           discountPercentage: item.discountPercentage,
           discountAmount: item.discountAmount,
           amountAfterDiscount: item.amountAfterDiscount,

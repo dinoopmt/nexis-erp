@@ -85,8 +85,11 @@ export class SalesInvoiceCalculationService {
   static calculateProfitMetrics(subtotal, grandTotal, totalCost, round) {
     const grossProfit = round(subtotal - totalCost);
     const grossProfitMargin = subtotal > 0 ? round((grossProfit / subtotal) * 100) : 0;
-    const netProfit = round(grandTotal - totalCost);
-    const netProfitMargin = grandTotal > 0 ? round((netProfit / grandTotal) * 100) : 0;
+    // ✅ CORRECTED: Net Profit excludes VAT per accounting standards
+    // Net Profit = Sales - Cost (after discounts, but BEFORE VAT)
+    // VAT is a liability to government, NOT company income
+    const netProfit = round(subtotal - totalCost);
+    const netProfitMargin = subtotal > 0 ? round((netProfit / subtotal) * 100) : 0;
 
     return {
       grossProfit,

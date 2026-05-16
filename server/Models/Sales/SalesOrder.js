@@ -106,6 +106,11 @@ const SalesOrderSchema = new mongoose.Schema(
       type: Number, 
       default: 0 
     },
+    // ✅ Cost including VAT (for full accounting view)
+    totalCostWithVat: { 
+      type: Number, 
+      default: 0 
+    },
     grossProfit: { 
       type: Number, 
       default: 0 
@@ -181,7 +186,17 @@ const SalesOrderSchema = new mongoose.Schema(
           type: Number, 
           default: 0 
         },
+        // ✅ Unit cost including VAT (for full accounting view)
+        unitCostWithVat: { 
+          type: Number, 
+          default: 0 
+        },
         lineCost: { 
+          type: Number, 
+          default: 0 
+        },
+        // ✅ Line cost including VAT (for full accounting view)
+        lineCostWithVat: { 
           type: Number, 
           default: 0 
         },
