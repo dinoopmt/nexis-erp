@@ -4,14 +4,15 @@ import axios from "axios";
 import { API_URL } from "../../config/config";
 import useDecimalFormat from "../../hooks/useDecimalFormat";
 import { useTaxMaster } from "../../hooks/useTaxMaster";
+import { useValidationToast } from "../../hooks/useValidationToast";
 
 const CustomerReceipts = () => {
   // Get company data for country-based filtering
   const { company } = useTaxMaster();
+  const { showApiError, showSuccess, showWarning } = useValidationToast();
   const [receipts, setReceipts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalReceipts, setTotalReceipts] = useState(0);
   const [customerAdvances, setCustomerAdvances] = useState({});
@@ -42,12 +43,15 @@ const CustomerReceipts = () => {
   const [selectedInvoices, setSelectedInvoices] = useState([]); // Array for multiple invoice selection
   const [selectedAdvance, setSelectedAdvance] = useState(null); // Selected advance to apply
   const [appliedAdvanceAmount, setAppliedAdvanceAmount] = useState(0); // Amount of advance applied
+  const [availableAccounts, setAvailableAccounts] = useState([]); // Available cash/bank accounts
   const [formData, setFormData] = useState({
     customerId: "",
     invoiceId: "", // Keep for backward compatibility
     receiptType: "Against Invoice",
     amountPaid: "",
+    discount: "",
     paymentMode: "Cash",
+    selectedAccountId: "", // Account to debit
     receiptDate: new Date().toISOString().split("T")[0],
     bankName: "",
     chequeNumber: "",
@@ -60,7 +64,19 @@ const CustomerReceipts = () => {
   // Fetch customers
   useEffect(() => {
     fetchCustomers();
+    fetchAvailableAccounts();
   }, []);
+
+  const fetchAvailableAccounts = async () => {
+    try {
+      // Fetch all bank and cash accounts from receipt routes
+      const response = await axios.get(`${API_URL}/customer-receipts/getAvailableAccounts`);
+      setAvailableAccounts(response.data.accounts || []);
+    } catch (err) {
+      console.error("Error fetching accounts:", err);
+      setAvailableAccounts([]);
+    }
+  };
 
   // Fetch receipts
   useEffect(() => {
@@ -89,9 +105,8 @@ const CustomerReceipts = () => {
       const response = await axios.get(url);
       setReceipts(response.data.receipts || []);
       setTotalReceipts(response.data.total || 0);
-      setError("");
     } catch (err) {
-      setError("Failed to fetch receipts");
+      showApiError(err);
       console.error(err);
     } finally {
       setLoading(false);
@@ -153,39 +168,194 @@ const CustomerReceipts = () => {
     return selectedInvoices.reduce((sum, inv) => sum + inv.balance, 0);
   };
 
+  /**
+   * Handle Against Invoice Receipt
+   * - Fully settle selected invoices
+   * - Allocate payment invoice-wise (can be cash + discount + advance)
+   * - Create accounting entries for cash/discount/advance
+   * - Update credit_customer_cashflows with "Settled" status
+   * - Create receipt collection record
+   */
+  const handleAgainstInvoiceReceipt = async (amountPaid, discountGiven, appliedAdvanceAmount) => {
+    const invoiceAllocations = [];
+    let totalOriginalBalance = 0;
+    let totalAllocatedAmount = 0;
+    
+    // Allocate payment across selected invoices
+    const totalPayment = amountPaid + discountGiven + appliedAdvanceAmount;
+    let remainingAmount = totalPayment;
+    
+    for (const invoice of selectedInvoices) {
+      if (remainingAmount <= 0) break;
+      
+      const allocatedAmount = Math.min(remainingAmount, invoice.balance);
+      totalOriginalBalance += invoice.balance;
+      totalAllocatedAmount += allocatedAmount;
+      
+      invoiceAllocations.push({
+        invoiceId: invoice.invoiceId,
+        invoiceNumber: invoice.invoiceNumber,
+        invoiceDate: invoice.invoiceDate,
+        invoiceAmount: invoice.invoiceAmount,
+        originalBalance: invoice.balance,
+        allocatedAmount: parseFloat(allocatedAmount.toFixed(2)),
+        // Split allocation between cash, discount, and advance
+        cashAllocated: Math.min(remainingAmount, allocatedAmount, amountPaid),
+        discountAllocated: discountGiven > 0 ? Math.min(discountGiven, allocatedAmount - Math.min(remainingAmount, amountPaid)) : 0,
+        advanceAllocated: appliedAdvanceAmount > 0 ? Math.min(appliedAdvanceAmount, allocatedAmount - Math.min(remainingAmount, amountPaid) - discountGiven) : 0,
+      });
+      
+      remainingAmount = parseFloat((remainingAmount - allocatedAmount).toFixed(2));
+    }
+
+    const payload = {
+      customerId: formData.customerId,
+      invoiceId: selectedInvoices.length === 1 ? selectedInvoices[0].invoiceId : null,
+      invoiceAllocations: invoiceAllocations,
+      receiptType: "Against Invoice",
+      amountPaid: amountPaid,
+      discount: discountGiven,
+      selectedAccountId: formData.selectedAccountId || null,
+      paymentMode: formData.paymentMode,
+      receiptDate: formData.receiptDate,
+      bankName: formData.bankName,
+      chequeNumber: formData.chequeNumber,
+      chequeDate: formData.chequeDate,
+      referenceNumber: formData.referenceNumber,
+      narration: formData.narration,
+      financialYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1).toString().slice(-2),
+      // Advance application
+      appliedAdvanceId: selectedAdvance ? selectedAdvance._id : null,
+      advanceAmountApplied: appliedAdvanceAmount || 0,
+      // Totals for backend calculation
+      invoiceWiseSettlement: true, // Flag for invoice-wise settlement
+      totalOriginalBalance: totalOriginalBalance, // Used to calculate if invoice is fully settled
+      totalAllocatedAmount: totalAllocatedAmount, // Used to calculate if invoice is fully settled
+      // IMPORTANT: Do NOT store status in customer_receipts collection
+      // Status is maintained ONLY in credit_customer_cashflows collection
+      // Backend should calculate status on read from totalOriginalBalance vs totalAllocatedAmount if needed
+      // Accounting entries will be created on backend
+      createAccountingEntries: true,
+      updateCreditCashflows: true, // Update status in credit_customer_cashflows based on allocations
+    };
+
+    return payload;
+  };
+
+  /**
+   * Handle On Account Receipt
+   * - Record payment against customer's account (not tied to specific invoices)
+   * - Create accounting entries for cash/discount/advance
+   * - Update customer balance
+   * - NOTE: Status is maintained in credit_customer_cashflows only, NOT in customer_receipts
+   */
+  const handleOnAccountReceipt = async (amountPaid, discountGiven, appliedAdvanceAmount) => {
+    const payload = {
+      customerId: formData.customerId,
+      receiptType: "On Account",
+      amountPaid: amountPaid,
+      discount: discountGiven,
+      selectedAccountId: formData.selectedAccountId || null,
+      paymentMode: formData.paymentMode,
+      receiptDate: formData.receiptDate,
+      bankName: formData.bankName,
+      chequeNumber: formData.chequeNumber,
+      chequeDate: formData.chequeDate,
+      referenceNumber: formData.referenceNumber,
+      narration: formData.narration,
+      financialYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1).toString().slice(-2),
+      // Advance application
+      appliedAdvanceId: selectedAdvance ? selectedAdvance._id : null,
+      advanceAmountApplied: appliedAdvanceAmount || 0,
+      // IMPORTANT: Do NOT store status in customer_receipts collection
+      // Status is maintained ONLY in credit_customer_cashflows
+      // Accounting entries
+      createAccountingEntries: true,
+    };
+
+    return payload;
+  };
+
+  /**
+   * Handle Advance Receipt
+   * - Record advance payment from customer
+   * - Create accounting entries
+   * - Store advance for future use
+   * - NOTE: Status is maintained in credit_customer_cashflows only, NOT in customer_receipts
+   */
+  const handleAdvanceReceipt = async (amountPaid, discountGiven, appliedAdvanceAmount) => {
+    const payload = {
+      customerId: formData.customerId,
+      receiptType: "Advance",
+      amountPaid: amountPaid,
+      discount: discountGiven,
+      selectedAccountId: formData.selectedAccountId || null,
+      paymentMode: formData.paymentMode,
+      receiptDate: formData.receiptDate,
+      bankName: formData.bankName,
+      chequeNumber: formData.chequeNumber,
+      chequeDate: formData.chequeDate,
+      referenceNumber: formData.referenceNumber,
+      narration: formData.narration,
+      financialYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1).toString().slice(-2),
+      // IMPORTANT: Do NOT store status in customer_receipts collection
+      // Status is maintained ONLY in credit_customer_cashflows
+      // Accounting entries
+      createAccountingEntries: true,
+      createAdvanceRecord: true, // Store as advance for future use
+    };
+
+    return payload;
+  };
+
   const handleSaveReceipt = async () => {
     if (!formData.customerId) {
-      setError("Please select a customer");
+      showWarning("Please select a customer");
       return;
     }
 
     if (formData.receiptType === "Against Invoice" && selectedInvoices.length === 0) {
-      setError("Please select at least one invoice");
+      showWarning("Please select at least one invoice");
       return;
     }
 
-    // Allow zero amount if an advance is being applied, otherwise amount must be > 0
+    // Calculate payment components
     const amountPaidValue = parseFloat(formData.amountPaid || 0);
+    const discountValue = parseFloat(formData.discount || 0);
     const isAdvanceBeingApplied = selectedAdvance && appliedAdvanceAmount > 0;
+    const totalPaymentAmount = amountPaidValue + discountValue + appliedAdvanceAmount;
     
-    if (!isAdvanceBeingApplied && amountPaidValue <= 0) {
-      setError("Please enter a valid amount");
+    // Allow zero amount if advance, discount, or cash is provided
+    if (totalPaymentAmount <= 0) {
+      showWarning("Please enter amount paid, discount, or apply an advance");
       return;
     }
 
     if (amountPaidValue < 0) {
-      setError("Amount paid cannot be negative");
+      showWarning("Amount received cannot be negative");
       return;
     }
 
-    // Validate total payment (cash + advance) covers at least the invoices
+    if (discountValue < 0) {
+      showWarning("Discount cannot be negative");
+      return;
+    }
+
+    // Validate total payment (cash + discount + advance) covers at least the invoices
     if (formData.receiptType === "Against Invoice" && selectedInvoices.length > 0) {
       const totalOutstandingAmount = parseFloat(calculateTotalOutstanding());
-      const totalPaymentAmount = amountPaidValue + appliedAdvanceAmount;
       
       if (totalPaymentAmount < totalOutstandingAmount) {
-        setError(
+        showWarning(
           `Total payment (${currency}${formatNumber(totalPaymentAmount)}) must cover invoice balance (${currency}${formatNumber(totalOutstandingAmount)})`
+        );
+        return;
+      }
+
+      // For Against Invoice: Only allow FULL payment, no partial payments allowed
+      if (totalPaymentAmount > totalOutstandingAmount) {
+        showWarning(
+          `For "Against Invoice" receipts, payment must exactly match or be less than invoice balance. Please adjust the payment amount.`
         );
         return;
       }
@@ -194,58 +364,29 @@ const CustomerReceipts = () => {
     try {
       setLoading(true);
       const amountPaid = parseFloat(formData.amountPaid);
+      const discountGiven = parseFloat(formData.discount || 0);
       
-      // Build invoice allocations for multiple invoices
-      let invoiceAllocations = [];
-      if (formData.receiptType === "Against Invoice" && selectedInvoices.length > 0) {
-        // Total payment = cash + advance
-        const totalPayment = amountPaid + appliedAdvanceAmount;
-        let remainingAmount = totalPayment;
-        
-        // Allocate total payment to invoices in selected order
-        for (const invoice of selectedInvoices) {
-          if (remainingAmount <= 0) break;
-          
-          const allocatedAmount = Math.min(remainingAmount, invoice.balance);
-          invoiceAllocations.push({
-            invoiceId: invoice.invoiceId,
-            invoiceNumber: invoice.invoiceNumber,
-            invoiceDate: invoice.invoiceDate,
-            invoiceAmount: invoice.invoiceAmount,
-            allocatedAmount: parseFloat(allocatedAmount.toFixed(2))
-          });
-          
-          remainingAmount = parseFloat((remainingAmount - allocatedAmount).toFixed(2));
-        }
+      // Route to appropriate handler based on receipt type
+      let payload;
+      
+      if (formData.receiptType === "Against Invoice") {
+        payload = await handleAgainstInvoiceReceipt(amountPaid, discountGiven, appliedAdvanceAmount);
+      } else if (formData.receiptType === "On Account") {
+        payload = await handleOnAccountReceipt(amountPaid, discountGiven, appliedAdvanceAmount);
+      } else if (formData.receiptType === "Advance") {
+        payload = await handleAdvanceReceipt(amountPaid, discountGiven, appliedAdvanceAmount);
+      } else {
+        throw new Error("Invalid receipt type");
       }
-
-      const payload = {
-        customerId: formData.customerId,
-        invoiceId: selectedInvoices.length === 1 ? selectedInvoices[0].invoiceId : null,
-        invoiceAllocations: invoiceAllocations.length > 0 ? invoiceAllocations : undefined,
-        receiptType: formData.receiptType,
-        amountPaid: amountPaid,
-        paymentMode: formData.paymentMode,
-        receiptDate: formData.receiptDate,
-        bankName: formData.bankName,
-        chequeNumber: formData.chequeNumber,
-        chequeDate: formData.chequeDate,
-        referenceNumber: formData.referenceNumber,
-        narration: formData.narration,
-        financialYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1).toString().slice(-2),
-        // Advance application
-        appliedAdvanceId: selectedAdvance ? selectedAdvance._id : null,
-        advanceAmountApplied: appliedAdvanceAmount || 0,
-      };
 
       await axios.post(`${API_URL}/customer-receipts/addcustomer-receipt`, payload);
 
-      setError("");
+      showSuccess("Receipt saved successfully");
       setIsModalOpen(false);
       resetForm();
       fetchReceipts();
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to save receipt");
+      showApiError(err);
     } finally {
       setLoading(false);
     }
@@ -256,9 +397,10 @@ const CustomerReceipts = () => {
 
     try {
       await axios.delete(`${API_URL}/customer-receipts/deletecustomer-receipt/${id}`);
+      showSuccess("Receipt deleted successfully");
       fetchReceipts();
     } catch (err) {
-      setError("Failed to delete receipt");
+      showApiError(err);
       console.error(err);
     }
   };
@@ -267,7 +409,7 @@ const CustomerReceipts = () => {
     if (!reversingId) return;
 
     if (!reversalReason.trim()) {
-      setError("Please provide a reason for reversal");
+      showWarning("Please provide a reason for reversal");
       return;
     }
 
@@ -277,14 +419,14 @@ const CustomerReceipts = () => {
         reversalReason: reversalReason.trim(),
       });
 
-      setError("");
+      showSuccess("Receipt reversed successfully");
       setIsReverseModalOpen(false);
       setReversalReason("");
       setReversingId(null);
       fetchReceipts();
       setIsViewModalOpen(false);
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to reverse receipt");
+      showApiError(err);
     } finally {
       setLoading(false);
     }
@@ -296,7 +438,9 @@ const CustomerReceipts = () => {
       invoiceId: "",
       receiptType: "Against Invoice",
       amountPaid: "",
+      discount: "",
       paymentMode: "Cash",
+      selectedAccountId: "",
       receiptDate: new Date().toISOString().split("T")[0],
       bankName: "",
       chequeNumber: "",
@@ -314,7 +458,7 @@ const CustomerReceipts = () => {
   // Apply advance to selected invoices
   const handleApplyAdvance = (advance) => {
     if (selectedInvoices.length === 0) {
-      setError("Please select at least one invoice first");
+      showWarning("Please select at least one invoice first");
       return;
     }
 
@@ -498,13 +642,6 @@ const CustomerReceipts = () => {
           </div>
         )}
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-xs">
-            {error}
-          </div>
-        )}
-
         {/* Receipts Table */}
         <div className="bg-white rounded-lg shadow flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto">
@@ -514,10 +651,10 @@ const CustomerReceipts = () => {
                   <th className="px-3 py-2 text-left text-xs font-semibold">Receipt #</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold">Customer</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold">Type</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold">Invoice</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold">Amount Paid</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold">Balance</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold">Status</th>
+                  
+                  <th className="px-3 py-2 text-right text-xs font-semibold">Amount Received</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold">Discount paid</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold">Total</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold">Date</th>
                   <th className="px-3 py-2 text-center text-xs font-semibold">Actions</th>
                 </tr>
@@ -544,17 +681,15 @@ const CustomerReceipts = () => {
                         <span className="text-base">{getTypeIcon(receipt.receiptType)}</span>
                         <span className="ml-1">{receipt.receiptType}</span>
                       </td>
-                      <td className="px-3 py-2 text-xs">{receipt.invoiceNumber || "-"}</td>
+                      
                       <td className="px-3 py-2 text-right font-semibold text-green-600 text-xs">
-                        {formatNumber(receipt.amountPaid)}
+                        {currency}{formatNumber(receipt.amountPaid || 0)}
                       </td>
                       <td className="px-3 py-2 text-right font-semibold text-orange-600 text-xs">
-                        {formatNumber(receipt.balanceAmount)}
+                        {currency}{formatNumber(receipt.discount || 0)}
                       </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${getStatusBadgeColor(receipt.status)}`}>
-                          {receipt.status}
-                        </span>
+                      <td className="px-3 py-2 text-right font-semibold text-gray-900 text-xs">
+                        {currency}{formatNumber((receipt.amountPaid || 0) + (receipt.discount || 0))}
                       </td>
                       <td className="px-3 py-2 text-xs">
                         {new Date(receipt.receiptDate).toLocaleDateString()}
@@ -834,49 +969,68 @@ const CustomerReceipts = () => {
                 {/* Invoice Selection (for Against Invoice) */}
                 {formData.receiptType === "Against Invoice" && formData.customerId && (
                   <div>
-                    <label className="block text-xs font-semibold mb-1 text-gray-700">
+                    <label className="block text-xs font-semibold mb-2 text-gray-700">
                       Outstanding Invoices * (Check one or more)
                     </label>
-                    <div className="space-y-1 max-h-40 overflow-y-auto border border-gray-300 rounded p-2 text-sm">
+                    <div className="border border-gray-300 rounded overflow-hidden max-h-48 overflow-y-auto">
                       {invoices.length === 0 ? (
-                        <p className="text-gray-500 text-xs">No outstanding invoices</p>
+                        <div className="p-3 text-center text-gray-500 text-xs">No outstanding invoices</div>
                       ) : (
-                        invoices.map((inv) => {
-                          const isSelected = selectedInvoices.some(s => s.invoiceId === inv.invoiceId);
-                          return (
-                            <div
-                              key={inv.invoiceId}
-                              className={`p-2 border rounded cursor-pointer transition text-xs ${
-                                isSelected
-                                  ? "border-blue-500 bg-blue-50"
-                                  : "border-gray-300 hover:border-blue-300"
-                              }`}
-                            >
-                              <div className="flex items-start gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => handleToggleInvoiceSelection(inv)}
-                                  className="mt-0.5 w-3 h-3 cursor-pointer"
-                                />
-                                <div className="flex-1 min-w-0" onClick={() => handleToggleInvoiceSelection(inv)}>
-                                  <p className="font-semibold text-xs">{inv.invoiceNumber}</p>
-                                  <p className="text-xs text-gray-500">
-                                    {new Date(inv.invoiceDate).toLocaleDateString()}
-                                  </p>
-                                </div>
-                                <div className="text-right whitespace-nowrap">
-                                  <p className="text-xs">
-                                    Amt: <span className="font-semibold">{formatNumber(inv.invoiceAmount)}</span>
-                                  </p>
-                                  <p className="text-xs text-orange-600">
-                                    Bal: <span className="font-semibold">{formatNumber(inv.balance)}</span>
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-100 border-b border-gray-300 sticky top-0">
+                            <tr>
+                              <th className="p-2 text-center font-semibold text-gray-700 w-8">#</th>
+                              <th className="p-2 text-left font-semibold text-gray-700 min-w-32">Invoice</th>
+                              <th className="p-2 text-right font-semibold text-gray-700 min-w-24">Amount</th>
+                              <th className="p-2 text-right font-semibold text-gray-700 min-w-24">Received</th>
+                              <th className="p-2 text-right font-semibold text-gray-700 min-w-24">Balance</th>
+                              <th className="p-2 text-center font-semibold text-gray-700 w-12">Pay</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {invoices.map((inv, idx) => {
+                              const isSelected = selectedInvoices.some(s => s.invoiceId === inv.invoiceId);
+                              return (
+                                <tr
+                                  key={inv.invoiceId}
+                                  className={`border-b border-gray-200 hover:bg-blue-50 transition ${
+                                    isSelected ? "bg-blue-100" : "bg-white"
+                                  }`}
+                                >
+                                  <td className="p-2 text-center">{idx + 1}</td>
+                                  <td className="p-2">
+                                    <div
+                                      className="cursor-pointer"
+                                      onClick={() => handleToggleInvoiceSelection(inv)}
+                                    >
+                                      <p className="font-semibold text-gray-900">{inv.invoiceNumber}</p>
+                                      <p className="text-gray-500 text-xs">
+                                        {new Date(inv.invoiceDate).toLocaleDateString()}
+                                      </p>
+                                    </div>
+                                  </td>
+                                  <td className="p-2 text-right font-semibold text-gray-700">
+                                    {currency}{formatNumber(inv.invoiceAmount)}
+                                  </td>
+                                  <td className="p-2 text-right font-semibold text-green-600">
+                                    {currency}{formatNumber(inv.paid || 0)}
+                                  </td>
+                                  <td className="p-2 text-right font-bold text-red-600">
+                                    {currency}{formatNumber(inv.balance)}
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleToggleInvoiceSelection(inv)}
+                                      className="w-4 h-4 cursor-pointer accent-blue-600"
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       )}
                     </div>
 
@@ -884,40 +1038,51 @@ const CustomerReceipts = () => {
                     {selectedInvoices.length > 0 && (
                       <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                         <p className="font-semibold text-blue-900 mb-1">
-                          Selected: {selectedInvoices.length} inv(s) | 
-                          {selectedAdvance ? (
-                            <>
-                              Total: {currency}{formatNumber(calculateTotalOutstanding())} | After Advance: {currency}{formatNumber(Math.max(0, calculateTotalOutstanding() - appliedAdvanceAmount))}
-                            </>
-                          ) : (
-                            <>Total: {currency}{formatNumber(calculateTotalOutstanding())}</>
-                          )}
+                          ✓ Selected: {selectedInvoices.length} invoice(s)
                         </p>
-                        <div className="text-blue-700 space-y-0.5">
-                          {selectedInvoices.map((inv) => (
-                            <div key={inv.invoiceId} className="flex justify-between">
-                              <span>{inv.invoiceNumber}</span>
-                              <span className="font-semibold">
-                                {currency}{formatNumber(inv.balance)}
-                                {selectedAdvance && (
-                                  <span className="text-xs text-gray-600">
-                                    {" → " + currency}{formatNumber(Math.max(0, inv.balance - appliedAdvanceAmount))}
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left font-semibold text-blue-900 border-b border-blue-200">
+                              <th className="pb-1">Invoice</th>
+                              <th className="pb-1 text-right">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedInvoices.map((inv) => (
+                              <tr key={inv.invoiceId} className="text-blue-700">
+                                <td className="py-0.5">{inv.invoiceNumber}</td>
+                                <td className="text-right font-semibold">
+                                  {currency}{formatNumber(inv.balance)}
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="border-t border-blue-200 font-bold text-blue-900">
+                              <td className="pt-1">Total Outstanding</td>
+                              <td className="text-right pt-1">
+                                {selectedAdvance ? (
+                                  <span>
+                                    {currency}{formatNumber(calculateTotalOutstanding())} 
+                                    <span className="text-green-600 ml-1">
+                                      (Adv: -{currency}{formatNumber(appliedAdvanceAmount)})
+                                    </span>
                                   </span>
+                                ) : (
+                                  currency + formatNumber(calculateTotalOutstanding())
                                 )}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Amount */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Amount & Discount */}
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-xs font-semibold mb-1 text-gray-700">
-                      Amount Paid {selectedAdvance && "(Cash Only)"} *
+                      Amount Received {selectedAdvance && "(Cash Only)"} *
                     </label>
                     <input
                       type="number"
@@ -932,6 +1097,23 @@ const CustomerReceipts = () => {
                         + {currency}{formatNumber(appliedAdvanceAmount)} (advance) = {currency}{formatNumber(parseFloat(formData.amountPaid || 0) + appliedAdvanceAmount)} total
                       </p>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-gray-700">
+                      Discount Paid
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.discount}
+                      onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-green-500 outline-none"
+                      placeholder="0.00"
+                    />
+                    <p className="text-xs text-gray-500 mt-1 px-1">
+                      Concession/Waiver
+                    </p>
                   </div>
 
                   {selectedInvoices.length > 0 && (
@@ -1033,15 +1215,80 @@ const CustomerReceipts = () => {
                   </div>
                 )}
 
+                {/* Discount Accounting Allocation - Universal Accounting Law */}
+                {formData.discount && parseFloat(formData.discount) > 0 && (
+                  <div className="p-2 bg-green-50 border border-green-200 rounded text-xs">
+                    <p className="font-semibold text-green-900 mb-1">🎯 Discount Allocation (Accounting)</p>
+                    <div className="space-y-1 text-green-800">
+                      <div className="flex justify-between p-1 bg-white rounded border border-green-200">
+                        <span className="font-semibold">DR</span>
+                        <span>Discount Expense</span>
+                        <span className="font-bold text-red-600">{currency}{formatNumber(parseFloat(formData.discount))}</span>
+                      </div>
+                      <div className="flex justify-between p-1 bg-white rounded border border-green-200">
+                        <span className="font-semibold">CR</span>
+                        <span>
+                          Customer Account 
+                          {formData.customerId && (
+                            <span className="ml-1">
+                              ({customers.find(c => c._id === formData.customerId)?.name})
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-bold text-blue-600">{currency}{formatNumber(parseFloat(formData.discount))}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-green-700 italic">
+                        ✓ Concession/Waiver recorded as expense - Customer receivable reduced by discount amount
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Combined Receipt Summary - Shows total cash received vs discount vs invoice allocation */}
+                {(formData.amountPaid || formData.discount) && selectedInvoices.length > 0 && (
+                  <div className="p-2 bg-indigo-50 border border-indigo-200 rounded text-xs">
+                    <p className="font-semibold text-indigo-900 mb-1">📋 Receipt Summary</p>
+                    <table className="w-full text-indigo-800">
+                      <tbody>
+                        <tr className="border-b border-indigo-200">
+                          <td className="py-0.5">Cash Received</td>
+                          <td className="text-right font-semibold">{currency}{formatNumber(parseFloat(formData.amountPaid || 0))}</td>
+                        </tr>
+                        {formData.discount && parseFloat(formData.discount) > 0 && (
+                          <tr className="border-b border-indigo-200">
+                            <td className="py-0.5">Discount/Waiver Given</td>
+                            <td className="text-right font-semibold text-red-600">-{currency}{formatNumber(parseFloat(formData.discount))}</td>
+                          </tr>
+                        )}
+                        <tr className="font-bold border-t-2 border-indigo-400">
+                          <td className="py-0.5">Total Invoice Settlement</td>
+                          <td className="text-right">
+                            {currency}{formatNumber(
+                              parseFloat(formData.amountPaid || 0) + parseFloat(formData.discount || 0) + (selectedAdvance ? appliedAdvanceAmount : 0)
+                            )}
+                          </td>
+                        </tr>
+                        {selectedAdvance && appliedAdvanceAmount > 0 && (
+                          <tr className="text-amber-700 text-xs italic">
+                            <td colSpan="2" className="py-0.5">
+                              (Including {currency}{formatNumber(appliedAdvanceAmount)} advance applied)
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 {/* Payment Details */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-semibold mb-1 text-gray-700">
-                      Payment Mode *
+                      Receipt Mode *
                     </label>
                     <select
                       value={formData.paymentMode}
-                      onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value, selectedAccountId: "" })}
                       className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       <option value="Cash">Cash</option>
@@ -1050,6 +1297,39 @@ const CustomerReceipts = () => {
                       <option value="Online">Online</option>
                       <option value="Card">Card</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-gray-700">
+                      {formData.paymentMode === "Cheque" ? "Bank Account *" : `${formData.paymentMode} Account *`}
+                    </label>
+                    <select
+                      value={formData.selectedAccountId}
+                      onChange={(e) => setFormData({ ...formData, selectedAccountId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                    >
+                      <option value="">Select Account...</option>
+                      {availableAccounts
+                        .filter(acc => {
+                          if (formData.paymentMode === "Cash") return acc.accountType === "Cash";
+                          if (formData.paymentMode === "Bank" || formData.paymentMode === "Cheque") return acc.accountType === "Bank";
+                          if (formData.paymentMode === "Online") return acc.accountType === "Bank";
+                          if (formData.paymentMode === "Card") return acc.accountType === "Bank";
+                          return false;
+                        })
+                        .map((acc) => (
+                          <option key={acc._id} value={acc._id}>
+                            {acc.accountName} ({acc.accountNumber})
+                          </option>
+                        ))}
+                    </select>
+                    {availableAccounts.filter(acc => {
+                      if (formData.paymentMode === "Cash") return acc.accountType === "Cash";
+                      if (formData.paymentMode === "Bank" || formData.paymentMode === "Cheque") return acc.accountType === "Bank";
+                      return false;
+                    }).length === 0 && (
+                      <p className="text-xs text-red-600 mt-1">⚠️ No {formData.paymentMode} accounts available</p>
+                    )}
                   </div>
 
                   <div>
@@ -1178,21 +1458,27 @@ const CustomerReceipts = () => {
                     <div>
                       <p className="text-xs text-gray-500 uppercase">Invoice Amount</p>
                       <p className="font-semibold text-sm text-green-600">
-                        {formatNumber(selectedReceipt.invoiceNetAmount)}
+                        {currency}{formatNumber(selectedReceipt.invoiceNetAmount || 0)}
                       </p>
                     </div>
                   </>
                 )}
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">Amount Paid</p>
+                  <p className="text-xs text-gray-500 uppercase">Amount Received</p>
                   <p className="font-semibold text-sm text-blue-600">
-                    {formatNumber(selectedReceipt.amountPaid)}
+                    {currency}{formatNumber(selectedReceipt.amountPaid || 0)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase">Discount Given</p>
+                  <p className="font-semibold text-sm text-orange-600">
+                    {currency}{formatNumber(selectedReceipt.discount || 0)}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Balance</p>
-                  <p className="font-semibold text-sm text-orange-600">
-                    {formatNumber(selectedReceipt.balanceAmount)}
+                  <p className="font-semibold text-sm text-purple-600">
+                    {currency}{formatNumber(selectedReceipt.balanceAmount || 0)}
                   </p>
                 </div>
                 <div>
@@ -1202,7 +1488,7 @@ const CustomerReceipts = () => {
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">payment Mode</p>
+                  <p className="text-xs text-gray-500 uppercase">Payment Mode</p>
                   <p className="font-semibold text-sm">{selectedReceipt.paymentMode}</p>
                 </div>
                 <div>
@@ -1212,6 +1498,66 @@ const CustomerReceipts = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Payment Summary Card */}
+              <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded">
+                <p className="text-xs font-semibold text-gray-900 mb-2">📊 Payment Summary</p>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-white p-2 rounded border border-blue-100">
+                    <p className="text-gray-600 uppercase font-semibold">Cash/Check</p>
+                    <p className="text-lg font-bold text-blue-600">
+                      {currency}{formatNumber(selectedReceipt.amountPaid || 0)}
+                    </p>
+                  </div>
+                  <div className="bg-white p-2 rounded border border-orange-100">
+                    <p className="text-gray-600 uppercase font-semibold">Discount</p>
+                    <p className="text-lg font-bold text-orange-600">
+                      {currency}{formatNumber(selectedReceipt.discount || 0)}
+                    </p>
+                  </div>
+                  <div className="bg-white p-2 rounded border border-green-100">
+                    <p className="text-gray-600 uppercase font-semibold">Total Applied</p>
+                    <p className="text-lg font-bold text-green-600">
+                      {currency}{formatNumber((selectedReceipt.amountPaid || 0) + (selectedReceipt.discount || 0))}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Details (for Bank/Cheque) */}
+              {(selectedReceipt.paymentMode === "Bank" || selectedReceipt.paymentMode === "Cheque") && (
+                <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-xs font-semibold text-blue-900 mb-2">💳 Payment Details</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {selectedReceipt.bankName && (
+                      <div>
+                        <p className="text-gray-600 uppercase font-semibold">Bank Name</p>
+                        <p className="font-semibold text-gray-800">{selectedReceipt.bankName}</p>
+                      </div>
+                    )}
+                    {selectedReceipt.chequeNumber && (
+                      <div>
+                        <p className="text-gray-600 uppercase font-semibold">Cheque Number</p>
+                        <p className="font-semibold text-gray-800">{selectedReceipt.chequeNumber}</p>
+                      </div>
+                    )}
+                    {selectedReceipt.chequeDate && (
+                      <div>
+                        <p className="text-gray-600 uppercase font-semibold">Cheque Date</p>
+                        <p className="font-semibold text-gray-800">
+                          {new Date(selectedReceipt.chequeDate).toLocaleDateString()}
+                        </p>
+                      </div>
+                    )}
+                    {selectedReceipt.referenceNumber && (
+                      <div>
+                        <p className="text-gray-600 uppercase font-semibold">Reference #</p>
+                        <p className="font-semibold text-gray-800">{selectedReceipt.referenceNumber}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Applied Advance Info */}
               {selectedReceipt.advanceAmountApplied > 0 && (

@@ -95,6 +95,10 @@ const CustomerReceiptSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    discount: {
+      type: Number,
+      default: 0,
+    },
     previousPaidAmount: {
       type: Number,
       default: 0,
@@ -125,13 +129,6 @@ const CustomerReceiptSchema = new mongoose.Schema(
       type: String,
     },
 
-    // Status
-    status: {
-      type: String,
-      enum: ['Advance', 'Partial', 'Full', 'Paid', 'Reversed'],
-      required: true,
-    },
-
     // Ledger Entry References
     debitEntryId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -140,6 +137,11 @@ const CustomerReceiptSchema = new mongoose.Schema(
     creditEntryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'JournalEntry',
+    },
+    discountEntryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JournalEntry',
+      sparse: true,
     },
 
     // Reversal Information

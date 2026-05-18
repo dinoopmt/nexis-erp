@@ -5,7 +5,6 @@ import ChartOfAccounts from '../../../Models/ChartOfAccounts.js';
 import AccountGroup from '../../../Models/AccountGroup.js';
 import JournalEntry from '../../../Models/JournalEntry.js';
 import FinancialYear from '../../../Models/FinancialYear.js';
-import CreditSaleReceipt from '../../../Models/Sales/CreditSaleReceipt.js';
 import CreditCustomerCashflow from '../../../Models/Sales/CreditCustomerCashflow.js';
 
 // Auto-generate next invoice number
@@ -191,41 +190,6 @@ export const createSalesInvoice = async (req, res) => {
             } catch (jeError) {
               // Silently log journal entry creation failure
             }
-          }
-
-          // Create initial credit sale receipt (Unpaid status)
-          const lastReceipt = await CreditSaleReceipt.findOne()
-            .sort({ receiptNumber: -1 });
-
-          let receiptNumber = "CSR001";
-          if (lastReceipt?.receiptNumber) {
-            const num = parseInt(lastReceipt.receiptNumber.replace(/\D/g, ""), 10);
-            receiptNumber = `CSR${String(num + 1).padStart(3, "0")}`;
-          }
-
-          const creditSaleReceipt = new CreditSaleReceipt({
-            receiptNumber,
-            financialYear,
-            receiptDate: new Date(date),
-            customerId,
-            customerName: customer.name,
-            customerCode: customer.customerCode,
-            ledgerAccountId: customer.ledgerAccountId,
-            receiptType: "Full",
-            invoiceId: invoice._id,
-            invoiceNumber,
-            invoiceDate: invoice.date,
-            invoiceAmount: invoice.totalIncludeVat,
-            receiptAmount: 0,
-            paymentMode: "Cash",
-            status: "Pending",
-            notes: `Pending receipt for credit sale invoice ${invoiceNumber}`,
-          });
-
-          try {
-            await creditSaleReceipt.save();
-          } catch (receiptErr) {
-            // Silently handle receipt save error
           }
 
           // ✅ Create Credit Customer Cashflow Entry (replaces CustomerReceipt for tracking)

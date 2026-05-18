@@ -10,7 +10,6 @@ import Customer from '../../../Models/Customer.js';
 import ChartOfAccounts from '../../../Models/ChartOfAccounts.js';
 import AccountGroup from '../../../Models/AccountGroup.js';
 import JournalEntry from '../../../Models/JournalEntry.js';
-import CreditSaleReceipt from '../../../Models/Sales/CreditSaleReceipt.js';
 import CustomerReceipt from '../../../Models/CustomerReceipt.js';
 import logger from '../../../config/logger.js';
 import AppError from '../../../config/errorHandler.js';

@@ -6,6 +6,7 @@ import ChartOfAccounts from "../../../Models/ChartOfAccounts.js";
 import AccountGroup from "../../../Models/AccountGroup.js";
 import JournalEntry from "../../../Models/JournalEntry.js";
 import FinancialYear from "../../../Models/FinancialYear.js";
+import CreditCustomerCashflow from "../../../Models/Sales/CreditCustomerCashflow.js";
 import { updateCashflowOnPaymentReceipt, updateCashflowOnAdvanceApplication } from "../../../services/creditCustomerCashflowService.js";
 
 const router = express.Router();
@@ -19,6 +20,8 @@ router.post("/addcustomer-receipt", async (req, res) => {
       invoiceAllocations: incomingAllocations,
       receiptType,
       amountPaid,
+      discount,
+      selectedAccountId,
       paymentMode,
       receiptDate,
       financialYear,
@@ -56,8 +59,8 @@ router.post("/addcustomer-receipt", async (req, res) => {
     let invoiceNetAmount = 0;
     let previousPaidAmount = 0;
     
-    // Calculate total payment including advance
-    const totalPayment = amountPaid + (advanceAmountApplied || 0);
+    // ✅ FIX: Calculate total payment INCLUDING DISCOUNT and advance
+    const totalPayment = amountPaid + parseFloat(discount || 0) + (advanceAmountApplied || 0);
 
     // Validate Against Invoice receipt type
     if (receiptType === "Against Invoice") {
@@ -213,6 +216,7 @@ router.post("/addcustomer-receipt", async (req, res) => {
       invoiceNetAmount,
       invoiceAllocations: invoiceAllocations || [],
       amountPaid,
+      discount: parseFloat(discount || 0),
       previousPaidAmount,
       balanceAmount,
       paymentMode,
@@ -221,13 +225,109 @@ router.post("/addcustomer-receipt", async (req, res) => {
       chequeDate,
       referenceNumber,
       narration,
-      status: calculatedStatus,
+      // ✅ NOTE: Status field removed from customer_receipts
+      // Status is now ONLY maintained in credit_customer_cashflows collection
+      // Backend calculates status there based on allocations and payment amounts
       appliedAdvanceId: appliedAdvanceId || null,
       advanceAmountApplied: advanceAmountApplied || 0,
     });
 
     await customerReceipt.save();
     console.log(`Customer receipt created: ${newReceiptNumber}`);
+
+    // ✅ UPDATE CREDIT CUSTOMER CASHFLOW BASED ON RECEIPT
+    if (receiptType === "Against Invoice" && invoiceAllocations && invoiceAllocations.length > 0) {
+      try {
+        console.log(`\n🔄 STARTING CASHFLOW UPDATE PROCESS`);
+        console.log(`   Receipt: ${newReceiptNumber}`);
+        console.log(`   Customer ID: ${customerId}`);
+        console.log(`   Allocations: ${invoiceAllocations.length}`);
+        
+        // Update cashflow for each allocated invoice
+        for (const allocation of invoiceAllocations) {
+          console.log(`\n   📍 Processing allocation for invoice: ${allocation.invoiceNumber}`);
+          console.log(`      - Invoice ID: ${allocation.invoiceId}`);
+          console.log(`      - Allocated Amount: ₹${allocation.allocatedAmount}`);
+          
+          // Build query parameters
+          const queryParams = {
+            customerId,
+            salesId: allocation.invoiceId,
+            isDeleted: false
+          };
+          console.log(`      - Query: customerId=${customerId}, salesId=${allocation.invoiceId}, isDeleted=false`);
+
+          const cashflowEntry = await CreditCustomerCashflow.findOne(queryParams);
+          console.log(`      - Query Result: ${cashflowEntry ? '✅ FOUND' : '❌ NOT FOUND'}`);
+
+          if (cashflowEntry) {
+            console.log(`      - Current Balance: ₹${cashflowEntry.balance}`);
+            console.log(`      - Current Status: ${cashflowEntry.status}`);
+            
+            // ✅ FIX: Calculate new balance after payment
+            // NOTE: Discount is at receipt-level, NOT per-invoice
+            // Discount details are stored in customer_receipts collection
+            // Cashflow just tracks: invoiceAmount - (payment + discount + advance)
+            
+            // Invoice original balance was: invoiceAmount
+            // After this payment: invoiceAmount - allocation.allocatedAmount
+            const newBalance = Math.max(0, cashflowEntry.balance - allocation.allocatedAmount);
+            
+            // Determine new status based on remaining balance
+            let newStatus = "Pending";
+            if (newBalance === 0) {
+              newStatus = "Settled";
+            } else if (newBalance > 0) {
+              newStatus = "Pending";
+            }
+
+            console.log(`      - Allocated Amount (Payment): ₹${allocation.allocatedAmount}`);
+            console.log(`      - NEW Balance: ₹${newBalance}`);
+            console.log(`      - NEW Status: ${newStatus}`);
+            console.log(`      - NOTE: Discount (₹${parseFloat(discount || 0)}) stored in customer_receipts, not here`);
+
+            // ✅ Update the cashflow entry with ONLY payment amount
+            // Discount is NOT stored per-invoice because it's receipt-level
+            // For reversal: all receipt details available in customer_receipts collection
+            const updateData = {
+              balance: newBalance,
+              crAmount: allocation.allocatedAmount,  // Payment received (cash only)
+              status: newStatus,
+              updatedDate: new Date(),
+              updatedBy: "System",
+              narration: `Payment received via receipt ${newReceiptNumber}`
+              // ❌ Removed: discountAmount - it's redundant and causes duplication
+            };
+            
+            console.log(`      - Executing update with data:`, updateData);
+
+            const updatedCashflow = await CreditCustomerCashflow.findByIdAndUpdate(
+              cashflowEntry._id,
+              updateData,
+              { new: true }
+            );
+
+            if (updatedCashflow) {
+              console.log(`✅ CASHFLOW SUCCESSFULLY UPDATED`);
+              console.log(`   Verified - New Balance: ₹${updatedCashflow.balance}, Status: ${updatedCashflow.status}`);
+            } else {
+              console.error(`❌ UPDATE RETURNED NULL - Cashflow not updated`);
+            }
+          } else {
+            console.warn(`\n⚠️ CASHFLOW NOT FOUND for:
+              - Customer: ${customerId}
+              - Invoice/Sales ID: ${allocation.invoiceId}
+              - Checked in: credit_customer_cashflows
+              - Query: ${JSON.stringify(queryParams)}`);
+          }
+        }
+        console.log(`\n✅ CASHFLOW UPDATE PROCESS COMPLETED\n`);
+      } catch (cashflowError) {
+        console.error("❌ ERROR updating credit customer cashflow:", cashflowError.message);
+        console.error(cashflowError.stack);
+        // Don't fail receipt creation if cashflow update fails
+      }
+    }
 
     // Handle advance application
     if (appliedAdvanceId && advanceAmountApplied > 0) {
@@ -250,48 +350,60 @@ router.post("/addcustomer-receipt", async (req, res) => {
       try {
         console.log(`Creating ledger entries for receipt ${newReceiptNumber}`);
 
-        // Determine debit account based on payment mode
-        let debitAccountName = paymentMode === "Bank" ? "Bank Account" : "Cash Account";
-        let debitAccount = await ChartOfAccounts.findOne({
-          accountName: debitAccountName,
-          isDeleted: false,
-        });
+        // Determine debit account - use selectedAccountId if provided
+        let debitAccount = null;
 
-        if (!debitAccount) {
-          // Find or create the Bank/Cash account group
-          let bankCashGroup = await AccountGroup.findOne({
-            code: paymentMode === "Bank" ? "BAM" : "CASH",
-            isActive: true
+        if (selectedAccountId) {
+          // Use the account selected by user
+          debitAccount = await ChartOfAccounts.findById(selectedAccountId);
+          if (!debitAccount) {
+            console.error(`Selected account ${selectedAccountId} not found`);
+            return res.status(400).json({ message: "Selected account not found" });
+          }
+        } else {
+          // Fallback: Find or create default account (legacy behavior)
+          let debitAccountName = paymentMode === "Bank" ? "Bank Account" : "Cash Account";
+          debitAccount = await ChartOfAccounts.findOne({
+            accountName: debitAccountName,
+            isDeleted: false,
           });
 
-          if (!bankCashGroup) {
-            const groupName = paymentMode === "Bank" ? "BANK ACCOUNTS" : "CASH ACCOUNTS";
-            const groupCode = paymentMode === "Bank" ? "BAM" : "CASH";
-            
-            bankCashGroup = new AccountGroup({
-              name: groupName,
-              code: groupCode,
-              description: `All ${groupName}`,
-              level: 1,
-              type: "ASSET",
-              accountCategory: "BALANCE_SHEET",
-              nature: "DEBIT",
-              allowPosting: true,
+          if (!debitAccount) {
+            // Find or create the Bank/Cash account group
+            let bankCashGroup = await AccountGroup.findOne({
+              code: paymentMode === "Bank" ? "BAM" : "CASH",
               isActive: true
             });
-            await bankCashGroup.save();
-          }
 
-          debitAccount = new ChartOfAccounts({
-            accountNumber: paymentMode === "Bank" ? "BANK-001" : "CASH-001",
-            accountName: debitAccountName,
-            accountGroupId: bankCashGroup._id,
-            description: `Default ${paymentMode} Account`,
-            allowPosting: true,
-            accountCategory: "BALANCE_SHEET",
-            isActive: true,
-          });
-          await debitAccount.save();
+            if (!bankCashGroup) {
+              const groupName = paymentMode === "Bank" ? "BANK ACCOUNTS" : "CASH ACCOUNTS";
+              const groupCode = paymentMode === "Bank" ? "BAM" : "CASH";
+              
+              bankCashGroup = new AccountGroup({
+                name: groupName,
+                code: groupCode,
+                description: `All ${groupName}`,
+                level: 1,
+                type: "ASSET",
+                accountCategory: "BALANCE_SHEET",
+                nature: "DEBIT",
+                allowPosting: true,
+                isActive: true
+              });
+              await bankCashGroup.save();
+            }
+
+            debitAccount = new ChartOfAccounts({
+              accountNumber: paymentMode === "Bank" ? "BANK-001" : "CASH-001",
+              accountName: debitAccountName,
+              accountGroupId: bankCashGroup._id,
+              description: `Default ${paymentMode} Account`,
+              allowPosting: true,
+              accountCategory: "BALANCE_SHEET",
+              isActive: true,
+            });
+            await debitAccount.save();
+          }
         }
 
         // Fetch FinancialYear to get its ID
@@ -345,6 +457,86 @@ router.post("/addcustomer-receipt", async (req, res) => {
 
           const savedCreditEntry = await creditEntry.save();
           customerReceipt.creditEntryId = savedCreditEntry._id;
+
+          // Discount Expense Entry (if discount is given)
+          if (discount && parseFloat(discount) > 0) {
+            try {
+              // Get or create Discount Expense account
+              let discountExpenseAccount = await ChartOfAccounts.findOne({
+                accountName: "Discount Expense",
+                isDeleted: false,
+              });
+
+              if (!discountExpenseAccount) {
+                // Find or create Expense account group
+                let expenseGroup = await AccountGroup.findOne({
+                  code: "EXP",
+                  isActive: true
+                });
+
+                if (!expenseGroup) {
+                  expenseGroup = new AccountGroup({
+                    name: "EXPENSES",
+                    code: "EXP",
+                    description: "All Expense Accounts",
+                    level: 1,
+                    type: "EXPENSE",
+                    accountCategory: "PROFIT_LOSS",
+                    nature: "DEBIT",
+                    allowPosting: true,
+                    isActive: true
+                  });
+                  await expenseGroup.save();
+                }
+
+                discountExpenseAccount = new ChartOfAccounts({
+                  accountNumber: "DISC-001",
+                  accountName: "Discount Expense",
+                  accountGroupId: expenseGroup._id,
+                  description: "Customer discounts and waivers",
+                  allowPosting: true,
+                  accountCategory: "PROFIT_LOSS",
+                  isActive: true,
+                });
+                await discountExpenseAccount.save();
+              }
+
+              // Discount Entry: DR Discount Expense, CR Customer Account
+              const discountEntry = new JournalEntry({
+                voucherNumber: newReceiptNumber,
+                voucherType: "RV",
+                entryDate: new Date(receiptDate),
+                financialYearId: financialYearDoc._id,
+                description: `Discount/Waiver given - ${customer.name}`,
+                lineItems: [
+                  {
+                    accountId: discountExpenseAccount._id,
+                    debitAmount: Math.round(discount * 100), // Store in cents
+                    creditAmount: 0,
+                    description: `Discount expense - ${receiptType}`
+                  },
+                  {
+                    accountId: customer.ledgerAccountId,
+                    debitAmount: 0,
+                    creditAmount: Math.round(discount * 100), // Store in cents
+                    description: `Discount/Waiver given - reduce receivable`
+                  }
+                ],
+                totalDebit: Math.round(discount * 100),
+                totalCredit: Math.round(discount * 100),
+                status: "POSTED",
+                postedBy: "SYSTEM",
+                postedDate: new Date(),
+              });
+              
+              const savedDiscountEntry = await discountEntry.save();
+              customerReceipt.discountEntryId = savedDiscountEntry._id;
+              console.log("Created discount entry:", savedDiscountEntry._id);
+            } catch (discountError) {
+              console.error("Error creating discount entry:", discountError);
+              // Don't fail if discount entry fails
+            }
+          }
 
           await customerReceipt.save();
           console.log("Created credit entry:", savedCreditEntry._id);
@@ -561,21 +753,23 @@ router.get("/getcustomer-outstanding/:customerId", async (req, res) => {
   try {
     const { customerId } = req.params;
 
-    // Get all unpaid/partial invoices
-    const invoices = await SalesInvoice.find({
+    // Fetch pending/partial invoices from credit_customer_cashflows
+    const cashflowEntries = await CreditCustomerCashflow.find({
       customerId,
-      paymentStatus: { $in: ["Unpaid", "Partial"] },
+      status: { $in: ["Pending", "Partial"] },
       isDeleted: false,
-    }).sort({ date: -1 });
+    }).sort({ invoiceDate: -1 });
 
-    const outstanding = invoices.map((inv) => ({
-      invoiceId: inv._id,
-      invoiceNumber: inv.invoiceNumber,
-      invoiceDate: inv.date,
-      invoiceAmount: inv.totalIncludeVat,
-      paid: inv.totalReceived || 0,
-      balance: inv.totalIncludeVat - (inv.totalReceived || 0),
-      status: inv.paymentStatus,
+    const outstanding = cashflowEntries.map((entry) => ({
+      invoiceId: entry.salesId,
+      invoiceNumber: entry.invoiceNumber,
+      invoiceDate: entry.invoiceDate,
+      invoiceAmount: entry.drAmount,
+      paid: entry.drAmount - entry.balance,
+      balance: entry.balance, // Remaining balance from cashflow
+      status: entry.status,
+      dueDate: entry.dueDate,
+      paymentTerms: entry.paymentTerms,
     }));
 
     const totalOutstanding = outstanding.reduce((sum, inv) => sum + inv.balance, 0);
@@ -584,10 +778,50 @@ router.get("/getcustomer-outstanding/:customerId", async (req, res) => {
       customerId,
       outstanding,
       totalOutstanding,
-      invoiceCount: invoices.length,
+      invoiceCount: cashflowEntries.length,
     });
   } catch (error) {
     console.error("Error fetching customer outstanding:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ================= GET AVAILABLE CASH/BANK ACCOUNTS =================
+router.get("/getAvailableAccounts", async (req, res) => {
+  try {
+    // Fetch all active Cash and Bank accounts
+    const accounts = await ChartOfAccounts.find({
+      isDeleted: false,
+      isActive: true,
+      $or: [
+        { accountName: { $regex: "Cash", $options: "i" } },
+        { accountName: { $regex: "Bank", $options: "i" } }
+      ]
+    }).select("_id accountName accountNumber accountType isActive").lean();
+
+    // Map accounts with type
+    const mappedAccounts = accounts.map(acc => {
+      let accountType = "Other";
+      if (acc.accountName?.toLowerCase().includes("cash")) {
+        accountType = "Cash";
+      } else if (acc.accountName?.toLowerCase().includes("bank") || acc.accountName?.toLowerCase().includes("cheque")) {
+        accountType = "Bank";
+      }
+
+      return {
+        _id: acc._id,
+        accountName: acc.accountName,
+        accountNumber: acc.accountNumber,
+        accountType: accountType,
+      };
+    });
+
+    res.status(200).json({
+      accounts: mappedAccounts,
+      totalAccounts: mappedAccounts.length,
+    });
+  } catch (error) {
+    console.error("Error fetching available accounts:", error);
     res.status(500).json({ message: error.message });
   }
 });
