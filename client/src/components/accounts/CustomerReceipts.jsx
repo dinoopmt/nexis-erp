@@ -831,6 +831,7 @@ const CustomerReceipts = () => {
                               ...formData,
                               receiptType: e.target.value,
                               invoiceId: "",
+                              discount: type === "Against Invoice" ? formData.discount : "0", // ✅ Clear discount for On Account/Advance
                             });
                             setSelectedInvoice(null);
                             setSelectedInvoices([]);
@@ -1101,18 +1102,25 @@ const CustomerReceipts = () => {
 
                   <div>
                     <label className="block text-xs font-semibold mb-1 text-gray-700">
-                      Discount Paid
+                      Discount Given
                     </label>
                     <input
                       type="number"
                       step="0.01"
+                      disabled={formData.receiptType !== "Against Invoice"}
                       value={formData.discount}
                       onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-green-500 outline-none"
+                      className={`w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-green-500 outline-none ${
+                        formData.receiptType !== "Against Invoice" 
+                          ? "bg-gray-100 text-gray-500 cursor-not-allowed" 
+                          : "bg-white"
+                      }`}
                       placeholder="0.00"
                     />
                     <p className="text-xs text-gray-500 mt-1 px-1">
-                      Concession/Waiver
+                      {formData.receiptType === "Against Invoice" 
+                        ? "✓ Available for full invoice settlement"
+                        : "ⓘ Not applicable for this receipt type"}
                     </p>
                   </div>
 

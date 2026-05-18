@@ -230,10 +230,13 @@ router.post("/addcustomer-receipt", async (req, res) => {
       // Backend calculates status there based on allocations and payment amounts
       appliedAdvanceId: appliedAdvanceId || null,
       advanceAmountApplied: advanceAmountApplied || 0,
+      // ✅ AUDIT FIELDS: Track who created this receipt
+      createdBy: req.user?._id,
+      updatedBy: req.user?._id,
     });
 
     await customerReceipt.save();
-    console.log(`Customer receipt created: ${newReceiptNumber}`);
+    console.log(`Customer receipt created: ${newReceiptNumber} by user: ${req.user?.fullName || 'Unknown'}`);
 
     // ✅ UPDATE CREDIT CUSTOMER CASHFLOW BASED ON RECEIPT
     if (receiptType === "Against Invoice" && invoiceAllocations && invoiceAllocations.length > 0) {
@@ -294,8 +297,8 @@ router.post("/addcustomer-receipt", async (req, res) => {
               crAmount: allocation.allocatedAmount,  // Payment received (cash only)
               status: newStatus,
               updatedDate: new Date(),
-              updatedBy: "System",
-              narration: `Payment received via receipt ${newReceiptNumber}`
+              updatedBy: req.user?._id,
+              narration: `Payment received via receipt ${newReceiptNumber} by ${req.user?.fullName || 'System'}`
               // ❌ Removed: discountAmount - it's redundant and causes duplication
             };
             
@@ -326,6 +329,126 @@ router.post("/addcustomer-receipt", async (req, res) => {
         console.error("❌ ERROR updating credit customer cashflow:", cashflowError.message);
         console.error(cashflowError.stack);
         // Don't fail receipt creation if cashflow update fails
+      }
+    } else if (receiptType === "On Account" && invoiceAllocations && invoiceAllocations.length > 0) {
+      // ✅ ON ACCOUNT RECEIPT: Update cashflows for auto-allocated invoices using FIFO
+      try {
+        console.log(`\n🔄 STARTING ON ACCOUNT CASHFLOW UPDATE PROCESS`);
+        console.log(`   Receipt: ${newReceiptNumber}`);
+        console.log(`   Customer ID: ${customerId}`);
+        console.log(`   Allocations: ${invoiceAllocations.length}`);
+        
+        // Update cashflow for each auto-allocated invoice
+        for (const allocation of invoiceAllocations) {
+          console.log(`\n   📍 Processing On Account allocation for invoice: ${allocation.invoiceNumber}`);
+          console.log(`      - Invoice ID: ${allocation.invoiceId}`);
+          console.log(`      - Allocated Amount: ₹${allocation.allocatedAmount}`);
+          
+          // Find existing cashflow entry for this invoice
+          const queryParams = {
+            customerId,
+            salesId: allocation.invoiceId,
+            isDeleted: false
+          };
+          console.log(`      - Query: customerId=${customerId}, salesId=${allocation.invoiceId}`);
+
+          const cashflowEntry = await CreditCustomerCashflow.findOne(queryParams);
+          console.log(`      - Query Result: ${cashflowEntry ? '✅ FOUND' : '❌ NOT FOUND'}`);
+
+          if (cashflowEntry) {
+            console.log(`      - Current Balance: ₹${cashflowEntry.balance}`);
+            console.log(`      - Current Status: ${cashflowEntry.status}`);
+            
+            // Calculate new balance after On Account payment (FIFO allocation)
+            const newBalance = Math.max(0, cashflowEntry.balance - allocation.allocatedAmount);
+            
+            // Determine status: Settled if fully paid, else Pending
+            let newStatus = "Pending";
+            if (newBalance === 0) {
+              newStatus = "Settled";
+            }
+
+            console.log(`      - Allocated Amount: ₹${allocation.allocatedAmount}`);
+            console.log(`      - NEW Balance: ₹${newBalance}`);
+            console.log(`      - NEW Status: ${newStatus}`);
+
+            // Update cashflow with payment from On Account receipt
+            const updateData = {
+              balance: newBalance,
+              crAmount: allocation.allocatedAmount,  // Payment received (On Account)
+              status: newStatus,
+              updatedDate: new Date(),
+              updatedBy: req.user?._id,
+              narration: `On Account payment received via receipt ${newReceiptNumber} by ${req.user?.fullName || 'System'}`
+            };
+
+            const updatedCashflow = await CreditCustomerCashflow.findByIdAndUpdate(
+              cashflowEntry._id,
+              updateData,
+              { new: true }
+            );
+
+            if (updatedCashflow) {
+              console.log(`✅ ON ACCOUNT CASHFLOW SUCCESSFULLY UPDATED`);
+              console.log(`   Verified - New Balance: ₹${updatedCashflow.balance}, Status: ${updatedCashflow.status}`);
+            } else {
+              console.error(`❌ UPDATE RETURNED NULL - Cashflow not updated`);
+            }
+          } else {
+            console.warn(`⚠️ CASHFLOW NOT FOUND for invoice ${allocation.invoiceNumber}`);
+          }
+        }
+        console.log(`\n✅ ON ACCOUNT CASHFLOW UPDATE COMPLETED\n`);
+      } catch (onAccountError) {
+        console.error("❌ ERROR updating On Account cashflow:", onAccountError.message);
+        console.error(onAccountError.stack);
+        // Don't fail receipt creation if cashflow update fails
+      }
+    } else if (receiptType === "Advance") {
+      // ✅ ADVANCE RECEIPT: Create cashflow entry tracking advance received
+      try {
+        console.log(`\n💾 CREATING ADVANCE CASHFLOW ENTRY`);
+        console.log(`   Receipt: ${newReceiptNumber}`);
+        console.log(`   Customer ID: ${customerId}`);
+        console.log(`   Advance Amount: ₹${amountPaid}`);
+
+        // Fetch FinancialYear for cashflow entry
+        const financialYearDoc = await FinancialYear.findOne({ year: financialYear });
+
+        if (financialYearDoc) {
+          // Create new advance cashflow entry (tracks advance for future use)
+          const advanceCashflow = new CreditCustomerCashflow({
+            financialYear,
+            customerId,
+            customerCode: customer.customerCode,
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            customerAddress: customer.address,
+            ledgerAccountId: customer.ledgerAccountId,
+            transactionType: "AdvanceReceived",
+            transactionDate: new Date(receiptDate),
+            drAmount: 0,                    // No invoice
+            crAmount: amountPaid,           // Advance amount received
+            balance: amountPaid,            // Full amount available for future allocation
+            status: "Pending",              // Pending application to invoices
+            paymentMode,
+            reference: newReceiptNumber,
+            referenceId: customerReceipt._id,
+            receiptNumber: newReceiptNumber,
+            narration: `Advance received and held for future invoice allocation by ${req.user?.fullName || 'System'}`,
+            createdBy: req.user?._id,
+            updatedBy: req.user?._id
+          });
+
+          await advanceCashflow.save();
+          console.log(`✅ ADVANCE CASHFLOW ENTRY CREATED by ${req.user?.fullName || 'Unknown'}`);
+          console.log(`   Amount held as advance: ₹${amountPaid}`);
+        } else {
+          console.warn(`⚠️ Financial year ${financialYear} not found, skipping cashflow entry`);
+        }
+      } catch (advanceCashflowError) {
+        console.error("❌ ERROR creating advance cashflow:", advanceCashflowError.message);
+        // Don't fail receipt creation if cashflow fails
       }
     }
 
@@ -427,7 +550,7 @@ router.post("/addcustomer-receipt", async (req, res) => {
               }
             ],
             status: "POSTED",
-            postedBy: "SYSTEM",
+            postedBy: req.user?.fullName || "SYSTEM",
             postedDate: new Date(),
           });
 
@@ -451,7 +574,7 @@ router.post("/addcustomer-receipt", async (req, res) => {
               }
             ],
             status: "POSTED",
-            postedBy: "SYSTEM",
+            postedBy: req.user?.fullName || "SYSTEM",
             postedDate: new Date(),
           });
 
@@ -525,7 +648,7 @@ router.post("/addcustomer-receipt", async (req, res) => {
                 totalDebit: Math.round(discount * 100),
                 totalCredit: Math.round(discount * 100),
                 status: "POSTED",
-                postedBy: "SYSTEM",
+                postedBy: req.user?.fullName || "SYSTEM",
                 postedDate: new Date(),
               });
               
@@ -864,6 +987,7 @@ router.delete("/deletecustomer-receipt/:id", async (req, res) => {
         isDeleted: true,
         deletedAt: new Date(),
         updatedDate: new Date(),
+        updatedBy: req.user?._id,
       },
       { returnDocument: "after" }
     );
@@ -1057,7 +1181,7 @@ router.post("/reverse-receipt/:id", async (req, res) => {
           voucherNumber: `${receipt.receiptNumber}-REV`,
           voucherDate: new Date(),
           financialYear: receipt.financialYear,
-          narration: `Reversal of receipt ${receipt.receiptNumber} - ${receipt.customerName}${reversalReason ? ` - Reason: ${reversalReason}` : ""}`,
+          narration: `Reversal of receipt ${receipt.receiptNumber} - ${receipt.customerName}${reversalReason ? ` - Reason: ${reversalReason}` : ""} by ${req.user?.fullName || 'System'}`,
           accountId: receipt.creditEntryId ? (
             await JournalEntry.findById(receipt.creditEntryId)
           ).accountId : null,
@@ -1066,6 +1190,7 @@ router.post("/reverse-receipt/:id", async (req, res) => {
           creditAmount: 0,
           isPosted: true,
           createdDate: new Date(),
+          postedBy: req.user?.fullName || "SYSTEM",
         });
 
         const savedReversalDebit = await reversalDebitEntry.save();
@@ -1076,7 +1201,7 @@ router.post("/reverse-receipt/:id", async (req, res) => {
           voucherNumber: `${receipt.receiptNumber}-REV`,
           voucherDate: new Date(),
           financialYear: receipt.financialYear,
-          narration: `Reversal of receipt ${receipt.receiptNumber} - ${receipt.customerName}${reversalReason ? ` - Reason: ${reversalReason}` : ""}`,
+          narration: `Reversal of receipt ${receipt.receiptNumber} - ${receipt.customerName}${reversalReason ? ` - Reason: ${reversalReason}` : ""} by ${req.user?.fullName || 'System'}`,
           accountId: receipt.debitEntryId ? (
             await JournalEntry.findById(receipt.debitEntryId)
           ).accountId : null,
@@ -1085,6 +1210,7 @@ router.post("/reverse-receipt/:id", async (req, res) => {
           creditAmount: receipt.amountPaid,
           isPosted: true,
           createdDate: new Date(),
+          postedBy: req.user?.fullName || "SYSTEM",
         });
 
         const savedReversalCredit = await reversalCreditEntry.save();
@@ -1098,6 +1224,7 @@ router.post("/reverse-receipt/:id", async (req, res) => {
         receipt.reversalDebitEntryId = savedReversalDebit._id;
         receipt.reversalCreditEntryId = savedReversalCredit._id;
         receipt.updatedDate = new Date();
+        receipt.updatedBy = req.user?._id;
         await receipt.save();
 
         // Update invoice payment status if this was against an invoice

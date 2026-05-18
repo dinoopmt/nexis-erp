@@ -145,12 +145,12 @@ const CreditCustomerCashflowSchema = new mongoose.Schema(
       default: Date.now
     },
     updatedBy: {
-      type: String,
-      default: 'System'
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     },
     createdBy: {
-      type: String,
-      default: 'System'
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     }
   },
   {
