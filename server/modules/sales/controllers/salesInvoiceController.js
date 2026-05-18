@@ -182,12 +182,13 @@ export const createSalesInvoice = async (req, res) => {
                 totalDebit: Math.round(invoice.totalIncludeVat * 100),
                 totalCredit: Math.round(invoice.totalIncludeVat * 100),
                 status: "POSTED",
-                postedBy: "System",
+                postedBy: req.user?.fullName || "System",
                 postedDate: new Date()
               });
               
               await journalEntry.save();
             } catch (jeError) {
+              console.error(`❌ ERROR creating journal entry for invoice ${invoiceNumber}:`, jeError.message);
               // Silently log journal entry creation failure
             }
           }
@@ -238,12 +239,14 @@ export const createSalesInvoice = async (req, res) => {
               reference: invoiceNumber,
               referenceId: invoice._id,
               narration: `Invoice created for ${customer.name}`,
-              createdBy: req.user?.name || 'System',
-              updatedBy: req.user?.name || 'System'
+              createdBy: req.user?._id,
+              updatedBy: req.user?._id
             });
 
             await cashflowTransaction.save();
+            console.log(`✅ CASHFLOW ENTRY CREATED for invoice ${invoiceNumber}`);
           } catch (cashflowError) {
+            console.error(`❌ ERROR creating cashflow entry for invoice ${invoiceNumber}:`, cashflowError.message);
             // Don't fail invoice creation if cashflow entry fails
           }
         }
@@ -397,12 +400,13 @@ export const createSalesInvoice = async (req, res) => {
                 totalDebit: Math.round(invoice.totalIncludeVat * 100),
                 totalCredit: Math.round(invoice.totalIncludeVat * 100),
                 status: "POSTED",
-                postedBy: "System",
+                postedBy: req.user?.fullName || "System",
                 postedDate: new Date()
               });
               
               await journalEntry.save();
             } catch (jeError) {
+              console.error(`❌ ERROR creating journal entry for cash sale ${invoiceNumber}:`, jeError.message);
               // Silently log journal entry creation failure
             }
           }
