@@ -19,7 +19,7 @@ import Grn from '../../../Models/Grn.js';
 import CurrentStock from '../../../Models/CurrentStock.js';
 import StockMovement from '../../../Models/StockMovement.js';
 import InventoryBatch from '../../../Models/InventoryBatch.js';
-import VendorPayment from '../../../Models/VendorPayment.js';
+import VendorCashflow from '../../../Models/VendorCashflow.js';
 import StockBefore from '../../../Models/StockBefore.js';
 import AddProduct from '../../../Models/AddProduct.js';
 import GRNStockUpdateService from './GRNStockUpdateService.js';
@@ -64,7 +64,7 @@ class ImprovedGRNEditManager {
         }
 
         // Check payment status
-        const existingPayment = await VendorPayment.findOne({
+        const existingPayment = await VendorCashflow.findOne({
           grnId: oldGRN._id.toString()
         }).session(session);
 
@@ -353,16 +353,16 @@ class ImprovedGRNEditManager {
           );
 
           const newTotal = recalculatedTotals.finalTotal;
-          const oldTotal = existingPayment.initialAmount;
+          const oldTotal = existingPayment.crAmount;
           const amountDelta = newTotal - oldTotal;
 
-          const updatedPayment = await VendorPayment.findByIdAndUpdate(
+          const updatedPayment = await VendorCashflow.findByIdAndUpdate(
             existingPayment._id,
             {
               $set: {
-                initialAmount: newTotal,
-                balance: newTotal,
-                amountPaid: 0,
+                crAmount: newTotal,
+                balance: Math.max(0, newTotal - (existingPayment.drAmount || 0)),
+                updatedBy: userId,
                 updatedAt: new Date()
               }
             },

@@ -4,7 +4,7 @@ import CurrentStock from "../../../Models/CurrentStock.js";
 import StockMovement from "../../../Models/StockMovement.js";
 import ActivityLog from "../../../Models/ActivityLog.js";
 import InventoryBatch from "../../../Models/InventoryBatch.js";
-import VendorPayment from "../../../Models/VendorPayment.js";
+import VendorCashflow from "../../../Models/VendorCashflow.js";
 import FailedEdit from "../../../Models/FailedEdit.js";
 import CostingService from "../../../services/CostingService.js";
 import StockHistoryManager from "../../../utils/StockHistoryManager.js";
@@ -262,7 +262,7 @@ class GRNEditManager {
       checks.canEdit = true;
 
       // Check 3: Payment status check
-      const payments = await VendorPayment.find({ grnId });
+      const payments = await VendorCashflow.find({ grnId });
       const hasLockedPayments = payments.some((p) =>
         ["PARTIAL", "PAID", "OVERDUE"].includes(p.paymentStatus)
       );
@@ -1309,7 +1309,7 @@ class GRNEditManager {
       // ========================================
       // 1️⃣ UPDATE VENDOR PAYMENTS (IF PENDING)
       // ========================================
-      console.log(`\n💳 [Collection 1] Processing VendorPayment...`);
+      console.log(`\n💳 [Collection 1] Processing VendorCashflow...`);
       
       try {
         // ========================================
@@ -1743,17 +1743,17 @@ class GRNEditManager {
         // ========================================
         // �💳 PHASE 2: UPDATE VENDOR PAYMENTS
         // ========================================
-        console.log(`\n💳 [PHASE 2] Processing VendorPayment...`);
+        console.log(`\n💳 [PHASE 2] Processing VendorCashflow...`);
 
         if (vendorPayments.length > 0) {
           for (const payment of vendorPayments) {
             console.log(`   \n   Processing payment: ${payment._id}`);
             console.log(`     Status: ${payment.paymentStatus}`);
-            console.log(`     Current Amount: ${payment.initialAmount}`);
+            console.log(`     Current Amount: ${payment.crAmount}`);
 
             // ✅ ONLY update if PENDING (not confirmed yet)
             if (payment.paymentStatus === 'PENDING') {
-              const oldAmount = payment.initialAmount;
+              const oldAmount = payment.crAmount;
               const newAmount = updatedGRN.finalTotal || updatedGRN.totalAmount;
               const amountDifference = newAmount - oldAmount;
 
@@ -1761,18 +1761,19 @@ class GRNEditManager {
               console.log(`        Old: ${oldAmount} → New: ${newAmount} (Diff: ${amountDifference})`);
 
               // Update to new corrected amount (with session for transaction)
-              const updated = await VendorPayment.findByIdAndUpdate(
+              const updated = await VendorCashflow.findByIdAndUpdate(
                 payment._id,
                 {
-                  initialAmount: newAmount,
-                  balance: Math.max(0, newAmount - (payment.amountPaid || 0)),
+                  crAmount: newAmount,
+                  balance: Math.max(0, newAmount - (payment.drAmount || 0)),
+                  updatedBy: userId,
                   updatedDate: new Date()
                 },
                 { ...updateOpts }
               );
 
               console.log(`     ✅ Updated in database:`);
-              console.log(`        initialAmount: ${updated.initialAmount}`);
+              console.log(`        crAmount: ${updated.crAmount}`);
               console.log(`        balance: ${updated.balance}`);
               
               updateSummary.vendorPayments.push({
@@ -1788,7 +1789,7 @@ class GRNEditManager {
               updateSummary.vendorPayments.push({
                 paymentId: payment._id,
                 status: payment.paymentStatus,
-                oldAmount: payment.initialAmount,
+                oldAmount: payment.crAmount,
                 updated: false,
                 reason: `Cannot correct ${payment.paymentStatus} payment (confirmed)`
               });
@@ -1798,12 +1799,12 @@ class GRNEditManager {
           console.log(`   ℹ️ No payment records found`);
         }
 
-        console.log(`\n✅ [Collection 1] VendorPayment processing complete`);
+        console.log(`\n✅ [Collection 1] VendorCashflow processing complete`);
         
       } catch (error) {
-        console.error(`❌ [Collection 1] VendorPayment error: ${error.message}`);
+        console.error(`❌ [Collection 1] VendorCashflow error: ${error.message}`);
         updateSummary.errors.push({
-          collection: 'VendorPayment',
+          collection: 'VendorCashflow',
           error: error.message
         });
       }

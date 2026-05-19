@@ -266,6 +266,7 @@ app.use(`${apiV1}/journals`, accountingRoutes.journalEntryRoutes);
 app.use(`${apiV1}/account-groups`, accountingRoutes.accountGroupRoutes);
 app.use(`${apiV1}/contras`, accountingRoutes.contraRoutes);
 app.use(`${apiV1}/vendor-payments`, accountingRoutes.vendorPaymentRoutes);
+app.use(`${apiV1}/vendor-cashflows`, accountingRoutes.vendorCashflowRoutes);
 
 // Purchasing module
 app.use(`${apiV1}/vendors`, purchasingRoutes.vendorRoutes);

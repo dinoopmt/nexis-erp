@@ -19,7 +19,7 @@
  */
 
 import Grn from "../../../Models/Grn.js";
-import VendorPayment from "../../../Models/VendorPayment.js";
+import VendorCashflow from "../../../Models/VendorCashflow.js";
 import InventoryBatch from "../../../Models/InventoryBatch.js";
 import AddProduct from "../../../Models/AddProduct.js";
 import CreateVendor from "../../../Models/CreateVendor.js";
@@ -88,7 +88,7 @@ class SimpleGRNEditManager {
 
       // 3. Payment status = PENDING (not yet paid)
       // ⚠️ BLOCK if payment is PARTIAL/PAID/OVERDUE (payment already committed)
-      const payments = await VendorPayment.findOne({
+      const payments = await VendorCashflow.findOne({
         grnId: grn._id.toString()  // ← Use ObjectId, not grnNumber
       });
       
@@ -336,34 +336,34 @@ class SimpleGRNEditManager {
       let paymentUpdated = false;
       if (payments && payments.paymentStatus === "PENDING") {
         try {
-          const oldPaymentAmount = payments.initialAmount;
+          const oldPaymentAmount = payments.crAmount;
           const amountDifference = newTotal - oldPaymentAmount;  // New - Old
           
-          const updatedPayment = await VendorPayment.findByIdAndUpdate(
+          const updatedPayment = await VendorCashflow.findByIdAndUpdate(
             payments._id,
             {
               $set: {
-                initialAmount: newTotal,
-                balance: newTotal,  // Balance also matches new total since no payment yet
-                amountPaid: 0,
+                crAmount: newTotal,
+                balance: Math.max(0, newTotal - (payments.drAmount || 0)),
+                updatedBy: userId,
                 updatedAt: new Date()
               }
             },
             { returnDocument: 'after' }
           );
           paymentUpdated = true;
-          console.log(`   ✅ VendorPayment updated:`);
+          console.log(`   ✅ VendorCashflow updated:`);
           console.log(`      Old amount: ${oldPaymentAmount}`);
           console.log(`      New amount: ${newTotal}`);
           console.log(`      Difference: ${amountDifference > 0 ? '+' : ''}${amountDifference}`);
           console.log(`      New balance: ${newTotal}`);
         } catch (paymentErr) {
-          console.error(`   ❌ Error updating VendorPayment:`, paymentErr.message);
+          console.error(`   ❌ Error updating VendorCashflow:`, paymentErr.message);
         }
       } else if (payments) {
-        console.log(`   ⚠️ VendorPayment NOT updated (status=${payments.paymentStatus}, requires PENDING)`);
+        console.log(`   ⚠️ VendorCashflow NOT updated (status=${payments.paymentStatus}, requires PENDING)`);
       } else {
-        console.log(`   ℹ️ No VendorPayment record found`);
+        console.log(`   ℹ️ No VendorCashflow record found`);
       }
 
       console.log(`\n✅ GRN EDIT COMPLETED SUCCESSFULLY`);
@@ -372,7 +372,7 @@ class SimpleGRNEditManager {
       console.log(`   📊 StockBefore: Logged for all changes`);
       console.log(`   📦 StockMovement: Updated INBOUND entries`);
       console.log(`   🔄 Recalculation: Applied (all downstream movements)`);
-      console.log(`   💳 VendorPayment: ${paymentUpdated ? 'Updated' : 'Unchanged'}`);
+      console.log(`   💳 VendorCashflow: ${paymentUpdated ? 'Updated' : 'Unchanged'}`);
       console.log(`   Items: ${updated.items.length}`);
       console.log(`   New Total: ${newTotal}`);
       console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
@@ -388,7 +388,7 @@ class SimpleGRNEditManager {
           inventoryBatch: true,
           stockMovement: true,
           recalculated: recalculationChanges.length > 0,
-          vendorPayment: paymentUpdated
+          VendorCashflow: paymentUpdated
         },
         summary: {
           items: updated.items.length,

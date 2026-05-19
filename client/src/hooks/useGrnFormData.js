@@ -14,9 +14,9 @@ const getCurrentFinancialYear = () => {
 
   // Financial year starts April (month 4)
   if (month >= 4) {
-    return `${year}-${year + 1}`;
+    return `${year}-${String(year + 1).slice(-2)}`;
   } else {
-    return `${year - 1}-${year}`;
+    return `${year - 1}-${String(year).slice(-2)}`;
   }
 };
 
@@ -51,6 +51,7 @@ export const useGrnFormData = () => {
       } else {
         // Fallback if API returns empty
         console.warn("API returned empty GRN number, generating fallback");
+        const financialYear = getCurrentFinancialYear();
         return `GRN-${financialYear}-${String(Date.now()).slice(-5)}`;
       }
     } catch (error) {

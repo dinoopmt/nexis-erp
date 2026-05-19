@@ -1186,9 +1186,20 @@ const GrnForm = () => {
     const userData = localStorage.getItem("user");
     const currentUser = userData ? JSON.parse(userData) : null;
     const currentUserId = currentUser?._id || null;
+    const currentUserName =
+      currentUser?.fullName ||
+      currentUser?.name ||
+      currentUser?.username ||
+      currentUser?.userName ||
+      "";
 
     if (!currentUserId) {
       showToast("error", "User information not found. Please login again.");
+      return null;
+    }
+
+    if (!currentUserName) {
+      showToast("error", "User name not found in local cache. Please login again.");
       return null;
     }
 
@@ -1345,6 +1356,7 @@ const GrnForm = () => {
         referenceNumber: formData.lpoNo || "",
         notes: formData.notes || "",
         createdBy: currentUserId,
+        createdByName: currentUserName,
         items: transformedItems,
       };
 
@@ -1457,9 +1469,20 @@ const GrnForm = () => {
     const userData = localStorage.getItem("user");
     const currentUser = userData ? JSON.parse(userData) : null;
     const currentUserId = currentUser?._id || null;
+    const currentUserName =
+      currentUser?.fullName ||
+      currentUser?.name ||
+      currentUser?.username ||
+      currentUser?.userName ||
+      "";
 
     if (!currentUserId) {
       showToast("error", "User information not found. Please login again.");
+      return;
+    }
+
+    if (!currentUserName) {
+      showToast("error", "User name not found in local cache. Please login again.");
       return;
     }
     
@@ -1497,6 +1520,7 @@ const GrnForm = () => {
         data: {
           items: editItems,
           createdBy: currentUserId,
+          createdByName: currentUserName,
         },
         headers: { "Content-Type": "application/json" },
       });

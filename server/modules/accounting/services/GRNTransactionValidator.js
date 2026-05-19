@@ -1,5 +1,5 @@
 import Grn from "../../../Models/Grn.js";
-import VendorPayment from "../../../Models/VendorPayment.js";
+import VendorCashflow from "../../../Models/VendorCashflow.js";
 import StockBatch from "../../../Models/StockBatch.js";
 import CurrentStock from "../../../Models/CurrentStock.js";
 import Rtv from "../../../Models/Rtv.js";
@@ -118,7 +118,7 @@ class GRNTransactionValidator {
    */
   static async checkVendorPayments(grnNumber) {
     try {
-      const payments = await VendorPayment.find({
+      const payments = await VendorCashflow.find({
         grnId: grnNumber
       });
 
@@ -140,14 +140,14 @@ class GRNTransactionValidator {
       const details = [];
 
       for (const payment of payments) {
-        totalAmount += payment.initialAmount || 0;
-        totalPaid += payment.amountPaid || 0;
+        totalAmount += payment.crAmount || 0;
+        totalPaid += payment.drAmount || 0;
 
         details.push({
           type: payment.type,  // ITEMS, SHIPPING
           status: payment.paymentStatus,  // PENDING, PARTIAL, PAID, OVERDUE
-          initialAmount: payment.initialAmount,
-          amountPaid: payment.amountPaid,
+          drAmount: payment.drAmount,
+          crAmount: payment.crAmount,
           balance: payment.balance,
           paymentHistory: payment.paymentHistory?.length || 0
         });
@@ -514,7 +514,7 @@ class GRNTransactionValidator {
         status: check.grnStatus,
         canEdit: check.canEditDueToTransactions,
         transactions: {
-          vendorPayment: {
+          VendorCashflow: {
             exists: check.vendorPayments.status !== 'NO_PAYMENT',
             status: check.vendorPayments.status,
             amount: `$${check.vendorPayments.paidAmount}/$${check.vendorPayments.totalAmount}`,

@@ -1,6 +1,6 @@
 import Grn from "../../../Models/Grn.js";
 import GrnService from "../services/GRNService.js";
-import VendorPaymentService from "../../accounting/services/VendorPaymentService.js";
+import VendorCashflowService from "../../accounting/services/VendorCashflowService.js";
 import InventoryTemplate from "../../../Models/InventoryTemplate.js";
 import TerminalManagement from "../../../Models/TerminalManagement.js";
 import StoreSettings from "../../../Models/StoreSettings.js";
@@ -9,7 +9,7 @@ import PdfGenerationService from "../../../services/PdfGenerationService.js";
 import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 /**
- * Map frontend payment terms format to VendorPayment enum values
+ * Map frontend payment terms format to VendorCashflow enum values
  * Frontend sends: due_on_receipt, net_30, net_60, net_90
  * Backend expects: IMMEDIATE, NET_30, NET_60, NET_90
  */
@@ -29,6 +29,34 @@ const mapPaymentTermsToEnum = (termValue) => {
 import GRNJournalService from "../../accounting/services/GRNJournalService.js";
 import GRNStockUpdateService from "../../accounting/services/GRNStockUpdateService.js";
 import GRNEditManager from "../../accounting/services/GRNEditManager.js";
+
+const GRN_NUMBER_REGEX = /^GRN-(\d{4})-(\d{2})-(\d{5})$/;
+
+const isCanonicalGrnNumber = (value) => {
+  if (typeof value !== "string") return false;
+  return GRN_NUMBER_REGEX.test(value.trim());
+};
+
+const resolveUniqueGrnNumber = async (requestedGrnNumber) => {
+  if (isCanonicalGrnNumber(requestedGrnNumber)) {
+    const existing = await Grn.findOne({ grnNumber: requestedGrnNumber }).select("_id");
+    if (!existing) {
+      return requestedGrnNumber;
+    }
+  }
+
+  for (let attempt = 1; attempt <= 50; attempt++) {
+    const generated = await GrnService.generateGRNNumber();
+    const collision = await Grn.findOne({ grnNumber: generated }).select("_id");
+    if (!collision) {
+      return generated;
+    }
+  }
+
+  const error = new Error("Unable to allocate a unique GRN number. Please retry.");
+  error.status = 409;
+  throw error;
+};
 
 // ✅ NEW: Get next GRN number using sequence table (FIFO method)
 export const getNextGrnNumber = async (req, res) => {
@@ -91,7 +119,7 @@ export const getGrnById = async (req, res) => {
 export const createGrn = async (req, res) => {
   try {
     const {
-      grnNumber,
+      grnNumber: requestedGrnNumber,
       grnDate,
       vendorId,
       vendorName,
@@ -116,10 +144,14 @@ export const createGrn = async (req, res) => {
       netTotal,
       finalTotal,
       createdBy,
+      createdByName,
       batchExpiryTracking,
     } = req.body;
 
+    const grnNumber = await resolveUniqueGrnNumber(requestedGrnNumber);
+
     console.log("📝 Creating GRN with data:", {
+      requestedGrnNumber,
       grnNumber,
       grnDate,
       vendorId,
@@ -140,16 +172,6 @@ export const createGrn = async (req, res) => {
           items: !!items,
           itemCount: items?.length || 0,
         },
-      });
-    }
-
-    // Check if GRN number already exists
-    const existingGrn = await Grn.findOne({ grnNumber });
-    if (existingGrn) {
-      console.warn(`❌ GRN number already exists: ${grnNumber}`);
-      return res.status(400).json({
-        message: "GRN number already exists",
-        grnNumber,
       });
     }
 
@@ -354,7 +376,7 @@ export const createGrn = async (req, res) => {
     let paymentEntries = null;
     if (status === "Received" || status === "received") {
       try {
-        paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+        paymentEntries = await VendorCashflowService.createPaymentEntriesFromGrn({
           grnId: newGrn._id,  // ✅ Pass MongoDB ObjectId for referential integrity
           grnNumber,
           grnDate,
@@ -367,6 +389,7 @@ export const createGrn = async (req, res) => {
           netTotal: parseFloat(netTotal || 0),
           shippingCost: parseFloat(shippingCost || 0),
           createdBy,
+          createdByName,
         });
         console.log("💳 Vendor payment entries created:", paymentEntries);
       } catch (paymentError) {
@@ -705,7 +728,7 @@ export const saveDraftGrn = async (req, res) => {
   try {
     const {
       id,
-      grnNumber,
+      grnNumber: requestedGrnNumber,
       grnDate,
       vendorId,
       vendorName,
@@ -729,10 +752,11 @@ export const saveDraftGrn = async (req, res) => {
       netTotal,
       finalTotal,
       createdBy,
+      createdByName,
     } = req.body;
 
     console.log("📋 [DRAFT] Saving GRN as Draft:", {
-      grnNumber,
+      requestedGrnNumber,
       isNew: !id,
       itemCount: items?.length,
       finalTotal,
@@ -774,13 +798,7 @@ export const saveDraftGrn = async (req, res) => {
       grn.totalAmount = parseFloat(finalTotal || subtotal || 0);
     } else {
       // CREATE new Draft GRN
-      const existingGrn = await Grn.findOne({ grnNumber });
-      if (existingGrn) {
-        return res.status(400).json({
-          message: "GRN number already exists",
-          grnNumber,
-        });
-      }
+      const grnNumber = await resolveUniqueGrnNumber(requestedGrnNumber);
 
       grn = new Grn({
         grnNumber,
@@ -862,7 +880,7 @@ export const postGrnWithUpdates = async (req, res) => {
   try {
     const {
       id,
-      grnNumber,
+      grnNumber: requestedGrnNumber,
       grnDate,
       vendorId,
       vendorName,
@@ -886,10 +904,11 @@ export const postGrnWithUpdates = async (req, res) => {
       netTotal,
       finalTotal,
       createdBy,
+      createdByName,
     } = req.body;
 
     console.log("📤 [POST] Posting GRN with full updates:", {
-      grnNumber,
+      requestedGrnNumber,
       isNew: !id,
       itemCount: items?.length,
       finalTotal,
@@ -933,13 +952,7 @@ export const postGrnWithUpdates = async (req, res) => {
       grn.totalAmount = parseFloat(finalTotal || subtotal || 0);
     } else {
       // CREATE new GRN with Received status
-      const existingGrn = await Grn.findOne({ grnNumber });
-      if (existingGrn) {
-        return res.status(400).json({
-          message: "GRN number already exists",
-          grnNumber,
-        });
-      }
+      const grnNumber = await resolveUniqueGrnNumber(requestedGrnNumber);
 
       grn = new Grn({
         grnNumber,
@@ -1058,7 +1071,7 @@ export const postGrnWithUpdates = async (req, res) => {
 
     // 3. CREATE VENDOR PAYMENT ENTRIES
     try {
-      paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+      paymentEntries = await VendorCashflowService.createPaymentEntriesFromGrn({
         grnId: grn._id,
         grnNumber: grn.grnNumber,
         grnDate: grn.grnDate,
@@ -1071,6 +1084,7 @@ export const postGrnWithUpdates = async (req, res) => {
         netTotal: grn.netTotal || 0,
         shippingCost: grn.shippingCost || 0,
         createdBy: createdBy || "System",
+        createdByName,
       });
 
       console.log("💳 Vendor payment entries created:", paymentEntries);
@@ -1109,7 +1123,7 @@ export const postGrnWithUpdates = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error posting GRN with updates:", error.message);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       message: "Failed to post GRN with updates",
       error: error.message,
     });
@@ -1120,7 +1134,7 @@ export const postGrnWithUpdates = async (req, res) => {
 export const postGrn = async (req, res) => {
   try {
     const { id } = req.params;
-    const { createdBy } = req.body;
+    const { createdBy, createdByName } = req.body;
 
     console.log("📚 Posting GRN for accounting & stock:", { id, createdBy });
 
@@ -1245,7 +1259,7 @@ export const postGrn = async (req, res) => {
     // 3. CREATE VENDOR PAYMENT ENTRIES when posting
     let paymentEntries = null;
     try {
-      paymentEntries = await VendorPaymentService.createPaymentEntriesFromGrn({
+      paymentEntries = await VendorCashflowService.createPaymentEntriesFromGrn({
         grnId: grn._id,
         grnNumber: grn.grnNumber,
         grnDate: grn.grnDate,
@@ -1258,6 +1272,7 @@ export const postGrn = async (req, res) => {
         netTotal: grn.netTotal || 0,
         shippingCost: grn.shippingCost || 0,
         createdBy: createdBy || "System",
+        createdByName,
       });
       console.log("💳 Vendor payment entries created during posting:", paymentEntries);
     } catch (paymentError) {

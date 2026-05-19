@@ -4,7 +4,7 @@ import InventoryBatch from "../../../Models/InventoryBatch.js";
 import CurrentStock from "../../../Models/CurrentStock.js";
 import ActivityLog from "../../../Models/ActivityLog.js";
 import User from "../../../Models/User.js";
-import VendorPayment from "../../../Models/VendorPayment.js";
+import VendorCashflow from "../../../Models/VendorCashflow.js";
 import StockMovement from "../../../Models/StockMovement.js";
 import mongoose from "mongoose";
 import GRNTransactionValidator from "./GRNTransactionValidator.js";
@@ -212,12 +212,12 @@ class GRNBatchEditValidator {
       await grn.save();
       console.log(`✅ GRN updated successfully`);
 
-      // 6. Update VendorPayment if amount changed
+      // 6. Update VendorCashflow if amount changed
       // ✅ Use totalAmount (includes tax), not finalTotal
       const amountDelta = grn.totalAmount - originalData.totalAmount;
       console.log(`💰 Amount Delta: ${originalData.totalAmount} → ${grn.totalAmount} (delta: ${amountDelta})`);
-      const paymentUpdates = await this.updateVendorPayment(grnId, amountDelta);
-      console.log(`✅ Vendor payment updated: ${paymentUpdates.length} updates`);
+      const paymentUpdates = await this.updateVendorCashflow(grnId, amountDelta, userId);
+      console.log(`✅ Vendor cashflow updated: ${paymentUpdates.length} updates`);
 
       // 7. Create audit log
       const audit = await this.createAuditLog(grnId, userId, {
@@ -732,66 +732,69 @@ class GRNBatchEditValidator {
   }
 
   /**
-   * Update VendorPayment when GRN amount changes
+   * Update VendorCashflow when GRN amount changes
    * 
    * @private
    * @param {String} grnNumber - GRN number to find payments
    * @param {Number} amountDelta - Change in total amount
    * @returns {Promise<Array>} - Updated payment records
    */
-  static async updateVendorPayment(grnIdOrNumber, amountDelta) {
+  static async updateVendorCashflow(grnIdOrNumber, amountDelta, userId = null) {
     const updates = [];
 
     try {
       if (amountDelta === 0) {
-        console.log(`💰 No amount change - VendorPayment unchanged`);
+        console.log(`💰 No amount change - VendorCashflow unchanged`);
         return updates;
       }
 
-      let vendorPayment;
+      let cashflowEntry;
       
-      // ✅ Convert grnId to string since VendorPayment.grnId is stored as STRING in DB
+      // ✅ Convert grnId to string since VendorCashflow.grnId is stored as STRING in DB
       const grnIdString = grnIdOrNumber.toString ? grnIdOrNumber.toString() : String(grnIdOrNumber);
       
       // Try by grnId first (as string, matching DB storage format)
-      vendorPayment = await VendorPayment.findOne({ grnId: grnIdString });
+      cashflowEntry = await VendorCashflow.findOne({ grnId: grnIdString });
       
       // If not found, try by grnNumber
-      if (!vendorPayment) {
-        vendorPayment = await VendorPayment.findOne({ grnNumber: grnIdString });
+      if (!cashflowEntry) {
+        cashflowEntry = await VendorCashflow.findOne({ grnNumber: grnIdString });
       }
 
-      if (!vendorPayment) {
-        console.warn(`⚠️ VendorPayment not found for GRN ID: ${grnIdString}`);
+      if (!cashflowEntry) {
+        console.warn(`⚠️ VendorCashflow not found for GRN ID: ${grnIdString}`);
         return updates;
       }
 
-      const oldAmount = vendorPayment.initialAmount || 0;
-      const oldBalance = vendorPayment.balance || 0;
+      const oldAmount = cashflowEntry.crAmount || 0;
+      const oldBalance = cashflowEntry.balance || 0;
       
-      console.log(`💰 VendorPayment LOOKUP: Found payment for ${grnIdString}`);
-      console.log(`💰 BEFORE: initialAmount=${oldAmount}, balance=${oldBalance}`);
+      console.log(`💰 VendorCashflow LOOKUP: Found payment for ${grnIdString}`);
+      console.log(`💰 BEFORE: crAmount=${oldAmount}, balance=${oldBalance}`);
       
       // Update payment amounts
-      vendorPayment.initialAmount = oldAmount + amountDelta;
-      vendorPayment.balance = oldBalance + amountDelta;
-      vendorPayment.updatedDate = new Date();
+      cashflowEntry.crAmount = oldAmount + amountDelta;
+      cashflowEntry.balance = Math.max(0, cashflowEntry.crAmount - (cashflowEntry.drAmount || 0));
+      if (userId) {
+        cashflowEntry.updatedBy = userId;
+      }
+      cashflowEntry.updatedDate = new Date();
 
-      await vendorPayment.save();
+      await cashflowEntry.save();
 
       updates.push({
-        vendorPaymentId: vendorPayment._id,
+        vendorCashflowId: cashflowEntry._id,
         grnId: grnIdString,
         oldAmount,
-        newAmount: vendorPayment.initialAmount,
+        newAmount: cashflowEntry.crAmount,
         oldBalance,
-        newBalance: vendorPayment.balance,
+        newBalance: cashflowEntry.balance,
         amountDelta
       });
 
-      console.log(`💰 VendorPayment UPDATED: ${oldAmount} → ${vendorPayment.initialAmount} (delta: ${amountDelta > 0 ? "+" : ""}${amountDelta})`);
+      console.log(`💰 VendorCashflow UPDATED: ${oldAmount} → ${cashflowEntry.crAmount} (delta: ${amountDelta > 0 ? "+" : ""}${amountDelta})`);
     } catch (error) {
-      console.error(`⚠️ VendorPayment update error:`, error.message);
+      console.error(`⚠️ VendorCashflow update error:`, error.message);
       // Don't throw - allow GRN edit even if payment update fails
     }
 

@@ -3,6 +3,7 @@ import chartOfAccountsRoutes from './chartOfAccountsRoutes.js';
 import journalEntryRoutes from './journalEntryRoutes.js';
 import accountGroupRoutes from './accountGroupRoutes.js';
 import contraRoutes from './contraRoutes.js';
+import vendorCashflowRoutes from './vendorCashflowRoutes.js';
 import vendorPaymentRoutes from './vendorPaymentRoutes.js';
 
 export default {
@@ -10,5 +11,6 @@ export default {
   journalEntryRoutes,
   accountGroupRoutes,
   contraRoutes,
+  vendorCashflowRoutes,
   vendorPaymentRoutes,
 };

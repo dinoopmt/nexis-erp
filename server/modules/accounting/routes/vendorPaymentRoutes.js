@@ -1,235 +1,89 @@
 import express from 'express';
-import VendorPaymentService from '../services/VendorPaymentService.js';
-import VendorPayment from '../../../Models/VendorPayment.js';
+import VendorCashflowService from '../services/VendorCashflowService.js';
+import VendorCashflow from '../../../Models/VendorCashflow.js';
 
 const router = express.Router();
 
-/**
- * Get outstanding payments for a vendor
- * GET /api/vendor-payments/outstanding/:vendorId
- */
-router.get('/outstanding/:vendorId', async (req, res) => {
+const attachAuditNames = (entry) => {
+  const record = entry?.toObject ? entry.toObject() : entry;
+
+  return {
+    ...record,
+    createdByName: record?.createdBy?.fullName || record?.createdBy?.username || record?.createdByName || null,
+    updatedByName: record?.updatedBy?.fullName || record?.updatedBy?.username || record?.updatedByName || null,
+  };
+};
+
+// Create vendor payment entry against an existing vendor cashflow row.
+router.post('/', async (req, res) => {
   try {
-    const { vendorId } = req.params;
-    const { status } = req.query;
-
-    const summary = await VendorPaymentService.getOutstandingPayments(vendorId, status);
-
-    res.status(200).json({
-      success: true,
-      ...summary,
-    });
-  } catch (error) {
-    console.error('❌ Error fetching outstanding payments:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch outstanding payments',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * Get payment status for a specific GRN
- * GET /api/vendor-payments/grn/:grnNumber
- */
-router.get('/grn/:grnNumber', async (req, res) => {
-  try {
-    const { grnNumber } = req.params;
-
-    const status = await VendorPaymentService.getGrnPaymentStatus(grnNumber);
-
-    res.status(200).json({
-      success: true,
-      ...status,
-    });
-  } catch (error) {
-    console.error('❌ Error fetching GRN payment status:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch GRN payment status',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * Record a payment against a vendor payment entry
- * POST /api/vendor-payments/:id/record-payment
- */
-router.post('/:id/record-payment', async (req, res) => {
-  try {
-    const { id } = req.params;
     const {
-      paymentId,
+      vendorCashflowId,
+      cashflowId,
+      id,
+      drAmount,
+      crAmount,
       amountPaid,
       paymentDate,
       paymentMethod,
       paymentReference,
       notes,
+      paymentId,
     } = req.body;
 
-    if (!amountPaid || amountPaid <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid amount paid',
-      });
+    const targetId = vendorCashflowId || cashflowId || id;
+    const debitAmount = Number(drAmount ?? amountPaid ?? crAmount ?? 0);
+
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: 'vendorCashflowId (or cashflowId/id) is required' });
     }
 
-    const entry = await VendorPaymentService.recordPayment(id, {
+    if (!debitAmount || debitAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid amount paid' });
+    }
+
+    const entry = await VendorCashflowService.recordPayment(targetId, {
       paymentId,
-      amountPaid: parseFloat(amountPaid),
-      paymentDate: new Date(paymentDate),
+      drAmount: debitAmount,
+      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       paymentMethod,
       paymentReference,
       notes,
+      updatedBy: req.user?.id || req.user?._id,
+      updatedByName: req.user?.fullName || req.user?.name || req.user?.username || req.user?.userName || req.user?.email,
     });
 
-    res.status(200).json({
+    res.status(201).json({
       success: true,
-      message: 'Payment recorded successfully',
-      entry,
+      message: 'Vendor payment entry created successfully',
+      entry: attachAuditNames(entry),
     });
   } catch (error) {
-    console.error('❌ Error recording payment:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to record payment',
+      message: 'Failed to create vendor payment entry',
       error: error.message,
     });
   }
 });
 
-/**
- * Get all vendor payments
- * GET /api/vendor-payments
- */
-router.get('/', async (req, res) => {
-  try {
-    const { vendorId, status, grnId } = req.query;
-
-    const query = {};
-    if (vendorId) query.vendorId = vendorId;
-    if (status) query.paymentStatus = status;
-    if (grnId) query.grnId = grnId;
-
-    const payments = await VendorPayment.find(query).sort({ dueDate: 1 });
-
-    res.status(200).json({
-      success: true,
-      count: payments.length,
-      data: payments,
-    });
-  } catch (error) {
-    console.error('❌ Error fetching vendor payments:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch vendor payments',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * Get single vendor payment entry
- * GET /api/vendor-payments/:id
- */
+// Optional helper to quickly view a specific payment target row.
 router.get('/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const payment = await VendorPayment.findById(id)
+    const entry = await VendorCashflow.findById(req.params.id)
       .populate('vendorId', 'vendorName email phone')
-      .populate('payments.paymentId');
+      .populate('createdBy', 'fullName username email')
+      .populate('updatedBy', 'fullName username email');
 
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Payment entry not found',
-      });
+    if (!entry) {
+      return res.status(404).json({ success: false, message: 'Cashflow entry not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      data: payment,
-    });
+    res.status(200).json({ success: true, data: attachAuditNames(entry) });
   } catch (error) {
-    console.error('❌ Error fetching payment entry:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch payment entry',
-      error: error.message,
-    });
-  }
-});
-
-/**
- * Get vendor summary (total outstanding, by status, etc.)
- * GET /api/vendor-payments/summary/:vendorId
- */
-router.get('/summary/:vendorId', async (req, res) => {
-  try {
-    const { vendorId } = req.params;
-
-    const entries = await VendorPayment.find({ vendorId });
-
-    const summary = {
-      vendorId,
-      totalPayable: entries.reduce((sum, e) => sum + e.initialAmount, 0),
-      totalPaid: entries.reduce((sum, e) => sum + e.amountPaid, 0),
-      totalOutstanding: entries.reduce((sum, e) => sum + e.balance, 0),
-      
-      // By Type
-      byType: {
-        items: {
-          amount: entries
-            .filter(e => e.type === 'ITEMS')
-            .reduce((sum, e) => sum + e.initialAmount, 0),
-          paid: entries
-            .filter(e => e.type === 'ITEMS')
-            .reduce((sum, e) => sum + e.amountPaid, 0),
-          outstanding: entries
-            .filter(e => e.type === 'ITEMS')
-            .reduce((sum, e) => sum + e.balance, 0),
-        },
-        shipping: {
-          amount: entries
-            .filter(e => e.type === 'SHIPPING')
-            .reduce((sum, e) => sum + e.initialAmount, 0),
-          paid: entries
-            .filter(e => e.type === 'SHIPPING')
-            .reduce((sum, e) => sum + e.amountPaid, 0),
-          outstanding: entries
-            .filter(e => e.type === 'SHIPPING')
-            .reduce((sum, e) => sum + e.balance, 0),
-        },
-      },
-
-      // By Status
-      byStatus: {
-        pending: entries.filter(e => e.paymentStatus === 'PENDING').length,
-        partial: entries.filter(e => e.paymentStatus === 'PARTIAL').length,
-        paid: entries.filter(e => e.paymentStatus === 'PAID').length,
-        overdue: entries.filter(e => e.paymentStatus === 'OVERDUE').length,
-      },
-
-      // Overdue
-      overdue: entries
-        .filter(e => e.isOverdue)
-        .reduce((sum, e) => sum + e.balance, 0),
-
-      grnCount: new Set(entries.map(e => e.grnId)).size,
-    };
-
-    res.status(200).json({
-      success: true,
-      ...summary,
-    });
-  } catch (error) {
-    console.error('❌ Error fetching vendor summary:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch vendor summary',
+      message: 'Failed to fetch payment target entry',
       error: error.message,
     });
   }
