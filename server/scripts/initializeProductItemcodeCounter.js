@@ -13,16 +13,10 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import Product from "../Models/AddProduct.js";
 import Counter from "../Models/SequenceModel.js";
+import { resolveFinancialYearCode } from "../utils/financialYearResolver.js";
 
 // Load environment
 dotenv.config();
-
-const getCurrentFinancialYear = () => {
-  const currentDate = new Date();
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth() + 1;
-  return month > 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-};
 
 const initializeCounter = async () => {
   try {
@@ -67,7 +61,7 @@ const initializeCounter = async () => {
     console.log(`  ✅ Found ${productCount} products`);
     console.log(`  ✅ Current max itemcode: ${maxItemcode}\n`);
 
-    const financialYear = getCurrentFinancialYear();
+    const financialYear = await resolveFinancialYearCode();
 
     // ✅ Step 2: Check if counter already exists
     console.log("🔍 Checking for existing product_code counter...");

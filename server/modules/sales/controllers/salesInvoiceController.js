@@ -6,22 +6,20 @@ import AccountGroup from '../../../Models/AccountGroup.js';
 import JournalEntry from '../../../Models/JournalEntry.js';
 import FinancialYear from '../../../Models/FinancialYear.js';
 import CreditCustomerCashflow from '../../../Models/Sales/CreditCustomerCashflow.js';
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 // Auto-generate next invoice number
 export const getNextInvoiceNumber = async (req, res) => {
   try {
-    const { financialYear } = req.query;
-    if (!financialYear) {
-      return res.status(400).json({ error: 'Financial year is required' });
-    }
+    const normalizedFinancialYear = await resolveFinancialYearCode(req.query.financialYear);
     
     // First, ensure the counter exists with lastNumber initialized to 0
     await Counter.findOneAndUpdate(
-      { module: 'sales_invoice', financialYear },
+      { module: 'sales_invoice', financialYear: normalizedFinancialYear },
       { 
         $setOnInsert: { 
           module: 'sales_invoice',
-          financialYear,
+          financialYear: normalizedFinancialYear,
           prefix: 'SI',
           lastNumber: 0
         }
@@ -31,16 +29,16 @@ export const getNextInvoiceNumber = async (req, res) => {
     
     // Now increment and get the new value
     const counter = await Counter.findOneAndUpdate(
-      { module: 'sales_invoice', financialYear },
+      { module: 'sales_invoice', financialYear: normalizedFinancialYear },
       { $inc: { lastNumber: 1 } },
       { returnDocument: 'after' }
     );
     
     const paddedNumber = String(counter.lastNumber).padStart(4, '0');
-    const invoiceNumber = `SI/${financialYear}/${paddedNumber}`;
+    const invoiceNumber = `SI/${normalizedFinancialYear}/${paddedNumber}`;
     res.json({ invoiceNumber });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 
@@ -48,11 +46,12 @@ export const getNextInvoiceNumber = async (req, res) => {
 export const createSalesInvoice = async (req, res) => {
   try {
     // Validate required fields
-    const { invoiceNumber, customerName, date, items, financialYear, paymentType, paymentTerms, customerId } = req.body;
+    const { invoiceNumber, customerName, date, items, paymentType, paymentTerms, customerId } = req.body;
+    const activeFinancialYear = await resolveFinancialYearCode();
     
-    if (!invoiceNumber || !customerName || !date || !financialYear) {
+    if (!invoiceNumber || !customerName || !date) {
       return res.status(400).json({ 
-        error: 'Missing required fields: invoiceNumber, customerName, date, financialYear' 
+        error: 'Missing required fields: invoiceNumber, customerName, date' 
       });
     }
 
@@ -74,6 +73,7 @@ export const createSalesInvoice = async (req, res) => {
     const userName = req.user?.name || req.user?.email || 'System';
     const invoiceData = {
       ...req.body,
+      financialYear: activeFinancialYear,
       createdBy: userName,
       updatedBy: userName
     };
@@ -127,11 +127,11 @@ export const createSalesInvoice = async (req, res) => {
           let finYear = null;
           
           // Try 1: Find by yearCode with FY prefix
-          finYear = await FinancialYear.findOne({ yearCode: `FY${financialYear}`, status: "OPEN" });
+          finYear = await FinancialYear.findOne({ yearCode: `FY${activeFinancialYear}`, status: "OPEN" });
           
           // Try 2: Find by yearCode without prefix
           if (!finYear) {
-            finYear = await FinancialYear.findOne({ yearCode: financialYear, status: "OPEN" });
+            finYear = await FinancialYear.findOne({ yearCode: activeFinancialYear, status: "OPEN" });
           }
           
           // Try 3: Find any OPEN financial year
@@ -204,7 +204,7 @@ export const createSalesInvoice = async (req, res) => {
             // Get the latest transaction for this customer to calculate running balance
             const latestTransaction = await CreditCustomerCashflow.findOne({
               customerId,
-              financialYear,
+              financialYear: activeFinancialYear,
               isDeleted: false
             }).sort({ transactionDate: -1, createdAt: -1 });
 
@@ -217,7 +217,7 @@ export const createSalesInvoice = async (req, res) => {
 
             // Create new cashflow transaction document (each transaction is a separate document)
             const cashflowTransaction = new CreditCustomerCashflow({
-              financialYear,
+              financialYear: activeFinancialYear,
               customerId,
               customerCode: customer.customerCode,
               customerName: customer.name,
@@ -344,11 +344,11 @@ export const createSalesInvoice = async (req, res) => {
           let finYear = null;
           
           // Try 1: Find by yearCode with FY prefix
-          finYear = await FinancialYear.findOne({ yearCode: `FY${financialYear}`, status: "OPEN" });
+          finYear = await FinancialYear.findOne({ yearCode: `FY${activeFinancialYear}`, status: "OPEN" });
           
           // Try 2: Find by yearCode without prefix
           if (!finYear) {
-            finYear = await FinancialYear.findOne({ yearCode: financialYear, status: "OPEN" });
+            finYear = await FinancialYear.findOne({ yearCode: activeFinancialYear, status: "OPEN" });
           }
           
           // Try 3: Find any OPEN financial year
@@ -484,13 +484,14 @@ export const getSalesInvoiceById = async (req, res) => {
 export const updateSalesInvoice = async (req, res) => {
   try {
     const { id } = req.params;
+    const activeFinancialYear = await resolveFinancialYearCode();
 
     // Validate required fields
-    const { customerName, date, items, financialYear } = req.body;
+    const { customerName, date, items } = req.body;
     
-    if (!customerName || !date || !items || items.length === 0 || !financialYear) {
+    if (!customerName || !date || !items || items.length === 0) {
       return res.status(400).json({ 
-        error: 'Missing required fields: customerName, date, items, financialYear' 
+        error: 'Missing required fields: customerName, date, items' 
       });
     }
 
@@ -498,6 +499,7 @@ export const updateSalesInvoice = async (req, res) => {
     const userName = req.user?.name || req.user?.email || 'System';
     const updateData = {
       ...req.body,
+      financialYear: activeFinancialYear,
       updatedDate: new Date().toISOString(),
       updatedBy: userName
     };

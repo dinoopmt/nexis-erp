@@ -9,6 +9,7 @@ import InventoryBatch from '../../../Models/InventoryBatch.js';
 import StockMovement from '../../../Models/StockMovement.js';
 import Counter from '../../../Models/SequenceModel.js';
 import logger from '../../../config/logger.js';
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 class GRNService {
   /**
@@ -17,14 +18,16 @@ class GRNService {
    * @param {string} financialYear - Financial year (e.g., "2025-2026")
    * @returns {Promise<string>} - GRN number (e.g., "GRN-2025-2026-00001")
    */
-  async generateGRNNumber(financialYear = '2025-26') {
+  async generateGRNNumber(financialYear) {
     try {
+      const resolvedFinancialYear = await resolveFinancialYearCode(financialYear);
+
       // ✅ Use atomic findOneAndUpdate for FIFO
       // Increments counter atomically to prevent race conditions
       const sequence = await Counter.findOneAndUpdate(
         {
           module: 'GRN',
-          financialYear: financialYear,
+          financialYear: resolvedFinancialYear,
         },
         {
           $inc: { lastNumber: 1 }, // Atomic increment
@@ -35,8 +38,8 @@ class GRNService {
         }
       );
 
-      const grnNumber = `GRN-${financialYear}-${String(sequence.lastNumber).padStart(5, '0')}`;
-      logger.info('Generated GRN number using sequence', { grnNumber, financialYear, sequenceId: sequence._id });
+      const grnNumber = `GRN-${resolvedFinancialYear}-${String(sequence.lastNumber).padStart(5, '0')}`;
+      logger.info('Generated GRN number using sequence', { grnNumber, financialYear: resolvedFinancialYear, sequenceId: sequence._id });
       return grnNumber;
     } catch (err) {
       logger.error('Failed to generate GRN number', { error: err.message, financialYear });

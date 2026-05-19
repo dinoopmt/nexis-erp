@@ -554,9 +554,7 @@ const DeliveryNote = () => {
       let noteNumber = noteData.noteNo;
       if (!noteNumber && !editId) {
         try {
-          const nextNumberResponse = await axios.get(
-            `${API_URL}/delivery-notes/nextDeliveryNoteNumber?financialYear=${financialYear}`,
-          );
+          const nextNumberResponse = await axios.get(`${API_URL}/delivery-notes/nextDeliveryNoteNumber`);
           noteNumber = nextNumberResponse.data.deliveryNoteNumber;
         } catch (err) {
           console.error("Error generating delivery note number:", err);

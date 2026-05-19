@@ -2,7 +2,9 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import Counter from "../Models/SequenceModel.js";
+import FinancialYear from "../Models/FinancialYear.js";
 import connectDB from "../db/db.js";
+import { normalizeFinancialYear } from "../utils/financialYearFormat.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,11 +15,21 @@ const seedSequences = async () => {
   try {
     await connectDB();
 
-    // Get current financial year
-    const currentDate = new Date();
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1;
-    const financialYear = month > 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+    // Use configured/current financial year from master data only.
+    const activeFinancialYear =
+      (await FinancialYear.findOne({ isCurrent: true, isDeleted: false }).lean()) ||
+      (await FinancialYear.findOne({
+        isDeleted: false,
+        startDate: { $lte: new Date() },
+        endDate: { $gte: new Date() },
+      }).lean());
+
+    if (!activeFinancialYear?.yearCode) {
+      console.log("⚠ No Financial Year found. Skipping sequence seeding.");
+      return;
+    }
+
+    const financialYear = normalizeFinancialYear(activeFinancialYear.yearCode);
 
     // Define all sequences
     const sequences = [

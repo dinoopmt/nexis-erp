@@ -40,10 +40,7 @@ export const useLpoFormData = () => {
   // ✅ Fetch next LPO number from backend
   const fetchNextLpoNo = async () => {
     try {
-      const financialYear = getCurrentFinancialYear();
-      const response = await axios.get(
-        `${API_URL}/lpo/next-number?financialYear=${financialYear}`
-      );
+      const response = await axios.get(`${API_URL}/lpo/next-number`);
 
       if (response.data?.lpoNo) {
         return response.data.lpoNo;

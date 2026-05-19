@@ -12,17 +12,12 @@ import InventoryTemplate from "../../../Models/InventoryTemplate.js";
 import { generateLpoHtml } from "../../../utils/LpoPdfRenderer.js";
 import PdfGenerationService from "../../../services/PdfGenerationService.js";
 import logger from "../../../config/logger.js";
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 // ✅ NEW: Get next LPO number using sequence table (FIFO method)
 export const getNextLpoNumber = async (req, res) => {
   try {
-    const { financialYear } = req.query;
-
-    if (!financialYear) {
-      return res.status(400).json({
-        message: "Financial year is required",
-      });
-    }
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
 
     const lpoNumber = await LpoService.generateLPONumber(financialYear);
 
@@ -32,7 +27,7 @@ export const getNextLpoNumber = async (req, res) => {
     });
   } catch (error) {
     logger.error("Error generating LPO number:", error);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       message: "Failed to generate LPO number",
       error: error.message,
     });

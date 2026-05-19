@@ -7,6 +7,7 @@
 import Lpo from "../../../Models/Lpo.js";
 import Counter from "../../../Models/SequenceModel.js";
 import logger from "../../../config/logger.js";
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 class LpoService {
   /**
@@ -16,16 +17,18 @@ class LpoService {
    * @param {string} financialYear - Financial year (e.g., "2025-2026")
    * @returns {Promise<string>} - LPO number (e.g., "LPO-2025-2026-00001")
    */
-  async generateLPONumber(financialYear = "2025-2026") {
+  async generateLPONumber(financialYear) {
     try {
+      const resolvedFinancialYear = await resolveFinancialYearCode(financialYear);
+
       // ✅ CLEANUP: Check for and remove duplicate sequences
       const duplicates = await Counter.find({
         module: "LPO",
-        financialYear: financialYear,
+        financialYear: resolvedFinancialYear,
       });
 
       if (duplicates.length > 1) {
-        logger.warn(`Found ${duplicates.length} duplicate LPO sequences for FY ${financialYear}. Cleaning up...`);
+        logger.warn(`Found ${duplicates.length} duplicate LPO sequences for FY ${resolvedFinancialYear}. Cleaning up...`);
         
         // Keep the one with highest lastNumber, delete others
         duplicates.sort((a, b) => b.lastNumber - a.lastNumber);
@@ -41,7 +44,7 @@ class LpoService {
       const sequence = await Counter.findOneAndUpdate(
         {
           module: "LPO",
-          financialYear: financialYear,
+          financialYear: resolvedFinancialYear,
         },
         {
           $inc: { lastNumber: 1 }, // Atomic increment
@@ -52,10 +55,10 @@ class LpoService {
         }
       );
 
-      const lpoNumber = `LPO-${financialYear}-${String(sequence.lastNumber).padStart(5, "0")}`;
+      const lpoNumber = `LPO-${resolvedFinancialYear}-${String(sequence.lastNumber).padStart(5, "0")}`;
       logger.info("Generated LPO number using sequence", {
         lpoNumber,
-        financialYear,
+        financialYear: resolvedFinancialYear,
         sequenceId: sequence._id,
       });
       return lpoNumber;

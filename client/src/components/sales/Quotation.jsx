@@ -731,9 +731,7 @@ const Quotation = () => {
       let quotationNumber = quotationData.quotationNo;
       if (!quotationNumber && !editId) {
         try {
-          const nextNumberResponse = await axios.get(
-            `${API_URL}/quotations/nextQuotationNumber?financialYear=${financialYear}`,
-          );
+          const nextNumberResponse = await axios.get(`${API_URL}/quotations/nextQuotationNumber`);
           quotationNumber = nextNumberResponse.data.sequence || nextNumberResponse.data.quotationNumber;
           console.log("✅ Generated quotation number:", quotationNumber);
         } catch (err) {

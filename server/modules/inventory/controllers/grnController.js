@@ -6,6 +6,7 @@ import TerminalManagement from "../../../Models/TerminalManagement.js";
 import StoreSettings from "../../../Models/StoreSettings.js";
 import Company from "../../../Models/Company.js";
 import PdfGenerationService from "../../../services/PdfGenerationService.js";
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 /**
  * Map frontend payment terms format to VendorPayment enum values
@@ -32,13 +33,7 @@ import GRNEditManager from "../../accounting/services/GRNEditManager.js";
 // ✅ NEW: Get next GRN number using sequence table (FIFO method)
 export const getNextGrnNumber = async (req, res) => {
   try {
-    const { financialYear } = req.query;
-    
-    if (!financialYear) {
-      return res.status(400).json({
-        message: "Financial year is required",
-      });
-    }
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
 
     const grnNumber = await GrnService.generateGRNNumber(financialYear);
 
@@ -48,7 +43,7 @@ export const getNextGrnNumber = async (req, res) => {
     });
   } catch (error) {
     console.error("Error generating GRN number:", error);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       message: "Failed to generate GRN number",
       error: error.message,
     });

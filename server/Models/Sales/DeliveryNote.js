@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const DeliveryNoteSchema = new mongoose.Schema(
   {
     deliveryNoteNumber: { type: String, required: true, unique: true },
-    financialYear: { type: String, default: '2025-26' },
+    financialYear: { type: String, required: true },
     salesOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesOrder', sparse: true },
     salesInvoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesInvoice' },
     date: { type: Date, required: true },

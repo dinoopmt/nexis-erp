@@ -24,15 +24,12 @@ export class SalesInvoiceService {
   }
 
   /**
-   * Get next invoice number for given financial year
-   * @param {String} financialYear - Financial year (e.g., "2025-26")
+   * Get next invoice number for active financial year
    * @returns {Promise<Object>} - Next invoice number data
    */
-  static async getNextInvoiceNumber(financialYear) {
+  static async getNextInvoiceNumber() {
     try {
-      const response = await axios.get(
-        `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`
-      );
+      const response = await axios.get(`${API_URL}/sales-invoices/nextInvoiceNumber`);
       return response.data.sequence || response.data.invoiceNumber;
     } catch (error) {
       console.error("Error fetching next invoice number:", error);

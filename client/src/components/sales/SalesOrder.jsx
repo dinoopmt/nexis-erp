@@ -724,9 +724,7 @@ const SalesOrder = () => {
       let SalesOrderNumber = orderData.orderNo;
       if (!SalesOrderNumber && !editId) {
         try {
-          const nextNumberResponse = await axios.get(
-            `${API_URL}/sales-orders/nextSalesOrderNumber?financialYear=${financialYear}`,
-          );
+          const nextNumberResponse = await axios.get(`${API_URL}/sales-orders/nextSalesOrderNumber`);
           SalesOrderNumber = nextNumberResponse.data.sequence || nextNumberResponse.data.orderNumber;
           console.log("✅ Generated SalesOrder number:", SalesOrderNumber);
         } catch (err) {

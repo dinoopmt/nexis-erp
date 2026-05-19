@@ -1,14 +1,12 @@
 import Quotation from '../../../Models/Sales/Quotation.js';
 import Counter from '../../../Models/SequenceModel.js';
 import Customer from '../../../Models/Customer.js';
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 // Auto-generate next quotation number
 export const getNextQuotationNumber = async (req, res) => {
   try {
-    const { financialYear } = req.query;
-    if (!financialYear) {
-      return res.status(400).json({ error: 'Financial year is required' });
-    }
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
     const counter = await Counter.findOneAndUpdate(
       { module: 'quotation', financialYear },
       { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'QT' } },
@@ -18,18 +16,19 @@ export const getNextQuotationNumber = async (req, res) => {
     const quotationNumber = `QT/${financialYear}/${paddedNumber}`;
     res.json({ quotationNumber });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 
 // Create Quotation
 export const createQuotation = async (req, res) => {
   try {
-    const { quotationNumber, customerName, date, items, financialYear } = req.body;
+    const { quotationNumber, customerName, date, items } = req.body;
+    const activeFinancialYear = await resolveFinancialYearCode();
     
-    if (!quotationNumber || !customerName || !date || !financialYear) {
+    if (!quotationNumber || !customerName || !date) {
       return res.status(400).json({ 
-        error: 'Missing required fields: quotationNumber, customerName, date, financialYear' 
+        error: 'Missing required fields: quotationNumber, customerName, date' 
       });
     }
 
@@ -46,7 +45,10 @@ export const createQuotation = async (req, res) => {
       });
     }
 
-    const quotation = new Quotation(req.body);
+    const quotation = new Quotation({
+      ...req.body,
+      financialYear: activeFinancialYear,
+    });
     await quotation.save();
 
     res.status(201).json(quotation);
@@ -97,9 +99,10 @@ export const getQuotationById = async (req, res) => {
 // Update Quotation
 export const updateQuotation = async (req, res) => {
   try {
+    const activeFinancialYear = await resolveFinancialYearCode();
     const quotation = await Quotation.findByIdAndUpdate(
       req.params.id, 
-      { ...req.body, updatedDate: new Date() },
+      { ...req.body, financialYear: activeFinancialYear, updatedDate: new Date() },
       { returnDocument: 'after' }
     );
 

@@ -158,9 +158,7 @@ const SalesReturn = () => {
   }, [focusedCell, showItemNoteModal, showSerialModal, showItemSelectionModal]);
 
   const resetForm = async () => {
-    const newReturnNumber = await axios.get(
-      `${API_URL}/sales-returns/nextReturnNumber?financialYear=${financialYear}`,
-    );
+    const newReturnNumber = await axios.get(`${API_URL}/sales-returns/nextReturnNumber`);
     setReturnData({
       returnNo:
         newReturnNumber.data.sequence || newReturnNumber.data.returnNumber,
@@ -1258,9 +1256,7 @@ const SalesReturn = () => {
   useEffect(() => {
     const fetchNextReturnNumber = async () => {
       try {
-        const res = await axios.get(
-          `${API_URL}/sales-returns/nextReturnNumber?financialYear=${financialYear}`,
-        );
+        const res = await axios.get(`${API_URL}/sales-returns/nextReturnNumber`);
         setReturnData((prev) => ({
           ...prev,
           returnNo: res.data.sequence || res.data.returnNumber,
@@ -1272,7 +1268,7 @@ const SalesReturn = () => {
     if (!editId) {
       fetchNextReturnNumber();
     }
-  }, [editId, financialYear]);
+  }, [editId]);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-100 overflow-hidden">

@@ -1,9 +1,21 @@
 import FinancialYear from "../../../Models/FinancialYear.js";
+import Company from "../../../Models/Company.js";
+import { getFinancialYearFromDateRange, normalizeFinancialYear } from "../../../utils/financialYearFormat.js";
+
+const getFiscalYearEndFromCompany = (company) => {
+  if (company?.fiscalYearEnd) return company.fiscalYearEnd;
+
+  // Sensible fallback by country when fiscalYearEnd is not configured.
+  if (company?.country === 'IN') return '03-31';
+  return '12-31';
+};
 
 // Create a new Financial Year
 export const createFinancialYear = async (req, res) => {
   try {
     const { yearCode, yearName, startDate, endDate, isCurrent, remarks } = req.body;
+    const company = await Company.findOne();
+    const fiscalYearEnd = getFiscalYearEndFromCompany(company);
 
     // Validate required fields
     if (!yearCode || !yearName || !startDate || !endDate) {
@@ -32,6 +44,24 @@ export const createFinancialYear = async (req, res) => {
       });
     }
 
+    const derivedYearCode = getFinancialYearFromDateRange(start, end, fiscalYearEnd);
+    if (!derivedYearCode) {
+      return res.status(400).json({
+        success: false,
+        message: `Financial year dates must match configured fiscal year end (${fiscalYearEnd})`
+      });
+    }
+
+    const normalizedYearCode = normalizeFinancialYear(yearCode);
+    const normalizedYearName = normalizeFinancialYear(yearName);
+
+    if (normalizedYearCode !== derivedYearCode || normalizedYearName !== derivedYearCode) {
+      return res.status(400).json({
+        success: false,
+        message: `Year code and name must match the selected period: ${derivedYearCode}`
+      });
+    }
+
     // Check for overlapping financial years
     const overlapping = await FinancialYear.findOne({
       isDeleted: false,
@@ -53,8 +83,8 @@ export const createFinancialYear = async (req, res) => {
     }).sort({ endDate: -1 });
 
     const financialYear = new FinancialYear({
-      yearCode,
-      yearName,
+      yearCode: derivedYearCode,
+      yearName: derivedYearCode,
       startDate: start,
       endDate: end,
       isCurrent: isCurrent || false,
@@ -194,7 +224,9 @@ export const getFinancialYearForDate = async (req, res) => {
 export const updateFinancialYear = async (req, res) => {
   try {
     const { id } = req.params;
-    const { yearName, startDate, endDate, remarks, allowPosting } = req.body;
+    const { yearCode, yearName, startDate, endDate, remarks, allowPosting } = req.body;
+    const company = await Company.findOne();
+    const fiscalYearEnd = getFiscalYearEndFromCompany(company);
 
     const year = await FinancialYear.findById(id);
     if (!year || year.isDeleted) {
@@ -212,17 +244,59 @@ export const updateFinancialYear = async (req, res) => {
       });
     }
 
+    const nextStartDate = startDate ? new Date(startDate) : year.startDate;
+    const nextEndDate = endDate ? new Date(endDate) : year.endDate;
+
+    if (nextEndDate <= nextStartDate) {
+      return res.status(400).json({
+        success: false,
+        message: "End date must be after start date"
+      });
+    }
+
+    const derivedYearCode = getFinancialYearFromDateRange(nextStartDate, nextEndDate, fiscalYearEnd);
+    if (!derivedYearCode) {
+      return res.status(400).json({
+        success: false,
+        message: `Financial year dates must match configured fiscal year end (${fiscalYearEnd})`
+      });
+    }
+
+    const requestedYearCode = normalizeFinancialYear(yearCode || year.yearCode);
+    const requestedYearName = normalizeFinancialYear(yearName || year.yearName);
+
+    if (requestedYearCode !== derivedYearCode || requestedYearName !== derivedYearCode) {
+      return res.status(400).json({
+        success: false,
+        message: `Year code and name must match the selected period: ${derivedYearCode}`
+      });
+    }
+
+    if (derivedYearCode !== year.yearCode) {
+      const existingYear = await FinancialYear.findOne({
+        yearCode: derivedYearCode,
+        _id: { $ne: id },
+        isDeleted: false,
+      });
+
+      if (existingYear) {
+        return res.status(400).json({
+          success: false,
+          message: "Financial year with this code already exists"
+        });
+      }
+    }
+
     // Update allowed fields
-    if (yearName) year.yearName = yearName;
+    year.yearCode = derivedYearCode;
+    year.yearName = derivedYearCode;
     if (remarks !== undefined) year.remarks = remarks;
     if (allowPosting !== undefined) year.allowPosting = allowPosting;
 
     // Only allow date changes if no transactions exist
-    if (startDate || endDate) {
-      // TODO: Check if transactions exist in this year before allowing date changes
-      if (startDate) year.startDate = new Date(startDate);
-      if (endDate) year.endDate = new Date(endDate);
-    }
+    // TODO: Check if transactions exist in this year before allowing date changes
+    year.startDate = nextStartDate;
+    year.endDate = nextEndDate;
 
     const updatedYear = await year.save();
 

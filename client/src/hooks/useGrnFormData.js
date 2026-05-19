@@ -44,10 +44,7 @@ export const useGrnFormData = () => {
   // ✅ UPDATED: Fetch next GRN number from backend using sequence table
   const fetchNextGrnNo = async () => {
     try {
-      const financialYear = getCurrentFinancialYear();
-      const response = await axios.get(
-        `${API_URL}/grn/next-number?financialYear=${financialYear}`
-      );
+      const response = await axios.get(`${API_URL}/grn/next-number`);
       
       if (response.data?.grnNo) {
         return response.data.grnNo;

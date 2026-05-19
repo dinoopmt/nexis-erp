@@ -236,7 +236,7 @@ export const useSalesInvoiceHandlers = (state, actions, { round, formatNumber, c
    */
   const resetForm = useCallback(async () => {
     try {
-      const nextNo = await SalesInvoiceService.getNextInvoiceNumber("2025-26");
+      const nextNo = await SalesInvoiceService.getNextInvoiceNumber();
       actions.resetForm(nextNo);
       showToast('info', "Form reset for new invoice");
     } catch (error) {

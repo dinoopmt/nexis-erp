@@ -305,9 +305,7 @@ const SalesInvoice = () => {
   // clear screen after saving invoice
   const resetForm = async () => {
     try {
-      const newInvoiceNumber = await axios.get(
-        `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
-      );
+      const newInvoiceNumber = await axios.get(`${API_URL}/sales-invoices/nextInvoiceNumber`);
       setInvoiceData({
         invoiceNo:
           newInvoiceNumber.data.sequence || newInvoiceNumber.data.invoiceNumber,
@@ -1606,9 +1604,7 @@ const SalesInvoice = () => {
   useEffect(() => {
     const fetchNextInvoiceNumber = async () => {
       try {
-        const res = await axios.get(
-          `${API_URL}/sales-invoices/nextInvoiceNumber?financialYear=${financialYear}`,
-        );
+        const res = await axios.get(`${API_URL}/sales-invoices/nextInvoiceNumber`);
         setInvoiceData((prev) => ({
           ...prev,
           invoiceNo: res.data.sequence || res.data.invoiceNumber,
@@ -1621,7 +1617,7 @@ const SalesInvoice = () => {
     if (!editId) {
       fetchNextInvoiceNumber();
     }
-  }, [editId, financialYear]);
+  }, [editId]);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-100 overflow-hidden">

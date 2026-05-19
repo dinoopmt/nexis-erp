@@ -1,4 +1,5 @@
 import Counter from "../../../Models/SequenceModel.js";
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 const modulePrefixes = {
   sales_invoice: "SI",
@@ -11,13 +12,8 @@ const modulePrefixes = {
 export const getNextSequence = async (req, res) => {
   try {
     const { module } = req.params;
-    let { financialYear, prefix } = req.query;
-    const currentDate = new Date();
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1;
-    if (!financialYear) {
-      financialYear = month > 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-    }
+    let { prefix } = req.query;
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
     if (!prefix) {
       prefix = modulePrefixes[module] || module.toUpperCase().slice(0,2);
     }
@@ -32,6 +28,6 @@ export const getNextSequence = async (req, res) => {
     const sequence = `${prefix}/${financialYear}/${paddedNumber}`;
     res.json({ sequence });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(error.status || 500).json({ message: error.message });
   }
 };

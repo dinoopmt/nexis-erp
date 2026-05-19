@@ -2,14 +2,12 @@ import SalesReturn from '../../../Models/Sales/SalesReturn.js';
 import Counter from '../../../Models/SequenceModel.js';
 import SalesReturnJournalService from '../services/SalesReturnJournalService.js';
 import logger from '../../../config/logger.js';
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 // Auto-generate next return number
 export const getNextReturnNumber = async (req, res) => {
   try {
-    const { financialYear } = req.query;
-    if (!financialYear) {
-      return res.status(400).json({ error: 'Financial year is required' });
-    }
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
     const counter = await Counter.findOneAndUpdate(
       { module: 'sales_return', financialYear },
       { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SR' } },
@@ -19,13 +17,14 @@ export const getNextReturnNumber = async (req, res) => {
     const returnNumber = `SR/${financialYear}/${paddedNumber}`;
     res.json({ returnNumber });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 
 export const createSalesReturn = async (req, res) => {
   try {
     logger.info('Creating sales return', { payload: req.body });
+    const activeFinancialYear = await resolveFinancialYearCode();
 
     // ✅ Validate required fields
     const { invoiceId, invoiceNumber, invoiceDate, returnReason, items } = req.body;
@@ -49,7 +48,10 @@ export const createSalesReturn = async (req, res) => {
     }
 
     // Create sales return document
-    const salesReturn = new SalesReturn(req.body);
+    const salesReturn = new SalesReturn({
+      ...req.body,
+      financialYear: activeFinancialYear,
+    });
     await salesReturn.save();
     logger.info('Sales return created', { returnId: salesReturn._id });
 
@@ -114,7 +116,11 @@ export const getSalesReturnById = async (req, res) => {
 
 export const updateSalesReturn = async (req, res) => {
   try {
-    const salesReturn = await SalesReturn.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
+    const activeFinancialYear = await resolveFinancialYearCode();
+    const salesReturn = await SalesReturn.findByIdAndUpdate(req.params.id, {
+      ...req.body,
+      financialYear: activeFinancialYear,
+    }, { returnDocument: 'after' });
     if (!salesReturn) return res.status(404).json({ error: 'Sales return not found' });
     res.json(salesReturn);
   } catch (err) {

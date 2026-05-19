@@ -9,6 +9,7 @@ import CurrentStock from "../../../Models/CurrentStock.js";
 import StoreSettingsService from "../../settings/services/StoreSettingsService.js";
 import { searchProducts as searchMeilisearch, indexProduct, deleteProductIndex } from "../../../config/meilisearch.js";
 import { syncProductToMeilisearch, deleteProductFromMeilisearch } from "../services/ProductMeilisearchSync.js";
+import { resolveFinancialYearCode } from "../../../utils/financialYearResolver.js";
 // ✅ Image file handling
 import fs from "fs";
 import path from "path";
@@ -116,20 +117,11 @@ const saveImageToFile = async (base64Image, productId) => {
   }
 };
 
-// ================= HELPER FUNCTION: Get Current Financial Year =================
-const getCurrentFinancialYear = () => {
-  const currentDate = new Date();
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth() + 1;
-  // Financial year: April to March (month > 3 means after March)
-  return month > 3 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-};
-
 // ================= HELPER FUNCTION: Get Next Item Code from Counter (Atomic & Fast) =================
 // ✅ For 300k+ products: Uses existing 'product_code' counter for atomic, O(1) generation
 const getNextItemCodeFromCounter = async () => {
   try {
-    const financialYear = getCurrentFinancialYear();
+    const financialYear = await resolveFinancialYearCode();
 
     // ✅ ATOMIC OPERATION: Find counter, increment, and return new value in ONE operation
     // This prevents race conditions and is guaranteed O(1) performance

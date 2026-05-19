@@ -162,7 +162,6 @@ const CreditCustomerCashflowSchema = new mongoose.Schema(
 // Indexes for Performance - Optimized for flat structure
 CreditCustomerCashflowSchema.index({ customerId: 1, financialYear: 1, transactionDate: 1 });
 CreditCustomerCashflowSchema.index({ customerCode: 1, financialYear: 1 });
-CreditCustomerCashflowSchema.index({ invoiceNumber: 1 });
 CreditCustomerCashflowSchema.index({ dueDate: 1, status: 1 });
 CreditCustomerCashflowSchema.index({ transactionDate: 1 });
 CreditCustomerCashflowSchema.index({ isDeleted: 1, customerId: 1 });

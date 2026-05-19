@@ -1,8 +1,9 @@
-import React, { useReducer, useEffect, useCallback } from 'react';
+import React, { useReducer, useEffect, useCallback, useContext } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
 import { API_URL } from '../../../../config/config';
+import { CompanyContext } from '../../../../context/CompanyContext';
 import { fyReducer, fyInitialState, FY_ACTIONS } from './reducer';
 import { FY_VIEW_MODES, API_ENDPOINTS, INITIAL_FORM_DATA, STATUS_CONFIG } from './constants';
 import FinancialYearFormModal from './FinancialYearFormModal';
@@ -10,6 +11,39 @@ import FinancialYearView from './FinancialYearView';
 
 const FinancialYearManager = () => {
   const [state, dispatch] = useReducer(fyReducer, fyInitialState);
+  const { company } = useContext(CompanyContext);
+
+  const getFiscalYearEnd = useCallback(() => {
+    if (company?.fiscalYearEnd) return company.fiscalYearEnd;
+    if (company?.country === 'IN') return '03-31';
+    return '12-31';
+  }, [company]);
+
+  const deriveFinancialYearCode = useCallback((startDate, endDate) => {
+    if (!startDate || !endDate) return null;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+    const [monthStr, dayStr] = getFiscalYearEnd().split('-');
+    const fiscalEndMonth = Number(monthStr);
+    const fiscalEndDay = Number(dayStr);
+    if (Number.isNaN(fiscalEndMonth) || Number.isNaN(fiscalEndDay)) return null;
+
+    const isFiscalEnd = end.getUTCMonth() === fiscalEndMonth - 1 && end.getUTCDate() === fiscalEndDay;
+    const expectedStart = new Date(Date.UTC(end.getUTCFullYear() - 1, fiscalEndMonth - 1, fiscalEndDay));
+    expectedStart.setUTCDate(expectedStart.getUTCDate() + 1);
+
+    const isFiscalStart =
+      start.getUTCFullYear() === expectedStart.getUTCFullYear() &&
+      start.getUTCMonth() === expectedStart.getUTCMonth() &&
+      start.getUTCDate() === expectedStart.getUTCDate();
+
+    if (!isFiscalStart || !isFiscalEnd) return null;
+
+    return `${start.getUTCFullYear()}-${String(end.getUTCFullYear()).slice(-2)}`;
+  }, [getFiscalYearEnd]);
 
   // Load financial years on mount
   useEffect(() => {
@@ -59,9 +93,19 @@ const FinancialYearManager = () => {
   };
 
   const handleFormChange = (field, value) => {
+    const nextFormData = { ...state.formData, [field]: value };
+
+    if (field === 'startDate' || field === 'endDate') {
+      const derivedCode = deriveFinancialYearCode(nextFormData.startDate, nextFormData.endDate);
+      if (derivedCode) {
+        nextFormData.yearCode = derivedCode;
+        nextFormData.yearName = derivedCode;
+      }
+    }
+
     dispatch({
       type: FY_ACTIONS.SET_FORM_DATA,
-      payload: { [field]: value },
+      payload: nextFormData,
     });
   };
 
@@ -79,12 +123,23 @@ const FinancialYearManager = () => {
       return;
     }
 
+    const derivedCode = deriveFinancialYearCode(state.formData.startDate, state.formData.endDate);
+    if (!derivedCode) {
+      toast.error(`Dates must match configured fiscal year end (${getFiscalYearEnd()})`, { duration: 5000, position: 'top-right' });
+      return;
+    }
+
+    if (state.formData.yearCode !== derivedCode || state.formData.yearName !== derivedCode) {
+      toast.error(`Year code and name must match selected period: ${derivedCode}`, { duration: 5000, position: 'top-right' });
+      return;
+    }
+
     dispatch({ type: FY_ACTIONS.SET_LOADING, payload: true });
 
     try {
       const payload = {
-        yearCode: state.formData.yearCode,
-        yearName: state.formData.yearName,
+        yearCode: derivedCode,
+        yearName: derivedCode,
         startDate: new Date(state.formData.startDate),
         endDate: new Date(state.formData.endDate),
         status: state.formData.status || 'OPEN',

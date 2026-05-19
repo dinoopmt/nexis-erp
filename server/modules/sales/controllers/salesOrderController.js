@@ -1,13 +1,11 @@
 import SalesOrder from '../../../Models/Sales/SalesOrder.js';
 import Sequence from '../../../Models/SequenceModel.js';
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 // Get next order number
 export const getNextOrderNumber = async (req, res) => {
   try {
-    const { financialYear } = req.query;
-    if (!financialYear) {
-      return res.status(400).json({ error: 'Financial year is required' });
-    }
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
     const counter = await Sequence.findOneAndUpdate(
       { module: 'sales_order', financialYear },
       { $inc: { lastNumber: 1 }, $setOnInsert: { prefix: 'SO' } },
@@ -17,14 +15,18 @@ export const getNextOrderNumber = async (req, res) => {
     const orderNumber = `SO-${financialYear}-${paddedNumber}`;
     res.json({ orderNumber });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 
 // Create sales order
 export const createSalesOrder = async (req, res) => {
   try {
-    const order = new SalesOrder(req.body);
+    const activeFinancialYear = await resolveFinancialYearCode();
+    const order = new SalesOrder({
+      ...req.body,
+      financialYear: activeFinancialYear,
+    });
     await order.save();
     
     // ✅ Populate customer and product data before returning
@@ -67,7 +69,11 @@ export const getSalesOrderById = async (req, res) => {
 export const updateSalesOrder = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await SalesOrder.findByIdAndUpdate(id, req.body, { 
+    const activeFinancialYear = await resolveFinancialYearCode();
+    const order = await SalesOrder.findByIdAndUpdate(id, {
+      ...req.body,
+      financialYear: activeFinancialYear,
+    }, { 
       returnDocument: 'after',
       runValidators: true 
     });

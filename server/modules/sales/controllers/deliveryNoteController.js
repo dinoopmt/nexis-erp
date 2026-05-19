@@ -1,10 +1,11 @@
 import DeliveryNote from '../../../Models/Sales/DeliveryNote.js';
 import Sequence from '../../../Models/SequenceModel.js';
 import SalesOrder from '../../../Models/Sales/SalesOrder.js';
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 export const getNextDeliveryNoteNumber = async (req, res) => {
   try {
-    const { financialYear = '2025-26' } = req.query;
+    const financialYear = await resolveFinancialYearCode(req.query.financialYear);
     const sequence = await Sequence.findOneAndUpdate(
       { module: 'delivery_note', financialYear },
       { 
@@ -16,13 +17,17 @@ export const getNextDeliveryNoteNumber = async (req, res) => {
     const deliveryNoteNumber = `DN-${financialYear}-${String(sequence.lastNumber).padStart(5, '0')}`;
     res.json({ deliveryNoteNumber, sequenceNumber: sequence.lastNumber });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 };
 
 export const createDeliveryNote = async (req, res) => {
   try {
-    const note = new DeliveryNote(req.body);
+    const activeFinancialYear = await resolveFinancialYearCode();
+    const note = new DeliveryNote({
+      ...req.body,
+      financialYear: activeFinancialYear,
+    });
     await note.save();
     
     // Update Sales Order status if all items delivered
@@ -67,9 +72,13 @@ export const getDeliveryNoteById = async (req, res) => {
 
 export const updateDeliveryNote = async (req, res) => {
   try {
+    const activeFinancialYear = await resolveFinancialYearCode();
     const note = await DeliveryNote.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      {
+        ...req.body,
+        financialYear: activeFinancialYear,
+      },
       { returnDocument: 'after' }
     ).populate('customerId').populate('salesOrderId');
     if (!note) return res.status(404).json({ error: 'Delivery note not found' });

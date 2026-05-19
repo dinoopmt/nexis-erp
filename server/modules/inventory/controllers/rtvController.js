@@ -13,25 +13,24 @@ import Company from "../../../Models/Company.js";
 import RTVStockUpdateService from "../../accounting/services/RTVStockUpdateService.js";
 import RTVJournalService from "../../accounting/services/RTVJournalService.js";
 import PdfGenerationService from "../../../services/PdfGenerationService.js";
+import Counter from "../../../Models/SequenceModel.js";
+import { resolveFinancialYearCode } from '../../../utils/financialYearResolver.js';
 
 // Generate RTV Number
-const generateRtvNo = async () => {
-  const currentYear = new Date().getFullYear();
-  const result = await Rtv.findOne()
-    .sort({ _id: -1 })
-    .select("rtvNumber");
+const generateRtvNo = async (requestedFinancialYear) => {
+  const financialYear = await resolveFinancialYearCode(requestedFinancialYear);
 
-  let newNumber = `RTV-FY${currentYear}-00001`;
-  
-  if (result?.rtvNumber) {
-    const matches = result.rtvNumber.match(/RTV-FY\d+-(\d+)/);
-    if (matches) {
-      const lastNumber = parseInt(matches[1]) + 1;
-      newNumber = `RTV-FY${currentYear}-${String(lastNumber).padStart(5, "0")}`;
-    }
-  }
-  
-  return newNumber;
+  const sequence = await Counter.findOneAndUpdate(
+    { module: 'RTV', financialYear },
+    {
+      $inc: { lastNumber: 1 },
+      $setOnInsert: { module: 'RTV', financialYear, prefix: 'RTV' },
+    },
+    { returnDocument: 'after', upsert: true }
+  );
+
+  const rtvNumber = `RTV-${financialYear}-${String(sequence.lastNumber).padStart(5, '0')}`;
+  return { rtvNumber, financialYear };
 };
 
 /**
@@ -39,14 +38,15 @@ const generateRtvNo = async () => {
  */
 export const getRtvNextNumber = async (req, res) => {
   try {
-    const rtvNumber = await generateRtvNo();
+    const { rtvNumber, financialYear } = await generateRtvNo(req.query.financialYear);
     res.status(200).json({
       success: true,
       rtvNo: rtvNumber,
+      financialYear,
     });
   } catch (error) {
     console.error("Error generating RTV number:", error);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       success: false,
       message: "Failed to generate RTV number",
       error: error.message,
@@ -104,7 +104,7 @@ export const createRtv = async (req, res) => {
     }
 
     // Generate RTV number
-    const rtvNumber = await generateRtvNo();
+    const { rtvNumber } = await generateRtvNo(req.body.financialYear);
 
     // Calculate totals
     let totalQuantity = 0;
